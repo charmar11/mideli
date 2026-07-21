@@ -1,5 +1,10 @@
 # Mideli - Agent Instructions
 
+## Project Info
+- **Repository**: https://github.com/charmar11/mideli
+- **Supabase Project**: qgnjennimvbrfxvcmowb
+- **Supabase URL**: https://qgnjennimvbrfxvcmowb.supabase.co
+
 ## Stack
 
 - **Framework**: Next.js 16 (App Router)
