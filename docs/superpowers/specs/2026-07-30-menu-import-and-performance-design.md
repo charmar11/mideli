@@ -2,24 +2,23 @@
 
 ## Objetivo
 
-Reemplazar el menú activo de Mideli con el contenido de `Menu_Mideli_Completo_Provisional.docx`, aplicar los nuevos sabores de boneless y alitas, conservar el historial de pedidos y hacer más rápida la carga y respuesta del POS.
+Reemplazar el menú de Mideli con el contenido de `Menu_Mideli_Completo_Provisional.docx`, aplicar los nuevos sabores de boneless y alitas, limpiar los datos de prueba antiguos y hacer más rápida la carga y respuesta del POS.
 
 ## Decisiones aprobadas
 
 - El DOCX es la fuente principal de nombres, categorías y descripciones.
 - Los precios actuales se conservan cuando existe una coincidencia clara.
 - Los productos sin precio explícito y sin coincidencia segura no se publican con precio inventado.
-- El menú anterior se desactiva en lugar de borrarse físicamente para conservar referencias de `order_items` y analíticas históricas.
-- Los sabores de boneless y alitas quedan como modificadores: Buffalo, Buffalo Ranch, Cajun, Ajo Parmesano, Honey Mustard, BBQ, Maracuyá y Lemon Pepper.
+- Como el proyecto no tiene uso operativo real, se borran los datos antiguos del menú y los pedidos de prueba que dependen de ellos.
+- Los sabores de boneless y alitas quedan como modificadores: Buffalo, BBQ, Buffalo Ranch, Cajun, Ajo Parmesano y Honey Mustard.
 
 ## Modelo de datos
 
-La actualización usa las tablas actuales `categories` y `menu_items`.
+La actualización usa las tablas actuales `categories`, `menu_items`, `orders` y `order_items`.
 
-1. Desactivar categorías y productos activos del menú anterior.
-2. Reutilizar categorías compatibles cuando sea seguro y crear las faltantes.
+1. Borrar pedidos y partidas de prueba que impiden limpiar el catálogo.
+2. Borrar productos y categorías antiguas.
 3. Insertar el menú nuevo con `is_active = true`, orden estable y modificadores estructurados en `jsonb`.
-4. Mantener intactas las filas históricas y los IDs referenciados por pedidos.
 
 La operación debe ser idempotente: repetirla no debe duplicar categorías ni productos publicados. La verificación final debe confirmar categorías activas, productos activos y ausencia de sabores obsoletos en boneless y alitas.
 
