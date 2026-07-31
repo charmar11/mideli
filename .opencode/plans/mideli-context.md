@@ -181,6 +181,7 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `supabase/migrations/00003_tables_and_inventory.sql` | Mesas, zonas, inventario y referencias de mesa |
 | `supabase/migrations/00004_menu_refresh.sql` | Reemplazo aprobado del menú provisional |
 | `supabase/migrations/00005_global_table_map.sql` | Geometría y distribución inicial de todas las zonas |
+| `supabase/migrations/20260731060825_menu_reset_from_docx.sql` | Reconstrucción final del menú desde el Word fuente |
 
 ## 7. Carga y rendimiento ya aplicado
 
@@ -237,6 +238,8 @@ Estado remoto verificado el 2026-07-30:
 - 5 mesas.
 - 0 insumos.
 - 0 órdenes históricas.
+
+El menú vigente proviene de `Menu_Mideli_Completo_Provisional.docx` mediante la migración `20260731060825_menu_reset_from_docx.sql`. Mango Habanero fue reemplazado por Buffalo Ranch, Cajun, Ajo Parmesano y Honey Mustard. Los modificadores de sabor y proteína tienen precio cero; solo "Con papas" agrega 30 pesos.
 
 Los conteos son una fotografía, no una garantía futura. Si una tarea depende de ellos, volver a consultar.
 
