@@ -80,7 +80,7 @@ El cambio solicitado para sabores de boneless fue:
 - Usar Buffalo Ranch, Cajun, Ajo Parmesano y Honey Mustard.
 - Conservar las opciones existentes que siguen siendo válidas, como Buffalo y BBQ.
 
-La base remota tiene 7 categorías y 44 productos en el corte del 2026-07-30.
+La base remota tiene 6 categorías y 39 productos en el corte del 2026-07-31. Los toppings no son productos independientes: se agregan como un grupo opcional dentro de cada sushi.
 
 ### Mesas y zonas
 
@@ -182,6 +182,7 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `supabase/migrations/00004_menu_refresh.sql` | Reemplazo aprobado del menú provisional |
 | `supabase/migrations/00005_global_table_map.sql` | Geometría y distribución inicial de todas las zonas |
 | `supabase/migrations/20260731060825_menu_reset_from_docx.sql` | Reconstrucción final del menú desde el Word fuente |
+| `supabase/migrations/20260731062255_move_toppings_into_sushi_modifiers.sql` | Convierte toppings en extras opcionales de sushi |
 
 ## 7. Carga y rendimiento ya aplicado
 
@@ -230,16 +231,18 @@ Patrones obligatorios:
 
 ## 9. Estado real y pendientes
 
-Estado remoto verificado el 2026-07-30:
+Estado remoto verificado el 2026-07-31:
 
-- 7 categorías.
-- 44 productos.
+- 6 categorías.
+- 39 productos.
 - 2 zonas.
 - 5 mesas.
 - 0 insumos.
 - 0 órdenes históricas.
 
 El menú vigente proviene de `Menu_Mideli_Completo_Provisional.docx` mediante la migración `20260731060825_menu_reset_from_docx.sql`. Mango Habanero fue reemplazado por Buffalo Ranch, Cajun, Ajo Parmesano y Honey Mustard. Los modificadores de sabor y proteína tienen precio cero; solo "Con papas" agrega 30 pesos.
+
+Los toppings Dracarys, Mr. Crab, Cordon Blue, Gratinado y Especial viven como un grupo opcional en los 15 sushis, con precios de 30, 35, 30, 25 y 35 pesos.
 
 El Word no muestra precio para Low Carb, Limonada Natural, Limonada Mineral, Té Helado ni Refrescos de temporada. Se conservaron temporalmente los precios anteriores de 150, 40, 45, 40 y 30 pesos, respectivamente.
 
