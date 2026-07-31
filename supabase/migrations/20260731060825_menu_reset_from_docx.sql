@@ -1,7 +1,8 @@
 -- Rebuild the menu from Menu_Mideli_Completo_Provisional.docx.
--- The source document does not include prices for Low Carb and three basic
+-- The source document does not include prices for Low Carb and four basic
 -- drinks. Those values are retained from the previous approved catalog:
--- Low Carb 150, Limonada Natural 40, Limonada Mineral 45 and Te Helado 40.
+-- Low Carb 150, Limonada Natural 40, Limonada Mineral 45, Te Helado 40 and
+-- Refrescos de temporada 30.
 -- The current project has no orders, but this guard prevents this migration
 -- from deleting live orders if it is ever tested against another database.
 
