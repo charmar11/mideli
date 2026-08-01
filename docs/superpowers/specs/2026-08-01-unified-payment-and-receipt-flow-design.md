@@ -61,6 +61,18 @@ Se descartó por ser demasiado amplio para un solo local. El cobro debe integrar
 - Los tickets del día pueden consultarse y reimprimirse por cualquier mesero.
 - Solo dueño y administrador pueden consultar anulaciones o intervenir tickets de días anteriores según los permisos actuales del historial.
 
+#### Resumen rápido de cuentas pendientes
+
+Se consideraron tres formas de anticipar el contenido de una cuenta antes de cobrar:
+
+1. Mostrar siempre el detalle completo. Aporta toda la información, pero vuelve muy larga la lista cuando existen varias mesas o pedidos.
+2. Mostrar un resumen compacto expandible. Permite reconocer la cuenta en segundos y conserva una lista fácil de recorrer. Es la opción aprobada.
+3. Abrir un modal separado de consulta. Mantiene las tarjetas pequeñas, pero agrega un paso y compite con el panel de cobro.
+
+Cada tarjeta de mesa pendiente mostrará hasta tres líneas de productos con cantidad y nombre. Los extras o variaciones se presentarán debajo con menor jerarquía cuando ayuden a diferenciar el platillo. Si existen más líneas, una acción `Ver detalle` desplegará todos los productos dentro de la misma tarjeta y cambiará a `Ocultar detalle` al cerrarla.
+
+Cuando una mesa reúna más de un pedido, el resumen conservará la separación por número de pedido para que el mesero entienda cómo se formó la cuenta. El saldo pendiente y la acción `Cobrar cuenta` permanecerán visibles aunque el detalle esté expandido. En móvil, la tarjeta apilará contenido, saldo y acción sin desplazamiento horizontal. El resumen reutilizará los productos ya cargados por Historial y no hará consultas adicionales a Supabase.
+
 ## Experiencia del panel de cobro
 
 El cobro será un panel central amplio en tableta y escritorio, y una hoja inferior de altura completa en móvil. No será una cadena de modales. El contenido se organiza como un recorrido visible con resumen persistente.
