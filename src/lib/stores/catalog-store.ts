@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import type { Category, MenuItem } from "@/types/database";
+import { removeManagedProductImage } from "@/lib/product-images";
 
 interface CatalogState {
   categories: Category[];
@@ -10,39 +11,56 @@ interface CatalogState {
   fetchCategories: () => Promise<void>;
   fetchMenuItems: () => Promise<void>;
   createCategory: (name: string) => Promise<Category | null>;
-  updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
-  deleteCategory: (id: string) => Promise<void>;
+  updateCategory: (id: string, updates: Partial<Category>) => Promise<boolean>;
+  deleteCategory: (id: string) => Promise<boolean>;
   createMenuItem: (item: Omit<MenuItem, "id" | "created_at" | "updated_at">) => Promise<MenuItem | null>;
-  updateMenuItem: (id: string, updates: Partial<MenuItem>) => Promise<void>;
-  deleteMenuItem: (id: string) => Promise<void>;
+  updateMenuItem: (id: string, updates: Partial<MenuItem>) => Promise<boolean>;
+  deleteMenuItem: (id: string) => Promise<boolean>;
 }
 
-export const useCatalogStore = create<CatalogState>((set) => ({
+let catalogRequest: Promise<void> | null = null;
+let catalogFetchedAt = 0;
+const CATALOG_CACHE_MS = 30_000;
+
+export const useCatalogStore = create<CatalogState>((set, get) => ({
   categories: [],
   menuItems: [],
   loading: false,
 
   fetchCatalog: async () => {
-    set({ loading: true });
-    const supabase = createClient();
-    const [categoriesResult, menuItemsResult] = await Promise.all([
-      supabase
-        .from("categories")
-        .select("id,name,sort_order,is_active,created_at,updated_at")
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("menu_items")
-        .select(
-          "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
-        )
-        .order("sort_order", { ascending: true }),
-    ]);
+    const hasCatalog = get().categories.length > 0 || get().menuItems.length > 0;
+    if (catalogRequest) return catalogRequest;
+    if (hasCatalog && Date.now() - catalogFetchedAt < CATALOG_CACHE_MS) return;
 
-    set({
-      categories: categoriesResult.data ?? [],
-      menuItems: menuItemsResult.data ?? [],
-      loading: false,
-    });
+    catalogRequest = (async () => {
+      set({ loading: true });
+      try {
+        const supabase = createClient();
+        const [categoriesResult, menuItemsResult] = await Promise.all([
+          supabase
+            .from("categories")
+            .select("id,name,sort_order,is_active,created_at,updated_at")
+            .order("sort_order", { ascending: true }),
+          supabase
+            .from("menu_items")
+            .select(
+              "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
+            )
+            .order("sort_order", { ascending: true }),
+        ]);
+
+        set({
+          categories: categoriesResult.data ?? [],
+          menuItems: menuItemsResult.data ?? [],
+        });
+        catalogFetchedAt = Date.now();
+      } finally {
+        set({ loading: false });
+        catalogRequest = null;
+      }
+    })();
+
+    return catalogRequest;
   },
 
   fetchCategories: async () => {
@@ -92,33 +110,43 @@ export const useCatalogStore = create<CatalogState>((set) => ({
 
   updateCategory: async (id: string, updates: Partial<Category>) => {
     const supabase = createClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("categories")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id);
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
 
-    if (!error) {
-      set((state) => ({
-        categories: state.categories.map((c) =>
-          c.id === id ? { ...c, ...updates } : c
-        ),
-      }));
+    if (error || !data) {
+      return false;
     }
+
+    set((state) => ({
+      categories: state.categories.map((c) =>
+        c.id === id ? { ...c, ...updates } : c
+      ),
+    }));
+    return true;
   },
 
   deleteCategory: async (id: string) => {
     const supabase = createClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("categories")
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
 
-    if (!error) {
-      set((state) => ({
-        categories: state.categories.filter((c) => c.id !== id),
-        menuItems: state.menuItems.filter((m) => m.category_id !== id),
-      }));
+    if (error || !data) {
+      return false;
     }
+
+    set((state) => ({
+      categories: state.categories.filter((c) => c.id !== id),
+      menuItems: state.menuItems.filter((m) => m.category_id !== id),
+    }));
+    return true;
   },
 
   createMenuItem: async (item) => {
@@ -138,31 +166,45 @@ export const useCatalogStore = create<CatalogState>((set) => ({
 
   updateMenuItem: async (id: string, updates: Partial<MenuItem>) => {
     const supabase = createClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("menu_items")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id);
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
 
-    if (!error) {
-      set((state) => ({
-        menuItems: state.menuItems.map((m) =>
-          m.id === id ? { ...m, ...updates } : m
-        ),
-      }));
+    if (error || !data) {
+      return false;
     }
+
+    set((state) => ({
+      menuItems: state.menuItems.map((m) =>
+        m.id === id ? { ...m, ...updates } : m
+      ),
+    }));
+    return true;
   },
 
   deleteMenuItem: async (id: string) => {
+    const previousImage = get().menuItems.find((item) => item.id === id)?.image_url;
     const supabase = createClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("menu_items")
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
 
-    if (!error) {
-      set((state) => ({
-        menuItems: state.menuItems.filter((m) => m.id !== id),
-      }));
+    if (error || !data) {
+      return false;
     }
+
+    set((state) => ({
+      menuItems: state.menuItems.filter((m) => m.id !== id),
+    }));
+    if (previousImage) {
+      await removeManagedProductImage(previousImage).catch(() => undefined);
+    }
+    return true;
   },
 }));

@@ -1,21 +1,30 @@
 "use client";
 
-import { useMemo } from "react";
-import { Search, Plus } from "lucide-react";
-import { useCatalogStore, useUIStore } from "@/lib/stores";
+import { memo, useMemo } from "react";
+import { Check, Search, Plus } from "lucide-react";
+import { useCartStore, useCatalogStore, useUIStore } from "@/lib/stores";
 import type { MenuItem } from "@/types/database";
 
 interface ProductGridProps {
   onProductClick: (item: MenuItem) => void;
+  addedProduct: { id: string; token: number } | null;
 }
+
+const priceFormatter = new Intl.NumberFormat("es-MX");
 
 function formatPrice(price: number): string {
-  return new Intl.NumberFormat("es-MX").format(price);
+  return priceFormatter.format(price);
 }
 
-export function ProductGrid({ onProductClick }: ProductGridProps) {
-  const { menuItems } = useCatalogStore();
-  const { activeCategory, searchQuery, setSearchQuery } = useUIStore();
+export const ProductGrid = memo(function ProductGrid({
+  onProductClick,
+  addedProduct,
+}: ProductGridProps) {
+  const menuItems = useCatalogStore((state) => state.menuItems);
+  const cartItems = useCartStore((state) => state.items);
+  const activeCategory = useUIStore((state) => state.activeCategory);
+  const searchQuery = useUIStore((state) => state.searchQuery);
+  const setSearchQuery = useUIStore((state) => state.setSearchQuery);
 
   const filteredItems = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("es-MX");
@@ -31,6 +40,17 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
       );
     });
   }, [activeCategory, menuItems, searchQuery]);
+
+  const quantitiesByProduct = useMemo(() => {
+    const quantities = new Map<string, number>();
+    for (const item of cartItems) {
+      quantities.set(
+        item.menu_item_id,
+        (quantities.get(item.menu_item_id) ?? 0) + item.quantity
+      );
+    }
+    return quantities;
+  }, [cartItems]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -50,7 +70,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-28 sm:px-4 sm:pb-4 lg:pb-4">
+      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-40 sm:px-4 md:pb-24 lg:pb-4">
         {filteredItems.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-surface shadow-card">
@@ -61,15 +81,31 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {filteredItems.map((item, i) => (
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-4">
+            {filteredItems.map((item) => {
+              const quantityInCart = quantitiesByProduct.get(item.id) ?? 0;
+              const wasJustAdded = addedProduct?.id === item.id;
+
+              return (
               <button
-                key={item.id}
+                key={`${item.id}-${wasJustAdded ? addedProduct.token : "idle"}`}
                 type="button"
+                data-product-id={item.id}
                 onClick={() => onProductClick(item)}
-                className="group flex min-h-[9rem] flex-col overflow-hidden rounded-2xl border border-border/80 bg-surface text-left shadow-card transition-all hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float active:translate-y-0 animate-card-in"
-                style={{ animationDelay: `${(i % 10) * 30}ms` }}
+                className={`group relative flex min-h-[9rem] flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float active:scale-[0.985] ${
+                  wasJustAdded
+                    ? "pos-product-added border-success/70"
+                    : "border-border/80"
+                }`}
               >
+                {quantityInCart > 0 ? (
+                  <span
+                    className="absolute right-2 top-2 z-10 flex h-7 min-w-7 items-center justify-center rounded-full bg-success px-2 font-data text-xs font-black text-ink shadow-md"
+                    aria-label={`${quantityInCart} en el pedido`}
+                  >
+                    {quantityInCart}
+                  </span>
+                ) : null}
                 {item.image_url ? (
                   <div className="h-28 w-full overflow-hidden bg-surface-raised">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -107,16 +143,25 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
                     <span className="font-data text-base font-bold text-brand">
                       ${formatPrice(item.price)}
                     </span>
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-white transition-colors group-hover:bg-brand">
-                      <Plus size={18} strokeWidth={2.5} />
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors ${
+                        wasJustAdded ? "bg-success text-ink" : "bg-ink group-hover:bg-brand"
+                      }`}
+                    >
+                      {wasJustAdded ? (
+                        <Check size={18} strokeWidth={3} />
+                      ) : (
+                        <Plus size={18} strokeWidth={2.5} />
+                      )}
                     </span>
                   </div>
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
     </div>
   );
-}
+});
