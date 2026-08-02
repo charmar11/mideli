@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-07-30
+Actualizado: 2026-08-02
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -131,6 +131,54 @@ El inventario se diseñó como una herramienta personalizable, no como un catál
 
 La interfaz administrativa vive en `/settings/inventario`. La base ya tiene `inventory_items`, `inventory_recipes` e `inventory_movements`. En el corte actual no hay insumos capturados. El descuento automático de inventario al vender todavía debe validarse o implementarse con una operación transaccional antes de considerarse terminado.
 
+Actualización 2026-08: el inventario se endureció con unidades de compra, recepciones (`inventory_receipts`), órdenes de compra, lotes, conteos físicos (`inventory_counts` con líneas), guías de captura vía RPC, borrado seguro de insumos, reemplazo transaccional de recetas y corrección de inventario al editar pedidos. La interfaz se reorganizó en paneles (`src/components/admin/inventory/`) con biblioteca de recetas y tour de onboarding.
+
+### Licencia de acceso
+
+Desde 2026-08-01 el sistema se bloquea al vencer la licencia mensual:
+
+- Una fila única en `public.app_license` guarda estado, `valid_until` y `updated_at`. RLS: lectura para `anon` y `authenticated`; escritura solo en servidor con service role.
+- El proxy (`src/proxy.ts`) redirige `/dashboard`, `/menu` y `/settings` a `/sistema-bloqueado` cuando la licencia no está vigente, y `LicenseHeartbeat` bloquea sesiones abiertas al vencer.
+- `/control/licencia` es la herramienta privada del vendedor; cada operación exige `MIDELI_LICENSE_ADMIN_SECRET` (solo servidor). Permite activar 30 días, definir fecha exacta y suspender.
+- La pantalla de bloqueo no expone la ruta de control ni detalles técnicos.
+- Login e Inicio se rediseñaron: sin texto "Mi Momento", el campo Usuario ya no muestra el sufijo `@mideli.com` (se completa internamente) y se aceptan correos completos.
+
+### Turnos de caja
+
+Caja compartida del local con apertura y cierre explícitos (migración `20260801125712_cash_shifts_and_location_snapshots.sql`):
+
+- Solo un turno abierto a la vez; pedidos y cobros nuevos se vinculan al turno de forma transaccional. No se vende fuera de turno.
+- Cierre con conteo ciego, separación por efectivo, tarjeta y transferencia, y autorización cuando la diferencia es importante.
+- Movimientos de efectivo (retiros, gastos, fondos, correcciones) con responsable, motivo y autorización.
+- Cuentas sin pagar pasan explícitamente al siguiente turno (`cash_shift_pending_orders`).
+- Historial inmutable en `/settings/caja` (`cash-history-manager`), control operativo en `src/components/cash/cash-shift-control.tsx` y store `cash-shift-store.ts`.
+- Los pedidos guardan snapshot de ubicación (zona y mesa) para mostrarla en Estado, Historial, cuentas, cobro y tickets aunque el plano cambie después (`src/lib/order-location.ts`).
+
+### Cobro unificado y tickets
+
+El cobro pasó a un libro mayor transaccional (migración `20260801092945_unified_payment_ledger.sql` y siguientes):
+
+- Tablas: `payment_transactions`, `payment_tenders`, `payment_order_allocations`, `payment_item_allocations`. Los pedidos tienen `payment_status` y `paid_amount`, separados del estado operativo (permite prepago de para llevar y domicilio sin ocultar el pedido de cocina).
+- Soporta pago completo, parcial, combinado, dividido (equitativo o por productos), propina y descuento con PIN administrativo de un solo uso (intentos persistidos, autorización ligada al monto).
+- Confirmación y anulación con bloqueos de fila e idempotencia en PostgreSQL; las escrituras directas legacy fueron retiradas.
+- Interfaz: `src/components/payments/payment-flow.tsx` (panel central en tableta, hoja inferior en móvil), ticket con snapshot para impresión de 58 y 80 mm, reimpresión marcada y anulación administrativa.
+- Folios de orden consecutivos vía `order_folio_counter`.
+
+### PWA y notificaciones
+
+- Serwist configurado (`src/app/sw.ts`, `src/app/serwist/`, `src/app/manifest.ts`, `pwa-provider.tsx`), iconos en `public/icons/`.
+- Suscripciones push en `push_subscriptions`, control en `push-notification-control.tsx`, lógica en `src/lib/push-notifications.ts`.
+- Aviso sonoro de pedido listo (`ready-order-notifier.tsx`, `ready-order-audio.ts`, sonidos en `public/sounds/`) y Edge Function `send-order-ready` en `supabase/functions/`.
+- Los textos de ayuda usan términos genéricos como `dispositivo`, sin marcas.
+
+### Imágenes de productos
+
+El editor de productos carga fotos desde el dispositivo (cámara, galería o archivos), sin campo de URL. Bucket público `menu-product-images` con escritura y borrado solo para owner y admin. Compresión a WebP, límite de 8 MB antes de optimizar, rutas por UUID y limpieza del archivo anterior al reemplazar o quitar. Lógica en `src/lib/product-images.ts`.
+
+### Roles y acceso
+
+Se agregó el rol `supervisor` (puede usar POS y KDS, no administración) y el estado activo de cuentas (`profiles.is_active`): el proxy cierra sesión de perfiles inactivos. El middleware de Next se reemplazó por `src/proxy.ts` (convención de Next 16) con control de rutas por rol: administración y analíticas solo owner/admin, inventario solo owner/admin, POS y KDS según rol.
+
 ## 5. Arquitectura actual
 
 Stack:
@@ -146,15 +194,19 @@ Stack:
 
 Rutas principales:
 
-- `/`: home mínima de marca.
-- `/login`: acceso del personal.
+- `/`: home de marca y entrada operativa.
+- `/login`: acceso del personal (usuario sin sufijo visible).
+- `/auth/callback`: callback de sesión.
 - `/dashboard/mesero`: POS.
 - `/dashboard/cocina`: KDS.
-- `/dashboard/analiticas`: métricas.
+- `/dashboard/analiticas`: métricas (solo owner y admin).
 - `/menu`: administración de categorías y platillos.
 - `/settings`: personal y roles.
 - `/settings/mesas`: editor del plano global.
-- `/settings/inventario`: inventario, recetas y movimientos.
+- `/settings/inventario`: inventario, recetas, compras y conteos.
+- `/settings/caja`: historial de turnos y cortes.
+- `/sistema-bloqueado`: pantalla de licencia vencida.
+- `/control/licencia`: herramienta privada del vendedor.
 
 El layout del dashboard cambia la navegación según el tamaño:
 
@@ -174,7 +226,14 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `src/components/tables/table-floor-map.tsx` | Canvas común de zonas y mesas, selección y arrastre |
 | `src/components/admin/table-layout-editor.tsx` | Administración del plano, zonas y mesas |
 | `src/components/admin/table-layout-inspector.tsx` | Editor central táctil para zonas y mesas |
-| `src/components/admin/inventory-manager.tsx` | Administración de inventario y recetas |
+| `src/components/admin/inventory-manager.tsx` y `src/components/admin/inventory/` | Administración de inventario, recetas, compras y conteos |
+| `src/components/payments/payment-flow.tsx` | Flujo táctil de cobro: descuento, división, propina, métodos combinados |
+| `src/components/cash/cash-shift-control.tsx` y `src/lib/stores/cash-shift-store.ts` | Apertura, movimientos y cierre de caja |
+| `src/components/license-heartbeat.tsx`, `src/lib/license.ts`, `src/lib/license-server.ts` | Vigencia de licencia en cliente y servidor |
+| `src/proxy.ts` | Sesión, licencia y control de rutas por rol (reemplaza a `src/middleware.ts`) |
+| `src/lib/push-notifications.ts`, `src/components/dashboard/ready-order-notifier.tsx` | Push y aviso sonoro de pedidos listos |
+| `src/lib/product-images.ts` | Carga y limpieza de fotos de productos |
+| `src/lib/order-location.ts` | Snapshot de ubicación del pedido (zona y mesa) |
 | `src/lib/stores/catalog-store.ts` | Lectura y CRUD de categorías y menú, con caché de 30 s en carga conjunta |
 | `src/lib/stores/cart-store.ts` | Estado local del pedido actual |
 | `src/lib/stores/order-store.ts` | CRUD de órdenes, estados, cobro y suscripción Realtime |
@@ -212,20 +271,20 @@ Proyecto:
 
 - Project ref: `qgnjennimvbrfxvcmowb`.
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
-- CLI inicializada en `supabase/config.toml`.
+- CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- Migraciones locales y remotas alineadas: `00001` a `00005`.
+- Migraciones locales y remotas alineadas: 31 migraciones, de `00001` a `20260801131509`.
 
-Tablas de dominio:
+Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
-`profiles`, `categories`, `menu_items`, `orders`, `order_items`, `order_status_log`, `table_zones`, `restaurant_tables`, `inventory_items`, `inventory_recipes`, `inventory_movements`.
+`profiles`, `categories`, `menu_items`, `orders`, `order_items`, `order_status_log`, `order_folio_counter`, `table_zones`, `restaurant_tables`, `table_map_labels`, `inventory_items`, `inventory_recipes`, `inventory_movements`, `inventory_lots`, `inventory_receipts`, `inventory_receipt_lines`, `inventory_purchase_orders`, `inventory_purchase_order_lines`, `inventory_counts`, `inventory_count_lines`, `payment_transactions`, `payment_tenders`, `payment_order_allocations`, `payment_item_allocations`, `cash_shifts`, `cash_movements`, `cash_shift_adjustments`, `cash_shift_pending_orders`, `app_license`, `push_subscriptions`, `user_onboarding_progress`.
 
 Enums:
 
 - Estados: `pending`, `in_kitchen`, `ready`, `served`, `paid`, `cancelled`.
 - Tipos de orden: `comedor`, `domicilio`, `para_llevar`.
 - Pago: `efectivo`, `tarjeta`, `transferencia`.
-- Roles: `owner`, `admin`, `waiter`, `kitchen`.
+- Roles: `owner`, `admin`, `supervisor`, `waiter`, `kitchen`.
 
 Patrones obligatorios:
 
@@ -239,14 +298,18 @@ Patrones obligatorios:
 
 ## 9. Estado real y pendientes
 
-Estado remoto verificado el 2026-07-31:
+Estado remoto verificado el 2026-08-02:
 
-- 6 categorías.
-- 39 productos.
-- 2 zonas.
-- 5 mesas.
-- 0 insumos.
-- 0 órdenes históricas.
+- 7 categorías.
+- 50 productos.
+- 4 zonas.
+- 26 mesas.
+- 0 insumos (1 conteo físico registrado).
+- 3 perfiles de staff.
+- 3 órdenes con cobros en el libro mayor (pruebas del flujo unificado).
+- 2 turnos de caja históricos.
+- 1 licencia registrada en `app_license`.
+- 12 suscripciones push activas.
 
 El menú vigente proviene de `Menu_Mideli_Completo_Provisional.docx` mediante la migración `20260731060825_menu_reset_from_docx.sql`. Mango Habanero fue reemplazado por Buffalo Ranch, Cajun, Ajo Parmesano y Honey Mustard. Los modificadores de sabor y proteína tienen precio cero; solo "Con papas" agrega 30 pesos.
 
@@ -259,12 +322,13 @@ Los conteos son una fotografía, no una garantía futura. Si una tarea depende d
 Pendientes prioritarios:
 
 1. Hacer QA manual del POS en tabletas reales y corregir cualquier clipping, panel cortado o categoría ilegible.
-2. Revisar el flujo completo de cobro y validar efectivo, tarjeta y transferencia con una orden real de prueba.
-3. Hacer transaccional el descuento de inventario por receta cuando corresponda al negocio.
-4. Revisar atomicidad de creación de orden y sus items, especialmente el cálculo del siguiente número.
-5. Completar auditoría de RLS y permisos por rol antes de producción.
+2. Validar en operación real el cobro unificado: completo, combinado, dividido, con descuento y propina, más la impresión de ticket.
+3. Validar un turno de caja completo: apertura, movimientos, cierre ciego y transferencia de cuentas pendientes.
+4. Hacer transaccional el descuento de inventario por receta cuando corresponda al negocio.
+5. Completar auditoría de RLS y permisos por rol antes de producción (incluye `supervisor`).
 6. Agregar pruebas para stores y flujos críticos.
-7. Preparar despliegue en Vercel y revisar variables sin exponer secretos.
+7. Preparar despliegue en Vercel y revisar variables sin exponer secretos (`.vercelignore` ya excluye docs, specs y archivos de desarrollo).
+8. Hacer push de `main` a origin: al 2026-08-02 va 28 commits adelante.
 
 ## 10. Verificación obligatoria
 

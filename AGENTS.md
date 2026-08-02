@@ -45,7 +45,7 @@ Si el build falla, corregir errores antes de continuar.
 
 - **Cliente navegador**: `import { createClient } from '@/lib/supabase/client'` (para Client Components)
 - **Cliente servidor**: `import { createClient } from '@/lib/supabase/server'` (para Server Components/Actions)
-- **Middleware**: `src/middleware.ts` maneja refresh de sesión y protección de rutas
+- **Proxy**: `src/proxy.ts` maneja refresh de sesión, vigencia de licencia y protección de rutas por rol (reemplaza al antiguo `src/middleware.ts`)
 
 ## Servicios del Servidor
 
