@@ -82,6 +82,10 @@ El cambio solicitado para sabores de boneless fue:
 
 La base remota tiene 6 categorías y 39 productos en el corte del 2026-07-31. Los toppings no son productos independientes: se agregan como un grupo opcional dentro de cada sushi.
 
+Cada opción de variación puede tener información adicional. En los toppings de sushi se muestran sus ingredientes: Dracarys contiene queso, tocino y spicy; Mr. Crab contiene queso, zanahoria, surimi empanizado y spicy; Cordon Blue contiene queso, tocino y serrano; Gratinado contiene queso; Especial contiene Philadelphia y spicy.
+
+La administración del menú debe ser completamente editable: nombre, precio, descripción, imagen, categoría, estado activo y grupos de variaciones. El editor permite crear, renombrar, eliminar y marcar como requeridos los grupos, además de editar sus opciones y precios extra. Las acciones de edición se mantienen visibles para tablet y los errores de guardado no cierran el formulario.
+
 ### Mesas y zonas
 
 El sistema debe permitir que el dueño de un local configure su plano sin depender de una distribución fija.
@@ -90,6 +94,8 @@ El sistema debe permitir que el dueño de un local configure su plano sin depend
 - Cada zona tiene nombre, tamaño, posición y contador de mesas.
 - Las zonas se pueden mover en administración.
 - Las mesas se pueden mover dentro de su zona, cambiar de nombre, forma y capacidad.
+- En tablet, tocar una zona o mesa abre un editor central con controles grandes; arrastrar el cuerpo mueve el elemento y arrastrar la esquina inferior derecha cambia su tamaño.
+- Las zonas permiten editar nombre y tamaño del área; las mesas permiten editar nombre, zona, forma, capacidad, tamaño y rotación.
 - Las formas soportadas son `round`, `square`, `rectangle` y `bar`.
 - El mapa usa posiciones normalizadas de 0 a 1 para adaptarse a distintas pantallas.
 - Durante un pedido, el mesero selecciona la mesa directamente en el dibujo.
@@ -167,6 +173,7 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `src/components/pos/table-picker.tsx` | Selector visual de mesa después de armar el pedido |
 | `src/components/tables/table-floor-map.tsx` | Canvas común de zonas y mesas, selección y arrastre |
 | `src/components/admin/table-layout-editor.tsx` | Administración del plano, zonas y mesas |
+| `src/components/admin/table-layout-inspector.tsx` | Editor central táctil para zonas y mesas |
 | `src/components/admin/inventory-manager.tsx` | Administración de inventario y recetas |
 | `src/lib/stores/catalog-store.ts` | Lectura y CRUD de categorías y menú, con caché de 30 s en carga conjunta |
 | `src/lib/stores/cart-store.ts` | Estado local del pedido actual |
@@ -183,6 +190,7 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `supabase/migrations/00005_global_table_map.sql` | Geometría y distribución inicial de todas las zonas |
 | `supabase/migrations/20260731060825_menu_reset_from_docx.sql` | Reconstrucción final del menú desde el Word fuente |
 | `supabase/migrations/20260731062255_move_toppings_into_sushi_modifiers.sql` | Convierte toppings en extras opcionales de sushi |
+| `supabase/migrations/20260731065417_add_topping_descriptions.sql` | Agrega la información de ingredientes a las opciones de toppings |
 
 ## 7. Carga y rendimiento ya aplicado
 

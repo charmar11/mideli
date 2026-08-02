@@ -1,131 +1,49 @@
-# Handoff: Configuración Inicial de Mideli
+# Handoff: Mideli — Burger & Sushi
 
 ## Resumen del Proyecto
 
-**Mideli** es un sistema SaaS para restaurantes construido con:
+**Mideli** es un sistema de gestión de pedidos (KDS + POS) para un local de comida en Ciudad Obregón, Sonora, México.
+
+- **Giro:** Burger & Sushi
+- **Slogan:** No se utiliza.
+- **Horario:** 12:00 PM – 11:00 PM (cierra martes)
+- **Ubicación:** C. Yaqui 404 Oriente, Cd. Obregón, Son.
+
+**Stack:**
 - Next.js 16 (App Router, TypeScript, Tailwind CSS v4)
-- Supabase (PostgreSQL, Auth, Storage)
-- shadcn/ui (componentes UI)
+- Supabase (PostgreSQL, Auth, Storage, Realtime)
+- shadcn/ui (Base UI)
 - Resend (emails)
 - Polar (pagos)
 - GitHub (control de versiones)
 
-**Repositorio:** https://github.com/charmar11/mideli  
-**Proyecto Supabase:** qgnjennimvbrfxvcmowb  
+**Repositorio:** https://github.com/charmar11/mideli
+**Proyecto Supabase:** qgnjennimvbrfxvcmowb
 **URL Supabase:** https://qgnjennimvbrfxvcmowb.supabase.co
 
 ---
 
-## Skills Instaladas (18)
+## Identidad Visual
 
-Todas las skills están en `.opencode/skills/` y se activan automáticamente según el contexto:
+### Paleta de colores (del logo)
 
-### Desarrollo Frontend
-- **frontend-design** - Diseño visual distintivo e intencional
-- **interface-design** - Diseño de interfaces de usuario
-- **vercel-react-best-practices** - Optimización de rendimiento React/Next.js
+| Token | HEX | Uso |
+|---|---|---|
+| `--background` | `#000000` | Fondo principal |
+| `--brand` | `#F5145F` | Rosa principal (botones, acentos) |
+| `--brand-hover` | `#D41050` | Hover/pressed |
+| `--cream` | `#FBF8E7` | Texto secundario, bordes |
+| `--gold` | `#F6DDA4` | Detalles, badges, separadores |
+| `--foreground` | `#F8F8F0` | Texto principal |
 
-### Planificación y Creatividad
-- **brainstorming** - Exploración de intención y requisitos antes de implementar
-- **revenue-centric-design** - Diseño centrado en conversión y monetización
+### Tipografías
 
-### Backend y Base de Datos
-- **supabase** - Todo lo relacionado con Supabase
-- **supabase-postgres-best-practices** - Optimización de PostgreSQL
-- **postgresql-table-design** - Diseño de tablas PostgreSQL
-- **api-design-principles** - Principios de diseño REST/GraphQL
-
-### Calidad y Debugging
-- **systematic-debugging** - Debugging sistemático de problemas
-- **error-handling-patterns** - Patrones de manejo de errores
-- **debug-issue** - Navegación de código con grafo de conocimiento
-- **explore-codebase** - Exploración de estructura del código
-
-### Code Review
-- **review-pr** - Revisión de PRs con análisis de impacto
-- **review-changes** - Revisión estructurada de cambios
-
-### Documentación y Prompts
-- **changelog-generator** - Generación automática de changelogs
-- **prompt-engineering-patterns** - Patrones de ingeniería de prompts
-
-### Otros
-- **grill-me** - Entrevista para mejorar planes o diseños
-
----
-
-## Configuración de Servicios
-
-### Supabase (Backend + Base de Datos)
-
-**Estado:** ✅ Configurado y autenticado
-
-**Variables de entorno:**
-- `NEXT_PUBLIC_SUPABASE_URL` - URL del proyecto Supabase
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Clave pública anónima
-- `SUPABASE_SERVICE_ROLE_KEY` - Clave de servicio (solo servidor)
-
-*Ver `.env.local` para los valores reales.*
-
-**MCP de Supabase:**
-- Configurado en `~/.config/opencode/opencode.json`
-- Autenticado con OAuth
-- URL: `https://mcp.supabase.com/mcp?project_ref=qgnjennimvbrfxvcmowb`
-
-**Archivos creados:**
-- `src/lib/supabase/client.ts` - Cliente para navegador
-- `src/lib/supabase/server.ts` - Cliente para servidor
-- `src/lib/supabase/middleware.ts` - Helper para refresh de sesión
-- `src/middleware.ts` - Middleware Next.js
-
----
-
-### Resend (Emails)
-
-**Estado:** ✅ Configurado y probado
-
-**Variables de entorno:**
-- `RESEND_API_KEY` - API key de Resend
-- `RESEND_FROM_EMAIL` - Email remitente
-
-*Ver `.env.local` para los valores reales.*
-
-**Archivo creado:**
-- `src/server/resend.ts` - Cliente de Resend con función `sendEmail()`
-
-**Prueba realizada:**
-- Email de prueba enviado exitosamente a blackdayg@gmail.com
-- ID del email: 1834fab5-492a-449a-9dbd-e5e2b08b871e
-
----
-
-### Polar (Pagos)
-
-**Estado:** ✅ Configurado y verificado
-
-**Variables de entorno:**
-- `POLAR_ACCESS_TOKEN` - Token de acceso a Polar API
-- `POLAR_WEBHOOK_SECRET` - Secreto para webhooks (pendiente)
-- `POLAR_SERVER` - Entorno (production/sandbox)
-
-*Ver `.env.local` para los valores reales.*
-
-**Archivo creado:**
-- `src/server/polar.ts` - Cliente de Polar
-
-**Organización verificada:**
-- Nombre: pierspenunuri
-- ID: 2b069460-7605-4dce-8342-16c3036e7971
-- Moneda por defecto: MXN (pesos mexicanos)
-- Estado: created
-
----
-
-### Twilio (SMS)
-
-**Estado:** ⏭️ Omitido por ahora
-
-El usuario indicó que no necesita SMS en este momento. Las variables están vacías en `.env.local` pero el archivo `src/server/twilio.ts` ya está creado y listo para usar.
+| Rol | Fuente | Uso |
+|---|---|---|
+| Marca | Pacifico | Logo "Mideli" en la UI |
+| Headings | Sora | Títulos, botones, labels |
+| Body | Karla | Texto general, formularios |
+| Mono | JetBrains Mono | Números de orden, precios, tickets |
 
 ---
 
@@ -134,90 +52,129 @@ El usuario indicó que no necesita SMS en este momento. Las variables están vac
 ```
 mideli/
 ├── .opencode/
-│   └── skills/              # 18 skills instaladas
+│   └── skills/                    # Skills instaladas (UI/UX Pro Max, etc.)
 ├── src/
-│   ├── app/                 # Rutas Next.js (App Router)
+│   ├── app/
+│   │   ├── globals.css            # Design tokens (paleta Mideli)
+│   │   ├── layout.tsx             # Root layout (fuentes, lang=es)
+│   │   ├── page.tsx               # Landing page
+│   │   ├── login/page.tsx         # Login
+│   │   ├── register/page.tsx      # Registro
+│   │   ├── auth/callback/route.ts # Auth callback
+│   │   ├── dashboard/
+│   │   │   ├── layout.tsx         # Layout con toggle Mesero/Cocina
+│   │   │   └── page.tsx           # Vista conmutable
+│   │   ├── menu/page.tsx          # CRUD de menú
+│   │   └── settings/page.tsx      # Configuración
 │   ├── components/
-│   │   └── ui/             # Componentes shadcn/ui
+│   │   ├── ui/                    # shadcn/ui (Button, Card, Input, Label)
+│   │   ├── auth/
+│   │   │   ├── login-form.tsx     # Formulario de login
+│   │   │   └── register-form.tsx  # Formulario de registro
+│   │   └── dashboard/
+│   │       ├── mesero-view.tsx    # Vista POS (tomar pedidos)
+│   │       └── cocina-view.tsx    # Vista KDS (pedidos en cocina)
 │   ├── lib/
-│   │   ├── supabase/       # Clientes de Supabase
-│   │   └── utils.ts        # Utilidades (cn, etc.)
+│   │   ├── supabase/              # Clientes Supabase
+│   │   └── utils.ts               # Helpers (cn)
 │   ├── server/
-│   │   ├── resend.ts       # Cliente de Resend
-│   │   ├── twilio.ts       # Cliente de Twilio
-│   │   └── polar.ts        # Cliente de Polar
-│   └── middleware.ts       # Middleware Next.js
-├── .env.local              # Variables de entorno (NO commiteado)
-├── .env.example            # Plantilla de variables
-├── AGENTS.md               # Instrucciones para agentes
-├── CLAUDE.md               # Instrucciones específicas de Claude
-└── README.md               # Documentación del proyecto
+│   │   ├── resend.ts              # Email
+│   │   ├── twilio.ts              # SMS
+│   │   └── polar.ts               # Pagos
+│   └── middleware.ts              # Protección de rutas
+├── AGENTS.md                      # Instrucciones para agentes (español)
+├── .env.local                     # Variables de entorno (NO commiteado)
+└── .env.example                   # Plantilla de variables
 ```
 
 ---
 
-## Decisiones Tomadas
+## Base de Datos (Supabase)
 
-1. **Nombre del proyecto:** mideli (minúsculas por restricciones de npm)
-2. **Ubicación:** C:\Users\XPERT\Desktop\mideli
-3. **Stack:** Next.js 16 + Supabase + shadcn/ui + Resend + Polar
-4. **Skills:** 18 skills instaladas globalmente y en el proyecto
-5. **Moneda:** MXN (pesos mexicanos) en Polar
-6. **Servidor:** Actualmente corriendo en http://localhost:3000
+### Tablas
+
+| Tabla | Descripción |
+|---|---|
+| `profiles` | Perfiles de usuario (vinculado a auth.users) |
+| `categories` | Categorías del menú |
+| `menu_items` | Platillos (nombre, precio, categoría, activo/inactivo) |
+| `orders` | Pedidos (número, status, tipo, total) |
+| `order_items` | Items de cada pedido |
+| `order_status_log` | Historial de cambios de status |
+
+### Status de pedido
+
+`pending` → `in_kitchen` → `ready` → `served` → `paid`
+
+### Tipos de orden
+
+`comedor`, `domicilio`, `para_llevar`
+
+### Roles de usuario
+
+`owner`, `admin`, `waiter`, `kitchen`
+
+### Realtime
+
+Habilitado para: `orders`, `order_items`, `order_status_log`
+
+### RLS
+
+Todas las tablas tienen Row Level Security habilitado. Usuarios autenticados pueden leer y escribir.
+
+### Trigger
+
+Al crear un usuario en `auth.users`, se crea automáticamente un registro en `profiles`.
 
 ---
 
-## Archivos de Configuración
+## Flujo Principal
 
-### .env.local
-Este archivo contiene todas las variables de entorno con valores reales. **No está commiteado** por seguridad.
+1. **Mesero** toma pedido en tablet → selecciona platillos por categoría → agrega notas → "Enviar a Cocina"
+2. **Cocina** ve el pedido al instante (Realtime) → prepara → marca "Listo"
+3. **Mesero** ve que está listo → sirve → cobra → marca "Pagado"
 
-Para ver los valores actuales, ejecuta:
-```bash
-cat .env.local
-```
+### Toggle Mesero/Cocina
 
-### opencode.json (global)
-El archivo de configuración global de opencode está en `~/.config/opencode/opencode.json` e incluye:
-- MCP de Context7 (documentación)
-- MCP de Firebase
-- MCP de Supabase (autenticado con OAuth)
+- Misma URL (`/dashboard`), toggle en el header
+- Se persiste en `localStorage`
+- La tablet arranca en modo mesero, la pantalla de cocina en modo cocina
+- El dueño puede cambiar en cualquier momento
 
 ---
 
-## Comandos Útiles
+## Servicios Configurados
+
+| Servicio | Estado | Variables |
+|---|---|---|
+| Supabase | ✅ Configurado | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` |
+| Resend | ✅ Configurado + probado | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` |
+| Polar | ✅ Configurado | `POLAR_ACCESS_TOKEN`, `POLAR_SERVER` |
+| Twilio | ⏭️ Pendiente | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` |
+
+---
+
+## Comandos
 
 ```bash
-# Iniciar servidor de desarrollo
-npm run dev
-
-# Construir para producción
-npm run build
-
-# Verificar código con ESLint
-npm run lint
-
-# Ver skills disponibles
-/skills
-
-# Ver planes guardados
-/plans
+npm run dev          # Servidor de desarrollo
+npm run build        # Build de producción
+npm run lint         # Verificación ESLint
+npm run start        # Servidor de producción
 ```
 
 ---
 
 ## Próximos Pasos
 
-El proyecto está listo para empezar a construir funcionalidad. Todas las dependencias están instaladas, los servicios configurados, y las skills activas.
-
-**Para continuar:**
-1. Abrir una terminal en `C:\Users\XPERT\Desktop\mideli`
-2. Ejecutar `opencode`
-3. Las skills se cargarán automáticamente
-4. Empezar a construir
+1. **Conectar vistas a Supabase** — Reemplazar datos demo con queries reales
+2. **Realtime en cocina** — Suscribirse a cambios en `orders` con Supabase Realtime
+3. **Menú desde DB** — CRUD conectado a tablas `categories` y `menu_items`
+4. **Cobro** — Flujo de pago (efectivo / tarjeta)
+5. **Historial** — Vista de órdenes pasadas y reportes básicos
+6. **Despliegue** — Configurar Vercel
 
 ---
 
-**Fecha de handoff:** 2026-07-21  
-**Sesión original:** just-dipping-landingpage  
-**Proyecto destino:** mideli
+**Fecha de handoff:** 2026-07-21
+**Sesión:** bases-completas
