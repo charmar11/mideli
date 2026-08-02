@@ -40,3 +40,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+
+# QA artifacts and local tooling state
+/.tmp/
+/test-results/
+/.impeccable/
+
+# audio sources live in public/sounds
+/*.mp3

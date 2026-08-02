@@ -1,0 +1,12 @@
+.codex
+.impeccable
+.opencode
+.tmp
+test-results
+docs
+imagenes
+/supabase/
+/*.mp3
+AGENTS.md
+DESIGN.md
+PRODUCT.md
