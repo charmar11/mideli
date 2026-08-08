@@ -13,6 +13,7 @@ interface CatalogState {
   createCategory: (name: string) => Promise<Category | null>;
   updateCategory: (id: string, updates: Partial<Category>) => Promise<boolean>;
   deleteCategory: (id: string) => Promise<boolean>;
+  reorderCategories: (categoryIds: string[]) => Promise<boolean>;
   createMenuItem: (item: Omit<MenuItem, "id" | "created_at" | "updated_at">) => Promise<MenuItem | null>;
   updateMenuItem: (id: string, updates: Partial<MenuItem>) => Promise<boolean>;
   deleteMenuItem: (id: string) => Promise<boolean>;
@@ -95,9 +96,14 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
 
   createCategory: async (name: string) => {
     const supabase = createClient();
+    const nextSortOrder =
+      get().categories.reduce(
+        (highest, category) => Math.max(highest, category.sort_order ?? 0),
+        -1
+      ) + 1;
     const { data, error } = await supabase
       .from("categories")
-      .insert({ name })
+      .insert({ name, sort_order: nextSortOrder })
       .select()
       .single();
 
@@ -146,6 +152,43 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       categories: state.categories.filter((c) => c.id !== id),
       menuItems: state.menuItems.filter((m) => m.category_id !== id),
     }));
+    return true;
+  },
+
+  reorderCategories: async (categoryIds: string[]) => {
+    const previousCategories = get().categories;
+    if (
+      categoryIds.length !== previousCategories.length ||
+      new Set(categoryIds).size !== previousCategories.length
+    ) {
+      return false;
+    }
+
+    const categoryById = new Map(
+      previousCategories.map((category) => [category.id, category])
+    );
+    const reordered = categoryIds.map((id, index) => {
+      const category = categoryById.get(id);
+      return category ? { ...category, sort_order: index } : null;
+    });
+
+    if (reordered.some((category) => category === null)) {
+      return false;
+    }
+
+    set({ categories: reordered as Category[] });
+
+    const supabase = createClient();
+    const { error } = await supabase.rpc("reorder_categories", {
+      p_category_ids: categoryIds,
+    });
+
+    if (error) {
+      set({ categories: previousCategories });
+      return false;
+    }
+
+    catalogFetchedAt = Date.now();
     return true;
   },
 

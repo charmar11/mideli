@@ -1,10 +1,22 @@
 "use client";
 
-import { ArrowLeftRight, Banknote, CreditCard, Loader2, Save, X } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Banknote,
+  Check,
+  CreditCard,
+  Loader2,
+  Save,
+  ShieldCheck,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { listPaymentAuthorizersAction } from "@/lib/actions/users";
 import { createClient } from "@/lib/supabase/client";
-import type { PaymentMethod } from "@/types/payments";
+import type { Profile } from "@/types/database";
+import type { PaymentAuthorizer, PaymentMethod } from "@/types/payments";
 
 type TenderRow = {
   id: string;
@@ -29,14 +41,22 @@ function money(value: number) {
   }).format(value);
 }
 
+function methodLabel(method: PaymentMethod) {
+  return METHODS.find((entry) => entry.method === method)?.label ?? method;
+}
+
 export function PaymentMethodCorrectionDialog({
   transactionId,
   folio,
+  viewerRole,
+  closedShift,
   onClose,
   onCorrected,
 }: {
   transactionId: string;
   folio: number;
+  viewerRole: Profile["role"];
+  closedShift: boolean;
   onClose: () => void;
   onCorrected: () => void | Promise<void>;
 }) {
@@ -44,9 +64,16 @@ export function PaymentMethodCorrectionDialog({
   const [selectedTenderId, setSelectedTenderId] = useState("");
   const [nextMethod, setNextMethod] = useState<PaymentMethod | "">("");
   const [reason, setReason] = useState("");
+  const [authorizers, setAuthorizers] = useState<PaymentAuthorizer[]>([]);
+  const [authorizerId, setAuthorizerId] = useState("");
+  const [pin, setPin] = useState("");
+  const [authorizationToken, setAuthorizationToken] = useState<string | null>(null);
+  const [authorizationKey, setAuthorizationKey] = useState(() => crypto.randomUUID());
   const [loading, setLoading] = useState(true);
+  const [authorizing, setAuthorizing] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const requiresAuthorization = viewerRole === "waiter";
   const selectedTender = useMemo(
     () => tenders.find((tender) => tender.id === selectedTenderId) ?? null,
     [selectedTenderId, tenders]
@@ -54,36 +81,105 @@ export function PaymentMethodCorrectionDialog({
 
   useEffect(() => {
     let active = true;
-    async function loadTenders() {
-      const result = await createClient()
+
+    async function loadCorrectionContext() {
+      const tendersPromise = createClient()
         .from("payment_tenders")
         .select("id,method,amount")
         .eq("transaction_id", transactionId)
         .order("created_at");
+      const authorizersPromise = requiresAuthorization
+        ? listPaymentAuthorizersAction()
+        : Promise.resolve({ authorizers: [], error: null });
+
+      const [tendersResult, authorizersResult] = await Promise.all([
+        tendersPromise,
+        authorizersPromise,
+      ]);
       if (!active) return;
 
       setLoading(false);
-      const rows = result.data as TenderRow[] | null;
-      if (result.error || !rows?.length) {
-        toast.error(result.error?.message ?? "No se encontraron los métodos del pago");
+      const rows = tendersResult.data as TenderRow[] | null;
+      if (tendersResult.error || !rows?.length) {
+        toast.error(
+          tendersResult.error?.message ?? "No se encontraron los métodos del pago"
+        );
         return;
       }
 
       setTenders(rows);
       setSelectedTenderId(rows[0].id);
+      setAuthorizers(authorizersResult.authorizers);
+      setAuthorizerId(authorizersResult.authorizers[0]?.id ?? "");
+      if (authorizersResult.error) {
+        toast.error(authorizersResult.error);
+      }
     }
 
-    void loadTenders();
+    void loadCorrectionContext();
 
     return () => {
       active = false;
     };
-  }, [transactionId]);
+  }, [requiresAuthorization, transactionId]);
+
+  function resetAuthorization() {
+    setAuthorizationToken(null);
+    setPin("");
+    setAuthorizationKey(crypto.randomUUID());
+  }
+
+  function selectTender(tenderId: string) {
+    setSelectedTenderId(tenderId);
+    setNextMethod("");
+    resetAuthorization();
+  }
+
+  async function authorizeCorrection() {
+    if (
+      !selectedTender ||
+      !authorizerId ||
+      pin.length !== 4 ||
+      authorizing
+    ) {
+      return;
+    }
+
+    setAuthorizing(true);
+    const { data, error } = await createClient().rpc(
+      "authorize_payment_method_correction",
+      {
+        p_tender_id: selectedTender.id,
+        p_authorizer_id: authorizerId,
+        p_pin: pin,
+        p_idempotency_key: authorizationKey,
+      }
+    );
+    setAuthorizing(false);
+    setPin("");
+
+    if (error) {
+      toast.error("No se pudo autorizar", { description: error.message });
+      return;
+    }
+
+    if (!data) {
+      toast.error("PIN incorrecto");
+      return;
+    }
+
+    setAuthorizationToken(data as string);
+    toast.success("Corrección autorizada");
+  }
 
   async function saveCorrection() {
     if (!selectedTender || !nextMethod || saving) return;
     if (reason.trim().length < 4) {
       toast.error("Escribe el motivo de la corrección");
+      return;
+    }
+    if (requiresAuthorization && !authorizationToken) {
+      toast.error("Solicita la autorización del administrador");
       return;
     }
 
@@ -92,6 +188,7 @@ export function PaymentMethodCorrectionDialog({
       p_tender_id: selectedTender.id,
       p_new_method: nextMethod,
       p_reason: reason.trim(),
+      p_authorization: authorizationToken,
     });
     setSaving(false);
 
@@ -105,15 +202,26 @@ export function PaymentMethodCorrectionDialog({
     onClose();
   }
 
+  const canSave =
+    !loading &&
+    !saving &&
+    Boolean(selectedTender) &&
+    Boolean(nextMethod) &&
+    reason.trim().length >= 4 &&
+    (!requiresAuthorization || Boolean(authorizationToken));
+
   return (
     <div className="fixed inset-0 z-[95] flex items-end justify-center bg-ink/75 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="payment-correction-title"
-        className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:rounded-2xl"
+        className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:rounded-2xl"
       >
         <header className="flex items-start gap-3 border-b border-border p-4 sm:p-5">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-warning/12 text-warning">
+            <ArrowLeftRight aria-hidden size={20} />
+          </span>
           <div className="min-w-0 flex-1">
             <h2 id="payment-correction-title" className="font-heading text-lg font-bold">
               Corregir método de pago
@@ -135,11 +243,20 @@ export function PaymentMethodCorrectionDialog({
 
         <div className="pos-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-5">
           {loading ? (
-            <div className="flex min-h-40 items-center justify-center text-brand">
+            <div className="flex min-h-48 items-center justify-center text-brand">
               <Loader2 aria-label="Cargando métodos" size={24} className="animate-spin" />
             </div>
           ) : (
             <>
+              {closedShift ? (
+                <div className="flex gap-3 rounded-xl bg-warning/10 p-3 text-warning">
+                  <TriangleAlert aria-hidden size={18} className="mt-0.5 shrink-0" />
+                  <p className="font-body text-xs leading-relaxed">
+                    Este pago pertenece a un corte cerrado. El corte original se conservará y el cambio se registrará como una reclasificación.
+                  </p>
+                </div>
+              ) : null}
+
               {tenders.length > 1 ? (
                 <fieldset>
                   <legend className="mb-2 font-heading text-sm font-bold">
@@ -155,10 +272,10 @@ export function PaymentMethodCorrectionDialog({
                             : "border-border bg-background"
                         }`}
                       >
-                        <span className="font-heading text-sm font-bold capitalize">
-                          {tender.method}
+                        <span className="font-heading text-sm font-bold">
+                          {methodLabel(tender.method)}
                         </span>
-                        <span className="font-data text-sm font-bold text-gold">
+                        <span className="ml-auto font-data text-sm font-bold text-gold">
                           {money(tender.amount)}
                         </span>
                         <input
@@ -166,10 +283,7 @@ export function PaymentMethodCorrectionDialog({
                           name="tender"
                           value={tender.id}
                           checked={selectedTenderId === tender.id}
-                          onChange={() => {
-                            setSelectedTenderId(tender.id);
-                            setNextMethod("");
-                          }}
+                          onChange={() => selectTender(tender.id)}
                           className="sr-only"
                         />
                       </label>
@@ -177,16 +291,20 @@ export function PaymentMethodCorrectionDialog({
                   </div>
                 </fieldset>
               ) : selectedTender ? (
-                <div className="flex items-center justify-between rounded-xl bg-background p-3">
-                  <span className="font-body text-sm text-muted-foreground">Registrado como</span>
-                  <strong className="font-heading text-sm capitalize">
-                    {selectedTender.method} · {money(selectedTender.amount)}
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-background p-3">
+                  <span className="font-body text-sm text-muted-foreground">
+                    Registrado como
+                  </span>
+                  <strong className="text-right font-heading text-sm">
+                    {methodLabel(selectedTender.method)} · {money(selectedTender.amount)}
                   </strong>
                 </div>
               ) : null}
 
               <fieldset disabled={!selectedTender}>
-                <legend className="mb-2 font-heading text-sm font-bold">Método correcto</legend>
+                <legend className="mb-2 font-heading text-sm font-bold">
+                  Método correcto
+                </legend>
                 <div className="grid grid-cols-3 gap-2">
                   {METHODS.map(({ method, label, icon: Icon }) => {
                     const isCurrent = selectedTender?.method === method;
@@ -224,9 +342,95 @@ export function PaymentMethodCorrectionDialog({
                   maxLength={300}
                   rows={3}
                   placeholder="Ej. Se registró tarjeta, pero el cliente pagó por transferencia"
-                  className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-brand"
+                  className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-brand focus:ring-2 focus:ring-brand-light"
                 />
               </label>
+
+              {requiresAuthorization ? (
+                <section className="rounded-xl border border-border bg-background p-3">
+                  <div className="mb-3 flex items-center gap-2">
+                    <ShieldCheck aria-hidden size={17} className="text-brand" />
+                    <h3 className="font-heading text-sm font-bold">
+                      Autorización administrativa
+                    </h3>
+                    {authorizationToken ? (
+                      <span className="ml-auto inline-flex items-center gap-1 font-body text-xs font-bold text-success">
+                        <Check aria-hidden size={14} /> Autorizado
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {authorizationToken ? (
+                    <button
+                      type="button"
+                      onClick={resetAuthorization}
+                      className="h-11 w-full rounded-xl bg-success/12 font-heading text-xs font-bold text-success hover:bg-success/18"
+                    >
+                      Cambiar autorización
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <select
+                        value={authorizerId}
+                        onChange={(event) => {
+                          setAuthorizerId(event.target.value);
+                          resetAuthorization();
+                        }}
+                        className="form-input"
+                      >
+                        {authorizers.length === 0 ? (
+                          <option value="">Sin administradores disponibles</option>
+                        ) : null}
+                        {authorizers.map((authorizer) => (
+                          <option key={authorizer.id} value={authorizer.id}>
+                            {authorizer.full_name ||
+                              (authorizer.role === "owner"
+                                ? "Propietario"
+                                : "Administrador")}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={4}
+                          value={pin}
+                          onChange={(event) =>
+                            setPin(event.target.value.replace(/\D/g, "").slice(0, 4))
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && pin.length === 4) {
+                              void authorizeCorrection();
+                            }
+                          }}
+                          placeholder="PIN de 4 dígitos"
+                          className="form-input"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void authorizeCorrection()}
+                          disabled={
+                            authorizing ||
+                            !selectedTender ||
+                            !authorizerId ||
+                            pin.length !== 4
+                          }
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {authorizing ? (
+                            <Loader2 aria-hidden size={15} className="animate-spin" />
+                          ) : (
+                            <ShieldCheck aria-hidden size={15} />
+                          )}
+                          Autorizar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              ) : null}
             </>
           )}
         </div>
@@ -242,11 +446,15 @@ export function PaymentMethodCorrectionDialog({
           </button>
           <button
             type="button"
-            disabled={loading || saving || !selectedTender || !nextMethod || reason.trim().length < 4}
+            disabled={!canSave}
             onClick={() => void saveCorrection()}
             className="action-success inline-flex h-12 items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {saving ? <Loader2 aria-hidden size={17} className="animate-spin" /> : <Save aria-hidden size={17} />}
+            {saving ? (
+              <Loader2 aria-hidden size={17} className="animate-spin" />
+            ) : (
+              <Save aria-hidden size={17} />
+            )}
             Guardar corrección
           </button>
         </footer>

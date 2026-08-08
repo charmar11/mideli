@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-08-02
+Actualizado: 2026-08-08
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -80,11 +80,13 @@ El cambio solicitado para sabores de boneless fue:
 - Usar Buffalo Ranch, Cajun, Ajo Parmesano y Honey Mustard.
 - Conservar las opciones existentes que siguen siendo válidas, como Buffalo y BBQ.
 
-La base remota tiene 6 categorías y 39 productos en el corte del 2026-07-31. Los toppings no son productos independientes: se agregan como un grupo opcional dentro de cada sushi.
+Los toppings no son productos independientes: se agregan como un grupo opcional dentro de cada sushi. Los conteos vigentes del catálogo se documentan en la sección de estado y deben volver a consultarse cuando una tarea dependa de ellos.
 
 Cada opción de variación puede tener información adicional. En los toppings de sushi se muestran sus ingredientes: Dracarys contiene queso, tocino y spicy; Mr. Crab contiene queso, zanahoria, surimi empanizado y spicy; Cordon Blue contiene queso, tocino y serrano; Gratinado contiene queso; Especial contiene Philadelphia y spicy.
 
 La administración del menú debe ser completamente editable: nombre, precio, descripción, imagen, categoría, estado activo y grupos de variaciones. El editor permite crear, renombrar, eliminar y marcar como requeridos los grupos, además de editar sus opciones y precios extra. Cada grupo se configura como selección de una opción o selección múltiple con máximo opcional. Las acciones de edición se mantienen visibles para tablet y los errores de guardado no cierran el formulario.
+
+Desde la migración `20260808160831_payment_correction_auth_and_category_order.sql`, owner y admin pueden ordenar todas las categorías mediante arrastre. El orden completo se guarda en un solo RPC transaccional y se consume igual en Menú y POS. El cliente publica el cambio de forma optimista y restaura el orden anterior si el guardado falla. Las categorías nuevas se agregan al final.
 
 ### Mesas y zonas
 
@@ -163,7 +165,8 @@ El cobro pasó a un libro mayor transaccional (migración `20260801092945_unifie
 - Soporta pago completo, parcial, combinado, dividido (equitativo o por productos), propina y descuento con PIN administrativo de un solo uso (intentos persistidos, autorización ligada al monto).
 - Confirmación y anulación con bloqueos de fila e idempotencia en PostgreSQL; las escrituras directas legacy fueron retiradas.
 - Interfaz: `src/components/payments/payment-flow.tsx` (panel central en tableta, hoja inferior en móvil), ticket fijo de 48 mm, reimpresión marcada, anulación administrativa y guía interna para todas las variantes de cobro.
-- Owner y admin pueden corregir el método de un pago desde Historial. Cada corrección exige motivo y queda en `payment_tender_method_changes`; la función transaccional actualiza el libro mayor y el snapshot del ticket.
+- Owner y admin pueden corregir directamente el método de un pago desde Historial. Un mesero también puede hacerlo, pero requiere un PIN vigente de owner o admin. Cada corrección exige motivo, identifica solicitante y autorizador, queda en `payment_tender_method_changes` y actualiza el libro mayor y el snapshot del ticket.
+- Si la corrección pertenece a un corte cerrado, el snapshot original se conserva y se registran dos reclasificaciones auditables en `cash_shift_adjustments`.
 - Folios de orden consecutivos vía `order_folio_counter`.
 
 ### PWA y notificaciones
@@ -192,11 +195,13 @@ El editor de productos carga fotos desde el dispositivo (cámara, galería o arc
 
 Se agregó el rol `supervisor` (puede usar POS y KDS, no administración) y el estado activo de cuentas (`profiles.is_active`). El proxy solo cierra sesión si el perfil falta o está explícitamente inactivo; errores transitorios envían a `/reconectando` y conservan la sesión. El middleware de Next se reemplazó por `src/proxy.ts` (convención de Next 16) con control de rutas por rol: administración y analíticas solo owner/admin, inventario solo owner/admin, POS y KDS según rol.
 
+La navegación operativa mantiene Mesero, Cocina y Analíticas visibles según permisos. Owner y admin encuentran Menú, Personal y Mesas en `Administrar`, e Inventario, Caja e Impresión en `Control`. En móvil, las herramientas administrativas viven dentro de `Más`; en tablet usan menús desplegables y en escritorio grupos colapsables.
+
 ## 5. Arquitectura actual
 
 Stack:
 
-- Next.js 16.2.10 con App Router.
+- Next.js 16.2.12 con App Router.
 - React 19 y TypeScript estricto.
 - Tailwind CSS v4.
 - shadcn/ui sobre Base UI.
@@ -224,9 +229,9 @@ Rutas principales:
 
 El layout del dashboard cambia la navegación según el tamaño:
 
-- Desktop: rail lateral.
-- Tablet: header superior con navegación horizontal.
-- Móvil: header compacto y navegación inferior.
+- Desktop: rail lateral con grupos administrativos colapsables.
+- Tablet: header superior con operación visible y menús `Administrar` y `Control`.
+- Móvil: header compacto, navegación inferior operativa y hoja `Más` para administración.
 
 ## 6. Archivos importantes
 
@@ -242,6 +247,7 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `src/components/admin/table-layout-inspector.tsx` | Editor central táctil para zonas y mesas |
 | `src/components/admin/inventory-manager.tsx` y `src/components/admin/inventory/` | Administración de inventario, recetas, compras y conteos |
 | `src/components/payments/payment-flow.tsx` | Flujo táctil de cobro: descuento, división, propina, métodos combinados |
+| `src/components/payments/payment-method-correction-dialog.tsx` | Corrección auditada de métodos de pago y autorización por PIN para mesero |
 | `src/components/cash/cash-shift-control.tsx` y `src/lib/stores/cash-shift-store.ts` | Apertura, movimientos y cierre de caja |
 | `src/components/license-heartbeat.tsx`, `src/lib/license.ts`, `src/lib/license-server.ts` | Vigencia de licencia en cliente y servidor |
 | `src/proxy.ts` | Sesión, licencia y control de rutas por rol (reemplaza a `src/middleware.ts`) |
@@ -249,6 +255,8 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `src/lib/product-images.ts` | Carga y limpieza de fotos de productos |
 | `src/lib/order-location.ts` | Snapshot de ubicación del pedido (zona y mesa) |
 | `src/lib/stores/catalog-store.ts` | Lectura y CRUD de categorías y menú, con caché de 30 s en carga conjunta |
+| `src/components/admin/category-manager.tsx` | Edición y orden accesible de categorías por mouse, tacto y teclado |
+| `src/components/dashboard/dashboard-shell.tsx` | Navegación responsiva por rol, operación y grupos administrativos |
 | `src/lib/stores/cart-store.ts` | Estado local del pedido actual |
 | `src/lib/stores/order-store.ts` | CRUD de órdenes, estados, cobro y suscripción Realtime |
 | `src/lib/stores/tables-store.ts` | Lectura y CRUD del mapa, con deduplicación y caché de 30 s |
@@ -287,7 +295,7 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- Migraciones locales y remotas alineadas: 31 migraciones, de `00001` a `20260801131509`.
+- Migraciones locales y remotas alineadas: 38 migraciones, de `00001` a `20260808160831`.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
@@ -335,13 +343,15 @@ Los conteos son una fotografía, no una garantía futura. Si una tarea depende d
 
 Pendientes prioritarios:
 
-1. Hacer QA manual del POS en tabletas reales y corregir cualquier clipping, panel cortado o categoría ilegible.
-2. Conectar la impresora física, seleccionar el tamaño real de 48 mm y validar corte, márgenes y modo de impresión directa en la laptop definitiva.
-3. Validar en operación real el cobro completo, combinado, dividido, con descuento, propina y corrección auditada de método.
-4. Validar un turno de caja completo: apertura, movimientos, cierre ciego y transferencia de cuentas pendientes.
-5. Confirmar en dispositivos reales los avisos PWA, sonido de pedido listo y pausa por dispositivo.
-6. Completar una auditoría adicional de permisos por rol antes de operar con datos reales.
-7. Agregar pruebas automatizadas para stores, cobro, impresión e inventario.
+1. Ejecutar el checklist de piloto de `docs/releases/v0.9-piloto.md` en tablet, móvil, laptop e impresora reales.
+2. Diseñar e implementar un modo de contingencia para continuar tomando pedidos ante una caída de internet.
+3. Configurar monitoreo de errores, verificación de disponibilidad y un procedimiento probado de respaldo y restauración.
+4. Crear el resumen diario del dueño con ventas, corte, inventario, mermas, cancelaciones y tiempos de cocina.
+5. Validar en operación real todos los cobros, correcciones, cierres de caja, impresión y notificaciones PWA.
+6. Agregar pruebas automatizadas para pedidos, cobro, caja, impresión, inventario y permisos.
+7. Después de estabilizar el piloto, priorizar disponibilidad de platillos, rentabilidad por receta, clientes/lealtad y pedidos directos.
+
+El plan ordenado para continuar vive en `.opencode/plans/next-session-plan.md`.
 
 ## 10. Verificación obligatoria
 

@@ -576,7 +576,7 @@ export async function listProfilesAction(): Promise<{
   }
 }
 
-export async function getCurrentUserRole(): Promise<string | null> {
+export async function getCurrentUserRole(): Promise<Profile["role"] | null> {
   const supabase = await createClient();
   const {
     data: { user },

@@ -40,7 +40,7 @@ import {
   formatPaymentMoney,
 } from "@/components/payments/payment-flow";
 import { createClient } from "@/lib/supabase/client";
-import type { Order } from "@/types/database";
+import type { Order, Profile } from "@/types/database";
 import type { PaymentReceipt } from "@/types/payments";
 import { formatOrderLocation } from "@/lib/order-location";
 import { useCashShiftStore } from "@/lib/stores";
@@ -49,6 +49,14 @@ import { PaymentMethodCorrectionDialog } from "@/components/payments/payment-met
 type StatusFilter = "all" | Order["status"];
 type TypeFilter = "all" | Order["type"];
 type PaymentFilter = "all" | "pending" | NonNullable<Order["payment_method"]>;
+type TicketChoice = {
+  id: string;
+  folio: number;
+  status: "completed" | "voided";
+  total_amount: number;
+  cash_shift_id: string | null;
+  created_at: string;
+};
 
 const TYPE_LABELS: Record<Order["type"], string> = {
   comedor: "Comedor",
@@ -333,12 +341,14 @@ function OrderDetail({
   onDelete,
   onPay,
   onReceipt,
+  onCorrectPayment,
 }: {
   order: SalesHistoryOrder;
   onClose?: () => void;
   onDelete?: () => void;
   onPay?: () => void;
   onReceipt?: () => void;
+  onCorrectPayment?: () => void;
 }) {
   const status = STATUS_META[order.status];
 
@@ -514,15 +524,29 @@ function OrderDetail({
               Cobrar pedido
             </button>
           ) : null}
-          {onReceipt && Number(order.paid_amount ?? 0) > 0 ? (
-            <button
-              type="button"
-              onClick={onReceipt}
-              className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-surface-raised font-heading text-xs font-bold text-foreground hover:bg-border"
-            >
-              <Printer size={16} />
-              Ver tickets y reimprimir
-            </button>
+          {Number(order.paid_amount ?? 0) > 0 && (onReceipt || onCorrectPayment) ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {onReceipt ? (
+                <button
+                  type="button"
+                  onClick={onReceipt}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:bg-border"
+                >
+                  <Printer size={16} />
+                  Ver tickets
+                </button>
+              ) : null}
+              {onCorrectPayment ? (
+                <button
+                  type="button"
+                  onClick={onCorrectPayment}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning hover:bg-warning/18"
+                >
+                  <Pencil size={15} />
+                  Corregir método
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -542,12 +566,17 @@ export function SalesHistory() {
   const [deleteTarget, setDeleteTarget] = useState<SalesHistoryOrder | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [paymentOrders, setPaymentOrders] = useState<SalesHistoryOrder[] | null>(null);
-  const [ticketChoices, setTicketChoices] = useState<Array<{ id: string; folio: number; status: "completed" | "voided"; total_amount: number; created_at: string }>>([]);
+  const [ticketChoices, setTicketChoices] = useState<TicketChoice[]>([]);
   const [ticketOrder, setTicketOrder] = useState<SalesHistoryOrder | null>(null);
+  const [ticketIntent, setTicketIntent] = useState<"view" | "correct">("view");
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [ticketLoading, setTicketLoading] = useState(false);
-  const [correctionTicket, setCorrectionTicket] = useState<{ id: string; folio: number } | null>(null);
-  const [viewerRole, setViewerRole] = useState<string | null>(null);
+  const [correctionTicket, setCorrectionTicket] = useState<{
+    id: string;
+    folio: number;
+    cashShiftId: string | null;
+  } | null>(null);
+  const [viewerRole, setViewerRole] = useState<Profile["role"] | null>(null);
   const [expandedPendingAccount, setExpandedPendingAccount] = useState<string | null>(null);
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
 
@@ -625,6 +654,9 @@ export function SalesHistory() {
   const canDeleteHistory = ["owner", "admin", "supervisor", "waiter"].includes(
     viewerRole ?? ""
   );
+  const canCorrectPayment = ["owner", "admin", "waiter"].includes(
+    viewerRole ?? ""
+  );
 
   function openPaymentModal(order: SalesHistoryOrder) {
     if (!currentCashShift) {
@@ -642,8 +674,12 @@ export function SalesHistory() {
     setPaymentOrders(account.orders);
   }
 
-  async function openTickets(order: SalesHistoryOrder) {
+  async function openTickets(
+    order: SalesHistoryOrder,
+    intent: "view" | "correct" = "view"
+  ) {
     setTicketOrder(order);
+    setTicketIntent(intent);
     setTicketChoices([]);
     setTicketLoading(true);
     const supabase = createClient();
@@ -661,7 +697,7 @@ export function SalesHistory() {
     const ids = Array.from(new Set(allocationRows.map((row) => row.transaction_id)));
     const { data, error: transactionError } = await supabase
       .from("payment_transactions")
-      .select("id,folio,status,total_amount,created_at")
+      .select("id,folio,status,total_amount,cash_shift_id,created_at")
       .in("id", ids)
       .order("created_at", { ascending: false });
     setTicketLoading(false);
@@ -670,7 +706,22 @@ export function SalesHistory() {
       setTicketOrder(null);
       return;
     }
-    setTicketChoices(data as typeof ticketChoices);
+    const choices = data as TicketChoice[];
+    if (intent === "correct") {
+      const completed = choices.filter((ticket) => ticket.status === "completed");
+      if (completed.length === 1) {
+        const ticket = completed[0];
+        setTicketOrder(null);
+        setTicketChoices([]);
+        setCorrectionTicket({
+          id: ticket.id,
+          folio: ticket.folio,
+          cashShiftId: ticket.cash_shift_id,
+        });
+        return;
+      }
+    }
+    setTicketChoices(choices);
   }
 
   async function viewReceipt(transactionId: string) {
@@ -908,6 +959,11 @@ export function SalesHistory() {
                   onDelete={canDeleteHistory ? () => setDeleteTarget(selectedOrder) : undefined}
                   onPay={() => openPaymentModal(selectedOrder)}
                   onReceipt={() => void openTickets(selectedOrder)}
+                  onCorrectPayment={
+                    canCorrectPayment
+                      ? () => void openTickets(selectedOrder, "correct")
+                      : undefined
+                  }
                 />
               ) : (
                 <EmptyDetail />
@@ -931,6 +987,11 @@ export function SalesHistory() {
               onDelete={canDeleteHistory ? () => setDeleteTarget(selectedOrder) : undefined}
               onPay={() => openPaymentModal(selectedOrder)}
               onReceipt={() => void openTickets(selectedOrder)}
+              onCorrectPayment={
+                canCorrectPayment
+                  ? () => void openTickets(selectedOrder, "correct")
+                  : undefined
+              }
             />
           </div>
         </div>
@@ -950,16 +1011,42 @@ export function SalesHistory() {
           <div role="dialog" aria-modal="true" aria-label="Tickets del pedido" className="w-full max-w-lg rounded-t-2xl bg-surface p-5 shadow-float sm:rounded-2xl">
             <div className="mb-4 flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-light text-brand"><ReceiptText size={19} /></span>
-              <div className="min-w-0 flex-1"><h2 className="font-heading text-lg font-bold">Tickets del pedido #{ticketOrder.number}</h2><p className="font-body text-xs text-muted-foreground">Cada pago parcial conserva su propio comprobante.</p></div>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-heading text-lg font-bold">
+                  {ticketIntent === "correct" ? "Seleccionar pago" : "Tickets"} del pedido #{ticketOrder.number}
+                </h2>
+                <p className="font-body text-xs text-muted-foreground">
+                  {ticketIntent === "correct"
+                    ? "Elige el pago cuyo método necesitas corregir."
+                    : "Cada pago parcial conserva su propio comprobante."}
+                </p>
+              </div>
               <button type="button" onClick={() => setTicketOrder(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised"><X size={18} /></button>
             </div>
             {ticketLoading && ticketChoices.length === 0 ? <div className="flex h-32 items-center justify-center"><RefreshCw size={22} className="animate-spin text-brand" /></div> : (
               <div className="space-y-2">
                 {ticketChoices.map((ticket) => (
-                  <div key={ticket.id} className="flex items-center gap-3 rounded-xl bg-background p-3">
+                  <div key={ticket.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-background p-3">
                     <div className="min-w-0 flex-1"><p className="font-data text-sm font-bold">Ticket {ticket.folio}</p><p className="font-body text-xs text-muted-foreground">{formatDateTime(ticket.created_at)} · {formatPaymentMoney(ticket.total_amount)}</p></div>
                     {ticket.status === "voided" ? <span className="rounded-full bg-destructive/10 px-2 py-1 font-heading text-[10px] font-bold text-destructive">Anulado</span> : null}
-                    {(viewerRole === "owner" || viewerRole === "admin") && ticket.status === "completed" ? <button type="button" onClick={() => setCorrectionTicket({ id: ticket.id, folio: ticket.folio })} aria-label={`Corregir método del ticket ${ticket.folio}`} title="Corregir método de pago" className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-warning/10 hover:text-warning"><Pencil size={16} /></button> : null}
+                    {canCorrectPayment && ticket.status === "completed" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCorrectionTicket({
+                            id: ticket.id,
+                            folio: ticket.folio,
+                            cashShiftId: ticket.cash_shift_id,
+                          });
+                          setTicketOrder(null);
+                          setTicketChoices([]);
+                        }}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning hover:bg-warning/18"
+                      >
+                        <Pencil size={15} />
+                        Corregir
+                      </button>
+                    ) : null}
                     {(viewerRole === "owner" || viewerRole === "admin") && ticket.status === "completed" ? <button type="button" onClick={() => void voidPayment(ticket.id)} aria-label={`Anular ticket ${ticket.folio}`} className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Ban size={16} /></button> : null}
                     <button type="button" onClick={() => void viewReceipt(ticket.id)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:bg-border"><Printer size={15} /> Ver</button>
                   </div>
@@ -972,14 +1059,18 @@ export function SalesHistory() {
 
       {receipt ? <ReceiptDialog receipt={receipt} onClose={() => setReceipt(null)} /> : null}
 
-      {correctionTicket ? (
+      {correctionTicket && viewerRole ? (
         <PaymentMethodCorrectionDialog
           transactionId={correctionTicket.id}
           folio={correctionTicket.folio}
+          viewerRole={viewerRole}
+          closedShift={Boolean(
+            correctionTicket.cashShiftId &&
+              correctionTicket.cashShiftId !== currentCashShift?.id
+          )}
           onClose={() => setCorrectionTicket(null)}
           onCorrected={async () => {
             await loadHistory();
-            if (ticketOrder) await openTickets(ticketOrder);
           }}
         />
       ) : null}
