@@ -68,6 +68,10 @@ export interface CashShift {
   difference_authorized_by: string | null;
   difference_authorized_by_name: string | null;
   closed_at: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
+  archived_by_name: string | null;
+  archive_reason: string | null;
   created_at: string;
   updated_at: string;
   operating_totals?: CashShiftTotals;

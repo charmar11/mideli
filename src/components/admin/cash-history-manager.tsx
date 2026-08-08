@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ArchiveRestore,
   ArrowLeft,
   ArrowLeftRight,
   Banknote,
@@ -18,6 +19,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Trash2,
   WalletCards,
   X,
 } from "lucide-react";
@@ -48,6 +50,9 @@ function duration(shift: CashShift) {
 }
 
 function ShiftStatus({ shift }: { shift: CashShift }) {
+  if (shift.archived_at) {
+    return <span className="rounded-full bg-destructive/10 px-2.5 py-1 font-heading text-[11px] font-bold text-destructive">Archivado</span>;
+  }
   if (shift.status === "open") {
     return <span className="rounded-full bg-success/12 px-2.5 py-1 font-heading text-[11px] font-bold text-success">En curso</span>;
   }
@@ -65,13 +70,15 @@ export function CashHistoryManager() {
   const listAuthorizers = useCashShiftStore((state) => state.listAuthorizers);
   const authorizeAction = useCashShiftStore((state) => state.authorizeAction);
   const recordAdjustment = useCashShiftStore((state) => state.recordAdjustment);
+  const archiveShift = useCashShiftStore((state) => state.archiveShift);
+  const restoreShift = useCashShiftStore((state) => state.restoreShift);
 
   const [shifts, setShifts] = useState<CashShift[]>([]);
   const [selected, setSelected] = useState<CashShiftDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"all" | "open" | "closed">("all");
+  const [status, setStatus] = useState<"all" | "open" | "closed" | "archived">("all");
   const [adjusting, setAdjusting] = useState(false);
   const [adjustMethod, setAdjustMethod] = useState<"efectivo" | "tarjeta" | "transferencia" | "otro">("efectivo");
   const [adjustDirection, setAdjustDirection] = useState<"increase" | "decrease">("increase");
@@ -81,6 +88,12 @@ export function CashHistoryManager() {
   const [authorizerId, setAuthorizerId] = useState("");
   const [pin, setPin] = useState("");
   const [saving, setSaving] = useState(false);
+  const [archiveDialog, setArchiveDialog] = useState(false);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [archiveConfirmation, setArchiveConfirmation] = useState("");
+  const [archiving, setArchiving] = useState(false);
+  const [restoreDialog, setRestoreDialog] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,16 +159,95 @@ export function CashHistoryManager() {
     toast.success("Corrección registrada", { description: "El corte original no fue modificado." });
   }
 
+  async function refreshShiftAndHistory(shiftId: string) {
+    const [historyResult, detailResult] = await Promise.all([
+      listHistory(),
+      getDetail(shiftId),
+    ]);
+
+    if (historyResult.data) setShifts(historyResult.data);
+    if (detailResult.data) setSelected(detailResult.data);
+
+    const refreshError = historyResult.error ?? detailResult.error;
+    if (refreshError) {
+      toast.error(refreshError);
+      return false;
+    }
+    return true;
+  }
+
+  function openArchiveDialog() {
+    setArchiveReason("");
+    setArchiveConfirmation("");
+    setArchiveDialog(true);
+  }
+
+  async function confirmArchive() {
+    if (!selected) return;
+    const reason = archiveReason.trim();
+    if (reason.length < 4) {
+      toast.error("Escribe un motivo de al menos 4 caracteres");
+      return;
+    }
+    if (archiveConfirmation !== "ELIMINAR") {
+      toast.error("Escribe ELIMINAR para confirmar");
+      return;
+    }
+
+    setArchiving(true);
+    const result = await archiveShift({ shiftId: selected.id, reason });
+    if (result.error) {
+      setArchiving(false);
+      toast.error(result.error);
+      return;
+    }
+
+    const refreshed = await refreshShiftAndHistory(selected.id);
+    setArchiving(false);
+    if (!refreshed) return;
+
+    setArchiveDialog(false);
+    setStatus("archived");
+    toast.success("Corte eliminado del historial", {
+      description: "La información contable se conservó y puedes restaurarlo.",
+    });
+  }
+
+  async function confirmRestore() {
+    if (!selected) return;
+    setRestoring(true);
+    const result = await restoreShift(selected.id);
+    if (result.error) {
+      setRestoring(false);
+      toast.error(result.error);
+      return;
+    }
+
+    const refreshed = await refreshShiftAndHistory(selected.id);
+    setRestoring(false);
+    if (!refreshed) return;
+
+    setRestoreDialog(false);
+    setStatus("all");
+    toast.success("Corte restaurado", {
+      description: "Volvió al historial principal.",
+    });
+  }
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return shifts.filter((shift) => {
-      const searchable = `${shift.number} ${shift.opened_by_name} ${shift.closed_by_name ?? ""}`.toLowerCase();
-      return (status === "all" || shift.status === status) && (!query || searchable.includes(query));
+      const isArchived = Boolean(shift.archived_at);
+      const searchable = `${shift.number} ${shift.opened_by_name} ${shift.closed_by_name ?? ""} ${shift.archived_by_name ?? ""} ${shift.archive_reason ?? ""}`.toLowerCase();
+      const matchesStatus = status === "archived"
+        ? isArchived
+        : !isArchived && (status === "all" || shift.status === status);
+      return matchesStatus && (!query || searchable.includes(query));
     });
   }, [search, shifts, status]);
 
   const summary = useMemo(() => {
-    const closed = shifts.filter((shift) => shift.status === "closed");
+    const closed = shifts.filter((shift) => shift.status === "closed" && !shift.archived_at);
     return {
       net: closed.reduce((sum, shift) => sum + Number(shift.net_sales), 0),
       collected: closed.reduce((sum, shift) => sum + Number(shift.collected_total), 0),
@@ -163,6 +255,11 @@ export function CashHistoryManager() {
       count: closed.length,
     };
   }, [shifts]);
+
+  const archivedCount = useMemo(
+    () => shifts.reduce((count, shift) => count + (shift.archived_at ? 1 : 0), 0),
+    [shifts]
+  );
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -185,13 +282,34 @@ export function CashHistoryManager() {
           <section className={`${selected ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-r border-border print:hidden`}>
             <div className="space-y-3 border-b border-border p-3">
               <div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar folio o responsable" className="h-11 w-full rounded-xl border border-border bg-background pl-10 pr-3 font-body text-sm outline-none focus:border-brand" /></div>
-              <div className="grid grid-cols-3 rounded-xl bg-background p-1">{(["all", "open", "closed"] as const).map((value) => <button key={value} type="button" onClick={() => setStatus(value)} className={`h-9 rounded-lg font-heading text-xs font-bold ${status === value ? "bg-brand text-white" : "text-muted-foreground"}`}>{value === "all" ? "Todos" : value === "open" ? "Abiertos" : "Cerrados"}</button>)}</div>
+              <div className="grid grid-cols-4 rounded-xl bg-background p-1">
+                {(["all", "open", "closed", "archived"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setStatus(value)}
+                    className={`h-9 rounded-lg font-heading text-[11px] font-bold ${status === value ? "bg-brand text-white" : "text-muted-foreground"}`}
+                  >
+                    {value === "all" ? "Todos" : value === "open" ? "Abiertos" : value === "closed" ? "Cerrados" : `Archivados${archivedCount > 0 ? ` ${archivedCount}` : ""}`}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-2">
               {loading ? <div className="flex h-48 items-center justify-center"><Loader2 className="animate-spin text-brand" /></div> : filtered.length === 0 ? <div className="flex h-48 flex-col items-center justify-center text-center"><ReceiptText className="mb-2 text-muted-foreground/40" /><p className="font-heading text-sm font-bold">Sin cortes en este filtro</p></div> : filtered.map((shift) => (
                 <button key={shift.id} type="button" onClick={() => void choose(shift)} className="mb-2 flex w-full items-center gap-3 rounded-xl border border-transparent bg-background/60 p-3 text-left hover:border-brand/35">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised font-data text-sm font-black">#{shift.number}</span>
-                  <span className="min-w-0 flex-1"><span className="flex items-center gap-2"><strong className="truncate font-heading text-sm">{shift.opened_by_name}</strong><ShiftStatus shift={shift} /></span><span className="mt-1 block font-body text-xs text-muted-foreground">{dateTime(shift.opened_at)} · {duration(shift)}</span></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2"><strong className="truncate font-heading text-sm">{shift.opened_by_name}</strong><ShiftStatus shift={shift} /></span>
+                    {shift.archived_at ? (
+                      <>
+                        <span className="mt-1 block truncate font-body text-xs text-muted-foreground">Archivado {dateTime(shift.archived_at)} · {shift.archived_by_name ?? "Administrador"}</span>
+                        <span className="mt-0.5 block truncate font-body text-xs text-destructive/80">{shift.archive_reason}</span>
+                      </>
+                    ) : (
+                      <span className="mt-1 block font-body text-xs text-muted-foreground">{dateTime(shift.opened_at)} · {duration(shift)}</span>
+                    )}
+                  </span>
                   <ChevronRight size={17} className="text-muted-foreground" />
                 </button>
               ))}
@@ -201,14 +319,28 @@ export function CashHistoryManager() {
           <section className={`${selected ? "flex" : "hidden lg:flex"} min-h-0 flex-col`}>
             {detailLoading ? <div className="flex flex-1 items-center justify-center"><Loader2 className="animate-spin text-brand" /></div> : selected ? (
               <>
-                <div className="flex items-center gap-3 border-b border-border p-4 print:border-black print:bg-white print:text-black">
+                <div className="flex flex-wrap items-center gap-2 border-b border-border p-4 print:border-black print:bg-white print:text-black">
                   <button type="button" onClick={() => setSelected(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-raised lg:hidden print:hidden"><ArrowLeft size={17} /></button>
                   <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="font-heading text-xl font-black">Corte #{selected.number}</h2><ShiftStatus shift={selected} /></div><p className="font-body text-xs text-muted-foreground print:text-gray-600">{dateTime(selected.opened_at)} a {dateTime(selected.closed_at)}</p></div>
                   {selected.status === "closed" ? <button type="button" onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold print:hidden"><Printer size={15} />Imprimir</button> : null}
-                  {selected.status === "closed" ? <button type="button" onClick={() => void openAdjustment()} className="flex h-10 items-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning print:hidden"><RotateCcw size={15} /><span className="hidden sm:inline">Corregir</span></button> : null}
+                  {selected.status === "closed" && !selected.archived_at ? <button type="button" onClick={() => void openAdjustment()} className="flex h-10 items-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning print:hidden"><RotateCcw size={15} /><span className="hidden sm:inline">Corregir</span></button> : null}
+                  {selected.status === "closed" && !selected.archived_at ? <button type="button" aria-label="Eliminar corte" onClick={openArchiveDialog} className="flex h-10 items-center gap-2 rounded-xl bg-destructive/12 px-3 font-heading text-xs font-bold text-destructive print:hidden"><Trash2 size={15} /><span className="hidden sm:inline">Eliminar</span></button> : null}
+                  {selected.archived_at ? <button type="button" onClick={() => setRestoreDialog(true)} className="action-success flex h-10 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold print:hidden"><ArchiveRestore size={15} />Restaurar</button> : null}
                 </div>
                 <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-5 print:overflow-visible print:bg-white print:text-black">
                   <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric label="Venta neta" value={money(selected.net_sales)} tone="gold" /><Metric label="Cobrado" value={money(selected.collected_total)} tone="success" /><Metric label="Esperado" value={money(selected.expected_cash)} /><Metric label="Diferencia" value={money(selected.difference)} tone={Math.abs(Number(selected.difference ?? 0)) <= 20 ? "success" : "danger"} /></div>
+                  {selected.archived_at ? (
+                    <section className="mb-5 rounded-2xl border border-destructive/30 bg-destructive/8 p-4 print:border-gray-300 print:bg-white">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-destructive/12 text-destructive"><ArchiveRestore size={18} /></span>
+                        <div className="min-w-0">
+                          <h3 className="font-heading text-sm font-black text-destructive">Corte archivado</h3>
+                          <p className="mt-1 font-body text-sm text-foreground">{selected.archive_reason}</p>
+                          <p className="mt-2 font-body text-xs text-muted-foreground">{selected.archived_by_name ?? "Administrador"} · {dateTime(selected.archived_at)}</p>
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
                   <div className="mb-5 grid gap-4 xl:grid-cols-2">
                     <Block title="Métodos de pago" icon={<WalletCards size={17} />}><Rows rows={[["Efectivo", money(selected.cash_total), <Banknote key="cash" size={15} />],["Tarjeta", money(selected.card_total), <CreditCard key="card" size={15} />],["Transferencia", money(selected.transfer_total), <ArrowLeftRight key="transfer" size={15} />],["Propinas", money(selected.tip_total), null],["Descuentos", money(selected.discount_total), null]]} /></Block>
                     <Block title="Operación de caja" icon={<Landmark size={17} />}><Rows rows={[["Fondo inicial", money(selected.opening_float), null],["Entradas de fondo", money(selected.fund_in_total), null],["Retiros", money(selected.withdrawal_total), null],["Gastos", money(selected.expense_total), null],["Efectivo contado", money(selected.counted_cash), null]]} /></Block>
@@ -225,6 +357,56 @@ export function CashHistoryManager() {
       </main>
 
       {adjusting && selected ? <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/75 sm:items-center sm:p-4"><section className="w-full max-w-lg rounded-t-2xl border border-border bg-surface p-4 shadow-float sm:rounded-2xl sm:p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-heading text-lg font-black">Corregir corte #{selected.number}</h2><p className="font-body text-xs text-muted-foreground">Se agrega un registro; el corte original no cambia.</p></div><button type="button" onClick={() => setAdjusting(false)} className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground"><X size={18} /></button></div><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><select value={adjustMethod} onChange={(event) => setAdjustMethod(event.target.value as typeof adjustMethod)} className="h-11 rounded-xl border border-border bg-background px-3 font-body text-sm"><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option><option value="transferencia">Transferencia</option><option value="otro">Otro</option></select><select value={adjustDirection} onChange={(event) => setAdjustDirection(event.target.value as typeof adjustDirection)} className="h-11 rounded-xl border border-border bg-background px-3 font-body text-sm"><option value="increase">Sumar</option><option value="decrease">Restar</option></select></div><input type="number" inputMode="decimal" min="0" step="0.01" value={adjustAmount || ""} onChange={(event) => setAdjustAmount(Number(event.target.value))} placeholder="Importe" className="h-12 w-full rounded-xl border border-border bg-background px-3 font-data text-lg font-bold" /><textarea value={adjustReason} onChange={(event) => setAdjustReason(event.target.value)} placeholder="Motivo de la corrección" rows={2} className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-sm" /><div className="rounded-xl border border-warning/30 bg-warning/8 p-3"><div className="mb-2 flex items-center gap-2 font-heading text-sm font-bold"><LockKeyhole size={16} className="text-warning" />Autorización</div><div className="grid gap-2 sm:grid-cols-2"><select value={authorizerId} onChange={(event) => setAuthorizerId(event.target.value)} className="h-11 rounded-xl border border-border bg-background px-3 font-body text-sm"><option value="">Responsable</option>{authorizers.map((authorizer) => <option key={authorizer.id} value={authorizer.id} disabled={!authorizer.pin_configured}>{authorizer.full_name}{authorizer.pin_configured ? "" : " · sin PIN"}</option>)}</select><input value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} type="password" inputMode="numeric" placeholder="PIN" className="h-11 rounded-xl border border-border bg-background px-3 font-data tracking-[0.3em]" /></div></div><button type="button" disabled={saving} onClick={() => void saveAdjustment()} className="action-success inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold disabled:opacity-50">{saving ? <Loader2 size={17} className="animate-spin" /> : <CheckCircle2 size={17} />}Autorizar y registrar</button></div></section></div> : null}
+
+      {archiveDialog && selected ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/80 sm:items-center sm:p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="archive-shift-title" className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-destructive/35 bg-surface p-4 shadow-float sm:rounded-2xl sm:p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-destructive/12 text-destructive"><Trash2 size={20} /></span>
+              <div>
+                <h2 id="archive-shift-title" className="font-heading text-lg font-black">Eliminar corte #{selected.number}</h2>
+                <p className="mt-1 font-body text-sm text-muted-foreground">Se ocultará del historial principal, pero sus pedidos, cobros y auditoría se conservarán.</p>
+              </div>
+            </div>
+
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-background/70 p-3">
+              <div><p className="font-body text-xs text-muted-foreground">Responsable</p><p className="mt-1 truncate font-heading text-sm font-bold">{selected.opened_by_name}</p></div>
+              <div><p className="font-body text-xs text-muted-foreground">Efectivo esperado</p><p className="mt-1 font-data text-sm font-black">{money(selected.expected_cash)}</p></div>
+              <div className="col-span-2"><p className="font-body text-xs text-muted-foreground">Cerrado</p><p className="mt-1 font-body text-sm">{dateTime(selected.closed_at)}</p></div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block">
+                <span className="mb-1.5 block font-heading text-xs font-bold">Motivo obligatorio</span>
+                <textarea value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} maxLength={500} rows={3} placeholder="Ej. Corte duplicado o captura incorrecta" className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-sm outline-none focus:border-destructive" />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block font-heading text-xs font-bold">Escribe ELIMINAR para confirmar</span>
+                <input value={archiveConfirmation} onChange={(event) => setArchiveConfirmation(event.target.value.toUpperCase())} autoComplete="off" placeholder="ELIMINAR" className="h-12 w-full rounded-xl border border-border bg-background px-3 font-data text-sm font-bold tracking-[0.12em] outline-none focus:border-destructive" />
+              </label>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" disabled={archiving} onClick={() => setArchiveDialog(false)} className="h-12 rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground disabled:opacity-50">Cancelar</button>
+              <button type="button" disabled={archiving || archiveReason.trim().length < 4 || archiveConfirmation !== "ELIMINAR"} onClick={() => void confirmArchive()} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-destructive font-heading text-sm font-bold text-white disabled:opacity-40">{archiving ? <Loader2 size={17} className="animate-spin" /> : <Trash2 size={17} />}Eliminar del historial</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {restoreDialog && selected ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/80 sm:items-center sm:p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="restore-shift-title" className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-t-2xl border border-success/35 bg-surface p-4 shadow-float sm:rounded-2xl sm:p-5">
+            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-success/12 text-success"><ArchiveRestore size={20} /></span>
+            <h2 id="restore-shift-title" className="font-heading text-lg font-black">Restaurar corte #{selected.number}</h2>
+            <p className="mt-2 font-body text-sm text-muted-foreground">El corte volverá al historial principal y contará nuevamente en sus indicadores.</p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" disabled={restoring} onClick={() => setRestoreDialog(false)} className="h-12 rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground disabled:opacity-50">Cancelar</button>
+              <button type="button" disabled={restoring} onClick={() => void confirmRestore()} className="action-success inline-flex h-12 items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold disabled:opacity-50">{restoring ? <Loader2 size={17} className="animate-spin" /> : <ArchiveRestore size={17} />}Restaurar</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

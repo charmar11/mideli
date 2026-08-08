@@ -66,6 +66,11 @@ interface CashShiftState {
     reason: string;
     authorization: string;
   }) => Promise<CashShiftResult<CashShiftDetail>>;
+  archiveShift: (input: {
+    shiftId: string;
+    reason: string;
+  }) => Promise<CashShiftResult<{ id: string }>>;
+  restoreShift: (shiftId: string) => Promise<CashShiftResult<{ id: string }>>;
   subscribe: () => () => void;
 }
 
@@ -249,6 +254,29 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
       return { data: null, error: message(error, "No se pudo registrar la corrección") };
     }
     return { data: data as CashShiftDetail, error: null };
+  },
+
+  archiveShift: async ({ shiftId, reason }) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("archive_cash_shift", {
+      p_shift_id: shiftId,
+      p_reason: reason,
+    });
+    if (error || !data) {
+      return { data: null, error: message(error, "No se pudo eliminar el corte") };
+    }
+    return { data: data as { id: string }, error: null };
+  },
+
+  restoreShift: async (shiftId) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("restore_cash_shift", {
+      p_shift_id: shiftId,
+    });
+    if (error || !data) {
+      return { data: null, error: message(error, "No se pudo restaurar el corte") };
+    }
+    return { data: data as { id: string }, error: null };
   },
 
   subscribe: () => {
