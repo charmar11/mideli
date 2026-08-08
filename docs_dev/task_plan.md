@@ -48,7 +48,7 @@ Conservar el estado desplegado, actualizar la memoria del proyecto, preparar la 
 - [x] Phase 2: Actualizar contexto y plan de continuidad
 - [x] Phase 3: Ejecutar verificaciones finales
 - [x] Phase 4: Crear commit y etiqueta `v0.9-piloto`
-- [ ] Phase 5: Subir rama y etiqueta a GitHub
+- [x] Phase 5: Subir rama y etiqueta a GitHub
 
 ## Decisions
 

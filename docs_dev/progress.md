@@ -40,3 +40,4 @@
 - Supabase confirmó que no hay migraciones pendientes y que local y remoto coinciden hasta `20260808160831`.
 - `git diff --check` completado sin errores.
 - Commit de versión piloto creado con código, migración, contexto y checklist.
+- Rama `main` y etiqueta `v0.9-piloto` publicadas en GitHub.
