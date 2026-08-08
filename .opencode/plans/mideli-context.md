@@ -84,7 +84,7 @@ La base remota tiene 6 categorías y 39 productos en el corte del 2026-07-31. Lo
 
 Cada opción de variación puede tener información adicional. En los toppings de sushi se muestran sus ingredientes: Dracarys contiene queso, tocino y spicy; Mr. Crab contiene queso, zanahoria, surimi empanizado y spicy; Cordon Blue contiene queso, tocino y serrano; Gratinado contiene queso; Especial contiene Philadelphia y spicy.
 
-La administración del menú debe ser completamente editable: nombre, precio, descripción, imagen, categoría, estado activo y grupos de variaciones. El editor permite crear, renombrar, eliminar y marcar como requeridos los grupos, además de editar sus opciones y precios extra. Las acciones de edición se mantienen visibles para tablet y los errores de guardado no cierran el formulario.
+La administración del menú debe ser completamente editable: nombre, precio, descripción, imagen, categoría, estado activo y grupos de variaciones. El editor permite crear, renombrar, eliminar y marcar como requeridos los grupos, además de editar sus opciones y precios extra. Cada grupo se configura como selección de una opción o selección múltiple con máximo opcional. Las acciones de edición se mantienen visibles para tablet y los errores de guardado no cierran el formulario.
 
 ### Mesas y zonas
 
@@ -131,7 +131,7 @@ El inventario se diseñó como una herramienta personalizable, no como un catál
 
 La interfaz administrativa vive en `/settings/inventario`. La base ya tiene `inventory_items`, `inventory_recipes` e `inventory_movements`. En el corte actual no hay insumos capturados. El descuento automático de inventario al vender todavía debe validarse o implementarse con una operación transaccional antes de considerarse terminado.
 
-Actualización 2026-08: el inventario se endureció con unidades de compra, recepciones (`inventory_receipts`), órdenes de compra, lotes, conteos físicos (`inventory_counts` con líneas), guías de captura vía RPC, borrado seguro de insumos, reemplazo transaccional de recetas y corrección de inventario al editar pedidos. La interfaz se reorganizó en paneles (`src/components/admin/inventory/`) con biblioteca de recetas y tour de onboarding.
+Actualización 2026-08: el inventario se endureció con unidades de compra, recepciones (`inventory_receipts`), órdenes de compra, lotes, conteos físicos (`inventory_counts` con líneas), guías de captura vía RPC, borrado seguro de insumos, reemplazo transaccional de recetas y corrección de inventario al editar pedidos. La interfaz se reorganizó en paneles (`src/components/admin/inventory/`) con biblioteca de recetas y un tutorial de 20 pasos que recorre cada pestaña, explica unidades, compras, recetas, conteos, diferencias, mermas y la rutina recomendada.
 
 ### Licencia de acceso
 
@@ -153,6 +153,7 @@ Caja compartida del local con apertura y cierre explícitos (migración `2026080
 - Cuentas sin pagar pasan explícitamente al siguiente turno (`cash_shift_pending_orders`).
 - Historial inmutable en `/settings/caja` (`cash-history-manager`), control operativo en `src/components/cash/cash-shift-control.tsx` y store `cash-shift-store.ts`.
 - Los pedidos guardan snapshot de ubicación (zona y mesa) para mostrarla en Estado, Historial, cuentas, cobro y tickets aunque el plano cambie después (`src/lib/order-location.ts`).
+- El conteo por denominaciones tiene botones grandes para aumentar y disminuir. El cierre no se descarta al tocar fuera del modal.
 
 ### Cobro unificado y tickets
 
@@ -161,7 +162,8 @@ El cobro pasó a un libro mayor transaccional (migración `20260801092945_unifie
 - Tablas: `payment_transactions`, `payment_tenders`, `payment_order_allocations`, `payment_item_allocations`. Los pedidos tienen `payment_status` y `paid_amount`, separados del estado operativo (permite prepago de para llevar y domicilio sin ocultar el pedido de cocina).
 - Soporta pago completo, parcial, combinado, dividido (equitativo o por productos), propina y descuento con PIN administrativo de un solo uso (intentos persistidos, autorización ligada al monto).
 - Confirmación y anulación con bloqueos de fila e idempotencia en PostgreSQL; las escrituras directas legacy fueron retiradas.
-- Interfaz: `src/components/payments/payment-flow.tsx` (panel central en tableta, hoja inferior en móvil), ticket con snapshot para impresión de 58 y 80 mm, reimpresión marcada y anulación administrativa.
+- Interfaz: `src/components/payments/payment-flow.tsx` (panel central en tableta, hoja inferior en móvil), ticket fijo de 48 mm, reimpresión marcada, anulación administrativa y guía interna para todas las variantes de cobro.
+- Owner y admin pueden corregir el método de un pago desde Historial. Cada corrección exige motivo y queda en `payment_tender_method_changes`; la función transaccional actualiza el libro mayor y el snapshot del ticket.
 - Folios de orden consecutivos vía `order_folio_counter`.
 
 ### PWA y notificaciones
@@ -170,6 +172,17 @@ El cobro pasó a un libro mayor transaccional (migración `20260801092945_unifie
 - Suscripciones push en `push_subscriptions`, control en `push-notification-control.tsx`, lógica en `src/lib/push-notifications.ts`.
 - Aviso sonoro de pedido listo (`ready-order-notifier.tsx`, `ready-order-audio.ts`, sonidos en `public/sounds/`) y Edge Function `send-order-ready` en `supabase/functions/`.
 - Los textos de ayuda usan términos genéricos como `dispositivo`, sin marcas.
+- Cada usuario puede pausar o reactivar los avisos solo en su dispositivo. La suscripción permanece registrada, pero `is_active` evita mensajes fuera del turno.
+
+### Estación de impresión
+
+La ruta `/settings/impresion` convierte una laptop conectada por USB en estación de tickets de cocina:
+
+- `print_station_settings` activa o pausa la creación automática de tickets.
+- `print_jobs` conserva una cola durable, evita duplicados por pedido y reintenta trabajos interrumpidos.
+- La estación usa Realtime más sondeo de respaldo y reclama cada trabajo de forma atómica.
+- El ticket de cocina es de 48 mm, sin precios, con zona, mesa, productos, variaciones y notas.
+- En navegador normal se confirma la impresión. Para operación sin diálogo, la laptop debe abrir el navegador en modo impresión directa con la impresora predeterminada.
 
 ### Imágenes de productos
 
@@ -177,7 +190,7 @@ El editor de productos carga fotos desde el dispositivo (cámara, galería o arc
 
 ### Roles y acceso
 
-Se agregó el rol `supervisor` (puede usar POS y KDS, no administración) y el estado activo de cuentas (`profiles.is_active`): el proxy cierra sesión de perfiles inactivos. El middleware de Next se reemplazó por `src/proxy.ts` (convención de Next 16) con control de rutas por rol: administración y analíticas solo owner/admin, inventario solo owner/admin, POS y KDS según rol.
+Se agregó el rol `supervisor` (puede usar POS y KDS, no administración) y el estado activo de cuentas (`profiles.is_active`). El proxy solo cierra sesión si el perfil falta o está explícitamente inactivo; errores transitorios envían a `/reconectando` y conservan la sesión. El middleware de Next se reemplazó por `src/proxy.ts` (convención de Next 16) con control de rutas por rol: administración y analíticas solo owner/admin, inventario solo owner/admin, POS y KDS según rol.
 
 ## 5. Arquitectura actual
 
@@ -204,6 +217,7 @@ Rutas principales:
 - `/settings`: personal y roles.
 - `/settings/mesas`: editor del plano global.
 - `/settings/inventario`: inventario, recetas, compras y conteos.
+- `/settings/impresion`: estación de impresión automática de cocina y supervisión de cola.
 - `/settings/caja`: historial de turnos y cortes.
 - `/sistema-bloqueado`: pantalla de licencia vencida.
 - `/control/licencia`: herramienta privada del vendedor.
@@ -322,13 +336,12 @@ Los conteos son una fotografía, no una garantía futura. Si una tarea depende d
 Pendientes prioritarios:
 
 1. Hacer QA manual del POS en tabletas reales y corregir cualquier clipping, panel cortado o categoría ilegible.
-2. Validar en operación real el cobro unificado: completo, combinado, dividido, con descuento y propina, más la impresión de ticket.
-3. Validar un turno de caja completo: apertura, movimientos, cierre ciego y transferencia de cuentas pendientes.
-4. Hacer transaccional el descuento de inventario por receta cuando corresponda al negocio.
-5. Completar auditoría de RLS y permisos por rol antes de producción (incluye `supervisor`).
-6. Agregar pruebas para stores y flujos críticos.
-7. Preparar despliegue en Vercel y revisar variables sin exponer secretos (`.vercelignore` ya excluye docs, specs y archivos de desarrollo).
-8. Hacer push de `main` a origin: al 2026-08-02 va 28 commits adelante.
+2. Conectar la impresora física, seleccionar el tamaño real de 48 mm y validar corte, márgenes y modo de impresión directa en la laptop definitiva.
+3. Validar en operación real el cobro completo, combinado, dividido, con descuento, propina y corrección auditada de método.
+4. Validar un turno de caja completo: apertura, movimientos, cierre ciego y transferencia de cuentas pendientes.
+5. Confirmar en dispositivos reales los avisos PWA, sonido de pedido listo y pausa por dispositivo.
+6. Completar una auditoría adicional de permisos por rol antes de operar con datos reales.
+7. Agregar pruebas automatizadas para stores, cobro, impresión e inventario.
 
 ## 10. Verificación obligatoria
 

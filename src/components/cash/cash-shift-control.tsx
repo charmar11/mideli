@@ -10,6 +10,8 @@ import {
   Landmark,
   Loader2,
   LockKeyhole,
+  Minus,
+  Plus,
   ReceiptText,
   RotateCcw,
   WalletCards,
@@ -70,29 +72,56 @@ function DenominationCounter({
   counts: Record<string, number>;
   onChange: (next: Record<string, number>) => void;
 }) {
+  function setCount(key: string, value: number) {
+    onChange({ ...counts, [key]: Math.max(0, Math.floor(value)) });
+  }
+
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       {DENOMINATIONS.map((denomination) => {
         const key = String(denomination);
         const count = counts[key] ?? 0;
         return (
-          <label key={key} className="rounded-xl border border-border bg-background/70 p-2.5">
-            <span className="mb-1 block font-data text-xs font-bold text-gold">
-              {money(denomination)}
-            </span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min="0"
-              step="1"
-              value={count || ""}
-              onChange={(event) =>
-                onChange({ ...counts, [key]: Math.max(0, Math.floor(numberValue(event.target.value))) })
-              }
-              placeholder="0"
-              className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-center font-data text-sm font-bold outline-none focus:border-brand"
-            />
-          </label>
+          <div key={key} className="rounded-xl border border-border bg-background/70 p-2.5">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="font-data text-xs font-bold text-gold">
+                {money(denomination)}
+              </span>
+              <span className="truncate font-body text-[11px] text-muted-foreground">
+                {money(denomination * count)}
+              </span>
+            </div>
+            <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center overflow-hidden rounded-lg border border-border bg-surface">
+              <button
+                type="button"
+                disabled={count <= 0}
+                onClick={() => setCount(key, count - 1)}
+                aria-label={`Quitar una pieza de ${money(denomination)}`}
+                className="flex h-11 items-center justify-center text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <Minus aria-hidden size={17} />
+              </button>
+              <input
+                aria-label={`Cantidad de piezas de ${money(denomination)}`}
+                type="number"
+                inputMode="numeric"
+                min="0"
+                step="1"
+                value={count || ""}
+                onChange={(event) => setCount(key, numberValue(event.target.value))}
+                placeholder="0"
+                className="h-11 min-w-0 border-x border-border bg-transparent px-1 text-center font-data text-base font-bold outline-none focus:bg-brand/8"
+              />
+              <button
+                type="button"
+                onClick={() => setCount(key, count + 1)}
+                aria-label={`Agregar una pieza de ${money(denomination)}`}
+                className="flex h-11 items-center justify-center text-success transition-colors hover:bg-success/10"
+              >
+                <Plus aria-hidden size={17} />
+              </button>
+            </div>
+          </div>
         );
       })}
     </div>
@@ -343,9 +372,6 @@ export function CashShiftControl() {
           role="dialog"
           aria-modal="true"
           aria-label="Gestión de caja"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setOpen(false);
-          }}
         >
           <section className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:rounded-2xl">
             <header className="flex items-start justify-between gap-3 border-b border-border p-4 sm:p-5">
@@ -362,7 +388,7 @@ export function CashShiftControl() {
                   </p>
                 </div>
               </div>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Cerrar" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground">
+              <button type="button" disabled={working} onClick={() => setOpen(false)} aria-label="Cerrar" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40">
                 <X size={19} />
               </button>
             </header>

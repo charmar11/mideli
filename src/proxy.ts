@@ -6,6 +6,7 @@ const protectedRoutes = ["/dashboard", "/menu", "/settings"];
 const adminRoutes = ["/menu", "/settings"];
 const ROLE_HEADER = "x-mideli-role";
 const USER_NAME_HEADER = "x-mideli-user-name";
+const SESSION_RECOVERY_ROUTE = "/reconectando";
 
 function getRoleHome(role: string) {
   return role === "kitchen" ? "/dashboard/cocina" : "/dashboard/mesero";
@@ -27,10 +28,25 @@ function canUseInventory(role: string) {
   return isAdminRole(role);
 }
 
+function hasSupabaseAuthCookie(request: NextRequest) {
+  return request.cookies
+    .getAll()
+    .some(({ name }) => name.startsWith("sb-") && name.includes("-auth-token"));
+}
+
+function safeRecoveryTarget(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  return value;
+}
+
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isProtected = protectedRoutes.some((route) => pathname.startsWith(route));
   const isAuth = pathname === "/login";
+  const isSessionRecovery = pathname === SESSION_RECOVERY_ROUTE;
   const isLicenseBlockedRoute = pathname === "/sistema-bloqueado";
   const isInventoryRoute = pathname.startsWith("/settings/inventario");
   const isAdminRoute =
@@ -61,6 +77,7 @@ export async function proxy(request: NextRequest) {
     Object.entries(authResponseHeaders).forEach(([name, value]) =>
       response.headers.set(name, value)
     );
+    response.headers.set("Cache-Control", "private, no-store");
     return response;
   };
 
@@ -83,14 +100,15 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const { data: claimsData } = await supabase.auth.getClaims();
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
   const claims = claimsData?.claims;
   const userId = claims?.sub;
 
   const redirectWithAuth = (path: string, reason?: string) => {
     const url = request.nextUrl.clone();
-    url.pathname = path;
-    url.search = "";
+    const [nextPathname, nextSearch = ""] = path.split("?", 2);
+    url.pathname = nextPathname;
+    url.search = nextSearch ? `?${nextSearch}` : "";
     if (reason) url.searchParams.set("reason", reason);
 
     const response = NextResponse.redirect(url);
@@ -102,10 +120,29 @@ export async function proxy(request: NextRequest) {
     Object.entries(authResponseHeaders).forEach(([name, value]) =>
       response.headers.set(name, value)
     );
+    response.headers.set("Cache-Control", "private, no-store");
     return response;
   };
 
-  if ((isProtected || isLicenseBlockedRoute) && !userId) {
+  const redirectToRecovery = () => {
+    const url = request.nextUrl.clone();
+    url.pathname = SESSION_RECOVERY_ROUTE;
+    url.search = "";
+    url.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    return redirectWithAuth(`${url.pathname}${url.search}`);
+  };
+
+  if (
+    (isProtected || isLicenseBlockedRoute || isSessionRecovery) &&
+    !userId &&
+    claimsError &&
+    hasSupabaseAuthCookie(request) &&
+    !isSessionRecovery
+  ) {
+    return redirectToRecovery();
+  }
+
+  if ((isProtected || isLicenseBlockedRoute || isSessionRecovery) && !userId) {
     return redirectWithAuth("/login");
   }
 
@@ -133,14 +170,33 @@ export async function proxy(request: NextRequest) {
     full_name: string | null;
   } | null = null;
 
-  if (isProtected && userId) {
-    const { data: nextProfile } = await supabase
+  if ((isProtected || isSessionRecovery) && userId) {
+    let profileResult = await supabase
       .from("profiles")
       .select("role, is_active, full_name")
       .eq("id", userId)
-      .single();
+      .maybeSingle();
 
-    if (!nextProfile || nextProfile.is_active === false) {
+    if (profileResult.error) {
+      profileResult = await supabase
+        .from("profiles")
+        .select("role, is_active, full_name")
+        .eq("id", userId)
+        .maybeSingle();
+    }
+
+    if (profileResult.error) {
+      return isSessionRecovery ? supabaseResponse : redirectToRecovery();
+    }
+
+    const nextProfile = profileResult.data;
+
+    if (!nextProfile) {
+      await supabase.auth.signOut();
+      return redirectWithAuth("/login", "profile");
+    }
+
+    if (nextProfile.is_active === false) {
       await supabase.auth.signOut();
       return redirectWithAuth("/login", "inactive");
     }
@@ -152,6 +208,12 @@ export async function proxy(request: NextRequest) {
       encodeURIComponent(profile.full_name || String(claims.email || ""))
     );
     supabaseResponse = createResponse();
+
+    if (isSessionRecovery) {
+      return redirectWithAuth(
+        safeRecoveryTarget(request.nextUrl.searchParams.get("next"))
+      );
+    }
   }
 
   if (profile) {
@@ -186,6 +248,7 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/login",
+    "/reconectando",
     "/sistema-bloqueado",
     "/dashboard/:path*",
     "/menu/:path*",

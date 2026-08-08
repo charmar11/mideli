@@ -168,21 +168,33 @@ export function InventoryManager() {
           {loading && items.length === 0 ? (
             <div className="flex min-h-64 items-center justify-center gap-2 text-muted-foreground"><Loader2 size={18} className="animate-spin" /><span className="font-body text-sm">Preparando inventario</span></div>
           ) : view === "overview" ? (
-            <InventoryDashboard items={items} lots={lots} counts={counts} purchaseOrders={purchaseOrders} movements={movements} isAdmin={isAdmin} onNavigate={setView} onCreateItem={handleNewItem} />
+            <div data-tour="inventory-view-overview">
+              <InventoryDashboard items={items} lots={lots} counts={counts} purchaseOrders={purchaseOrders} movements={movements} isAdmin={isAdmin} onNavigate={setView} onCreateItem={handleNewItem} />
+            </div>
           ) : view === "items" ? (
-            <InventoryItemsPanel key={`items-${newItemSignal}`} items={items} isAdmin={isAdmin} initialEditorOpen={newItemSignal > 0} />
+            <div data-tour="inventory-view-items">
+              <InventoryItemsPanel key={`items-${newItemSignal}`} items={items} isAdmin={isAdmin} initialEditorOpen={newItemSignal > 0} />
+            </div>
           ) : view === "recipes" ? (
-            <RecipeLibrary menuItems={menuItems} categories={categories} items={items} recipes={recipes} isAdmin={isAdmin} />
+            <div data-tour="inventory-view-recipes">
+              <RecipeLibrary menuItems={menuItems} categories={categories} items={items} recipes={recipes} isAdmin={isAdmin} />
+            </div>
           ) : view === "count" ? (
-            <InventoryCountPanel key={counts.find((count) => count.status === "draft")?.id ?? "new-count"} items={items} counts={counts} countLines={countLines} isAdmin={isAdmin} />
+            <div data-tour="inventory-view-count">
+              <InventoryCountPanel key={counts.find((count) => count.status === "draft")?.id ?? "new-count"} items={items} counts={counts} countLines={countLines} isAdmin={isAdmin} />
+            </div>
           ) : view === "purchase" ? (
-            receiving ? (
-              <InventoryReceivePanel key={selectedPurchaseOrderId ?? "manual-receipt"} items={items} purchaseOrders={purchaseOrders} purchaseOrderLines={purchaseOrderLines} selectedPurchaseOrderId={selectedPurchaseOrderId} onSelectedPurchaseOrderChange={setSelectedPurchaseOrderId} onBack={() => setReceiving(false)} />
-            ) : (
-              <InventoryPurchasePanel items={items} purchaseOrders={purchaseOrders} purchaseOrderLines={purchaseOrderLines} onReceive={(id) => handleReceive(id)} onDirectReceive={() => handleReceive(null)} />
-            )
+            <div data-tour="inventory-view-purchase">
+              {receiving ? (
+                <InventoryReceivePanel key={selectedPurchaseOrderId ?? "manual-receipt"} items={items} purchaseOrders={purchaseOrders} purchaseOrderLines={purchaseOrderLines} selectedPurchaseOrderId={selectedPurchaseOrderId} onSelectedPurchaseOrderChange={setSelectedPurchaseOrderId} onBack={() => setReceiving(false)} />
+              ) : (
+                <InventoryPurchasePanel items={items} purchaseOrders={purchaseOrders} purchaseOrderLines={purchaseOrderLines} onReceive={(id) => handleReceive(id)} onDirectReceive={() => handleReceive(null)} />
+              )}
+            </div>
           ) : (
-            <InventoryMovementsPanel items={items} lots={lots} movements={movements} isAdmin={isAdmin} />
+            <div data-tour="inventory-view-movements">
+              <InventoryMovementsPanel items={items} lots={lots} movements={movements} isAdmin={isAdmin} />
+            </div>
           )}
         </div>
       </main>

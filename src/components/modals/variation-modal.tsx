@@ -15,30 +15,51 @@ function formatPrice(price: number): string {
 }
 
 export function VariationModal({ item, onClose, onConfirm }: VariationModalProps) {
-  const [selected, setSelected] = useState<Record<string, SelectedModifier>>({});
+  const [selected, setSelected] = useState<Record<string, SelectedModifier[]>>({});
   const [notes, setNotes] = useState("");
 
   function handleSelect(group: ModifierGroup, option: ModifierOption) {
     const groupKey = group.id ?? group.name;
-    setSelected((prev) => ({
-      ...prev,
-      [groupKey]: {
+    const selectionMode = group.selection_mode === "multiple" ? "multiple" : "single";
+    const nextModifier: SelectedModifier = {
         group_id: group.id,
         option_id: option.id,
         group: group.name,
         option: option.name,
         price: option.price,
         description: option.description,
-      },
-    }));
+    };
+
+    setSelected((previous) => {
+      const current = previous[groupKey] ?? [];
+      if (selectionMode === "single") {
+        return { ...previous, [groupKey]: [nextModifier] };
+      }
+
+      const selectedIndex = current.findIndex(
+        (modifier) => (modifier.option_id ?? modifier.option) === (option.id ?? option.name)
+      );
+      if (selectedIndex >= 0) {
+        return {
+          ...previous,
+          [groupKey]: current.filter((_, index) => index !== selectedIndex),
+        };
+      }
+
+      const maximum = Number(group.max_selections) || 0;
+      if (maximum > 0 && current.length >= maximum) return previous;
+      return { ...previous, [groupKey]: [...current, nextModifier] };
+    });
   }
 
   const basePrice = item.price;
-  const modifiersTotal = Object.values(selected).reduce((sum, mod) => sum + mod.price, 0);
+  const selectedModifiers = Object.values(selected).flat();
+  const modifiersTotal = selectedModifiers.reduce((sum, modifier) => sum + modifier.price, 0);
   const totalPrice = basePrice + modifiersTotal;
   const requiredGroups = item.modifiers.filter((g) => g.required);
   const allRequiredSelected = requiredGroups.every(
-    (group) => selected[group.id ?? group.name] !== undefined
+    (group) =>
+      (selected[group.id ?? group.name]?.length ?? 0) >= Math.max(1, group.min_selections ?? 0)
   );
 
   return (
@@ -77,58 +98,83 @@ export function VariationModal({ item, onClose, onConfirm }: VariationModalProps
 
         <div className="pos-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="flex flex-col gap-5">
-            {item.modifiers.map((group, groupIndex) => (
-              <fieldset key={groupIndex} className="border-0 p-0">
-                <legend className="mb-2 flex items-center gap-2 font-heading text-xs font-bold text-foreground">
-                  {group.name}
-                  {group.required ? (
-                    <span className="rounded-full bg-brand-light px-2 py-0.5 text-[10px] font-bold text-brand">
-                      Obligatorio
+            {item.modifiers.map((group, groupIndex) => {
+              const groupKey = group.id ?? group.name;
+              const groupSelection = selected[groupKey] ?? [];
+              const isMultiple = group.selection_mode === "multiple";
+              const maximum = Number(group.max_selections) || 0;
+
+              return (
+                <fieldset key={group.id ?? groupIndex} className="border-0 p-0">
+                  <legend className="mb-2 flex flex-wrap items-center gap-2 font-heading text-xs font-bold text-foreground">
+                    {group.name}
+                    {group.required ? (
+                      <span className="rounded-full bg-brand-light px-2 py-0.5 text-[10px] font-bold text-brand">
+                        Obligatorio
+                      </span>
+                    ) : null}
+                    <span className="font-body text-[10px] font-normal text-muted-foreground">
+                      {isMultiple
+                        ? maximum > 0
+                          ? `Elige hasta ${maximum}`
+                          : "Puedes elegir varias"
+                        : "Elige una"}
                     </span>
-                  ) : null}
-                </legend>
-                <div className="grid gap-2">
-                  {group.options.map((option, optionIndex) => {
-                    const isSelected = selected[group.id ?? group.name]?.option === option.name;
-                    return (
-                      <button
-                        key={optionIndex}
-                        type="button"
-                        onClick={() => handleSelect(group, option)}
-                        className={`flex min-h-14 items-start justify-between gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors ${
-                          isSelected
-                            ? "border-brand bg-brand-light"
-                            : "border-border bg-background hover:border-border-strong"
-                        }`}
-                      >
-                        <span className="flex items-center gap-3">
-                          <span
-                            className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
-                              isSelected ? "border-brand bg-brand text-white" : "border-border"
-                            }`}
-                          >
-                            {isSelected ? <Check size={14} strokeWidth={3} /> : null}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block font-heading text-sm font-semibold">
-                              {option.name}
+                  </legend>
+                  <div className="grid gap-2">
+                    {group.options.map((option, optionIndex) => {
+                      const optionKey = option.id ?? option.name;
+                      const isSelected = groupSelection.some(
+                        (modifier) =>
+                          (modifier.option_id ?? modifier.option) === optionKey
+                      );
+                      const isAtMaximum =
+                        isMultiple && maximum > 0 && groupSelection.length >= maximum;
+
+                      return (
+                        <button
+                          key={option.id ?? optionIndex}
+                          type="button"
+                          onClick={() => handleSelect(group, option)}
+                          aria-pressed={isSelected}
+                          disabled={!isSelected && isAtMaximum}
+                          className={`flex min-h-14 items-start justify-between gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors ${
+                            isSelected
+                              ? "border-brand bg-brand-light"
+                              : "border-border bg-background hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-40"
+                          }`}
+                        >
+                          <span className="flex items-center gap-3">
+                            <span
+                              className={`flex h-6 w-6 items-center justify-center border-2 ${
+                                isMultiple ? "rounded-lg" : "rounded-full"
+                              } ${
+                                isSelected ? "border-brand bg-brand text-white" : "border-border"
+                              }`}
+                            >
+                              {isSelected ? <Check size={14} strokeWidth={3} /> : null}
                             </span>
-                            {option.description ? (
-                              <span className="mt-0.5 block font-body text-xs leading-relaxed text-muted-foreground">
-                                {option.description}
+                            <span className="min-w-0">
+                              <span className="block font-heading text-sm font-semibold">
+                                {option.name}
                               </span>
-                            ) : null}
+                              {option.description ? (
+                                <span className="mt-0.5 block font-body text-xs leading-relaxed text-muted-foreground">
+                                  {option.description}
+                                </span>
+                              ) : null}
+                            </span>
                           </span>
-                        </span>
-                        <span className="font-data text-sm font-bold text-brand">
-                          {option.price > 0 ? `+$${formatPrice(option.price)}` : "Incluido"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            ))}
+                          <span className="font-data text-sm font-bold text-brand">
+                            {option.price > 0 ? `+$${formatPrice(option.price)}` : "Incluido"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              );
+            })}
 
             <label className="flex flex-col gap-1.5">
               <span className="font-heading text-xs font-bold text-muted-foreground">Notas</span>
@@ -152,7 +198,7 @@ export function VariationModal({ item, onClose, onConfirm }: VariationModalProps
           </div>
           <button
             type="button"
-            onClick={() => onConfirm(Object.values(selected), notes)}
+            onClick={() => onConfirm(selectedModifiers, notes)}
             disabled={!allRequiredSelected}
             className="flex h-12 w-full items-center justify-center rounded-xl bg-brand font-heading text-sm font-bold text-white shadow-lg shadow-brand/40 hover:bg-brand-hover disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
           >

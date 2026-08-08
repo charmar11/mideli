@@ -14,6 +14,7 @@ import {
   CreditCard,
   FileText,
   MapPin,
+  Pencil,
   ReceiptText,
   Printer,
   RefreshCw,
@@ -43,6 +44,7 @@ import type { Order } from "@/types/database";
 import type { PaymentReceipt } from "@/types/payments";
 import { formatOrderLocation } from "@/lib/order-location";
 import { useCashShiftStore } from "@/lib/stores";
+import { PaymentMethodCorrectionDialog } from "@/components/payments/payment-method-correction-dialog";
 
 type StatusFilter = "all" | Order["status"];
 type TypeFilter = "all" | Order["type"];
@@ -544,6 +546,7 @@ export function SalesHistory() {
   const [ticketOrder, setTicketOrder] = useState<SalesHistoryOrder | null>(null);
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [ticketLoading, setTicketLoading] = useState(false);
+  const [correctionTicket, setCorrectionTicket] = useState<{ id: string; folio: number } | null>(null);
   const [viewerRole, setViewerRole] = useState<string | null>(null);
   const [expandedPendingAccount, setExpandedPendingAccount] = useState<string | null>(null);
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
@@ -956,6 +959,7 @@ export function SalesHistory() {
                   <div key={ticket.id} className="flex items-center gap-3 rounded-xl bg-background p-3">
                     <div className="min-w-0 flex-1"><p className="font-data text-sm font-bold">Ticket {ticket.folio}</p><p className="font-body text-xs text-muted-foreground">{formatDateTime(ticket.created_at)} · {formatPaymentMoney(ticket.total_amount)}</p></div>
                     {ticket.status === "voided" ? <span className="rounded-full bg-destructive/10 px-2 py-1 font-heading text-[10px] font-bold text-destructive">Anulado</span> : null}
+                    {(viewerRole === "owner" || viewerRole === "admin") && ticket.status === "completed" ? <button type="button" onClick={() => setCorrectionTicket({ id: ticket.id, folio: ticket.folio })} aria-label={`Corregir método del ticket ${ticket.folio}`} title="Corregir método de pago" className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-warning/10 hover:text-warning"><Pencil size={16} /></button> : null}
                     {(viewerRole === "owner" || viewerRole === "admin") && ticket.status === "completed" ? <button type="button" onClick={() => void voidPayment(ticket.id)} aria-label={`Anular ticket ${ticket.folio}`} className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Ban size={16} /></button> : null}
                     <button type="button" onClick={() => void viewReceipt(ticket.id)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:bg-border"><Printer size={15} /> Ver</button>
                   </div>
@@ -967,6 +971,18 @@ export function SalesHistory() {
       ) : null}
 
       {receipt ? <ReceiptDialog receipt={receipt} onClose={() => setReceipt(null)} /> : null}
+
+      {correctionTicket ? (
+        <PaymentMethodCorrectionDialog
+          transactionId={correctionTicket.id}
+          folio={correctionTicket.folio}
+          onClose={() => setCorrectionTicket(null)}
+          onCorrected={async () => {
+            await loadHistory();
+            if (ticketOrder) await openTickets(ticketOrder);
+          }}
+        />
+      ) : null}
 
       {deleteTarget ? (
         <div

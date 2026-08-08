@@ -9,6 +9,9 @@ export interface ModifierGroup {
   id?: string;
   name: string;
   required: boolean;
+  selection_mode?: "single" | "multiple";
+  min_selections?: number;
+  max_selections?: number | null;
   options: ModifierOption[];
 }
 

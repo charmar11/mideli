@@ -76,17 +76,32 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
       return;
     }
 
-    const normalizedModifiers = modifiers.map((group) => ({
-      id: group.id ?? crypto.randomUUID(),
-      name: group.name.trim(),
-      required: Boolean(group.required),
-      options: group.options.map((option) => ({
+    const normalizedModifiers = modifiers.map((group) => {
+      const selectionMode: NonNullable<ModifierGroup["selection_mode"]> =
+        group.selection_mode === "multiple" ? "multiple" : "single";
+      const options = group.options.map((option) => ({
         id: option.id ?? crypto.randomUUID(),
         name: option.name.trim(),
         price: Math.max(0, Number(option.price) || 0),
         description: option.description?.trim() || "",
-      })),
-    }));
+      }));
+      const requestedMaximum = Math.floor(Number(group.max_selections) || 0);
+
+      return {
+        id: group.id ?? crypto.randomUUID(),
+        name: group.name.trim(),
+        required: Boolean(group.required),
+        selection_mode: selectionMode,
+        min_selections: group.required ? 1 : 0,
+        max_selections:
+          selectionMode === "single"
+            ? 1
+            : requestedMaximum > 0
+              ? Math.min(requestedMaximum, options.length)
+              : null,
+        options,
+      };
+    });
 
     if (
       normalizedModifiers.some(
@@ -160,7 +175,15 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
   function addModifierGroup() {
     setModifiers([
       ...modifiers,
-      { id: crypto.randomUUID(), name: "", required: false, options: [] },
+      {
+        id: crypto.randomUUID(),
+        name: "",
+        required: false,
+        selection_mode: "single",
+        min_selections: 0,
+        max_selections: 1,
+        options: [],
+      },
     ]);
   }
 
@@ -424,6 +447,56 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
                           <Trash2 size={16} />
                         </button>
                       </div>
+                    </div>
+
+                    <div className="mb-3 grid gap-2 rounded-xl bg-background/55 p-2 sm:grid-cols-[minmax(0,1fr)_9rem]">
+                      <label className="min-w-0">
+                        <span className="mb-1 block font-heading text-[11px] font-bold text-muted-foreground">
+                          Tipo de selección
+                        </span>
+                        <select
+                          value={group.selection_mode === "multiple" ? "multiple" : "single"}
+                          onChange={(event) => {
+                            const selectionMode = event.target.value as "single" | "multiple";
+                            updateModifierGroup(groupIndex, {
+                              selection_mode: selectionMode,
+                              min_selections: group.required ? 1 : 0,
+                              max_selections: selectionMode === "single" ? 1 : null,
+                            });
+                          }}
+                          className="h-11 w-full rounded-xl border border-border bg-surface px-3 font-body text-sm text-foreground outline-none focus:border-brand"
+                        >
+                          <option value="single">Una opción</option>
+                          <option value="multiple">Varias opciones</option>
+                        </select>
+                      </label>
+                      {group.selection_mode === "multiple" ? (
+                        <label>
+                          <span className="mb-1 block font-heading text-[11px] font-bold text-muted-foreground">
+                            Máximo
+                          </span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            max={Math.max(1, group.options.length)}
+                            value={group.max_selections ?? ""}
+                            onChange={(event) =>
+                              updateModifierGroup(groupIndex, {
+                                max_selections: event.target.value
+                                  ? Math.max(1, Math.floor(Number(event.target.value)))
+                                  : null,
+                              })
+                            }
+                            placeholder="Sin límite"
+                            className="h-11 w-full rounded-xl border border-border bg-surface px-3 font-data text-sm text-foreground outline-none placeholder:font-body placeholder:text-muted-foreground focus:border-brand"
+                          />
+                        </label>
+                      ) : (
+                        <div className="flex items-end pb-2 font-body text-xs text-muted-foreground">
+                          Se reemplaza al elegir otra
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-2">

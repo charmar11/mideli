@@ -10,6 +10,7 @@ import {
   shouldPrimeReadyOrderAudio,
 } from "@/lib/ready-order-audio";
 import { formatOrderLocation } from "@/lib/order-location";
+import { areDeviceAlertsEnabled } from "@/lib/push-notifications";
 
 export function ReadyOrderNotifier() {
   const activeOrders = useOrderStore((state) => state.activeOrders);
@@ -75,6 +76,11 @@ export function ReadyOrderNotifier() {
       );
 
       if (readyOrders.length > 0) {
+        if (!areDeviceAlertsEnabled()) {
+          previousOrdersRef.current = currentOrders;
+          return;
+        }
+
         playReadySound();
         const orderNumbers = readyOrders.map((order) => `#${order.number}`).join(", ");
         const tableNames = readyOrders

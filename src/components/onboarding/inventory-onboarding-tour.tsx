@@ -1,59 +1,265 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Compass, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Compass, Lightbulb, X } from "lucide-react";
 import type { InventoryView } from "@/components/admin/inventory-manager";
 
-const TOUR_STORAGE_VERSION = "v1";
+const TOUR_STORAGE_VERSION = "v2";
 
 type InventoryTourStep = {
+  chapter: string;
   title: string;
   body: string;
+  bullets?: string[];
+  tip?: string;
   view: InventoryView;
   selector?: string;
 };
 
 const STEPS: InventoryTourStep[] = [
   {
-    title: "Tu inventario en un solo lugar",
-    body: "Aquí controlas existencias, costos, compras, recetas, conteos y cualquier ajuste. La guía no modificará tus datos.",
+    chapter: "Inicio",
+    title: "Controla el inventario sin complicarte",
+    body: "Esta guía recorre cada pestaña y explica qué hacer, cuándo hacerlo y cómo afecta las existencias. No modificará ningún dato.",
+    bullets: [
+      "Puedes salir y reiniciarla con el botón de interrogación.",
+      "Los ejemplos son generales y no alteran información del local.",
+    ],
     view: "overview",
   },
   {
-    title: "Resumen",
-    body: "Empieza aquí para ver insumos críticos, valor aproximado del almacén y acciones que necesitan atención.",
+    chapter: "Resumen",
+    title: "Tu punto de partida diario",
+    body: "Resumen ordena lo urgente para que no tengas que revisar todo el almacén.",
+    bullets: [
+      "Críticos: llegaron al mínimo o se agotaron.",
+      "Por caducar: lotes que conviene utilizar primero.",
+      "Por recibir: compras que aún no entran al almacén.",
+    ],
     view: "overview",
     selector: "[data-tour='inventory-nav-overview']",
   },
   {
-    title: "Insumos",
-    body: "Registra cada ingrediente como lo usas y como lo compras. Mideli convierte paquetes, calcula el costo unitario y conserva el historial al archivar.",
+    chapter: "Resumen",
+    title: "Prioridades, dinero y rutina",
+    body: "Aquí ves el valor aproximado del inventario, la merma del mes y acciones ordenadas por impacto.",
+    bullets: [
+      "Atiende primero agotados y caducidades.",
+      "Después recibe compras pendientes.",
+      "Termina con un conteo rápido de productos críticos.",
+    ],
+    tip: "Revísalo al abrir el local y antes de preparar la compra del día.",
+    view: "overview",
+    selector: "[data-tour='inventory-view-overview']",
+  },
+  {
+    chapter: "Insumos",
+    title: "Lo que compras y consumes",
+    body: "Un insumo es cualquier ingrediente, bebida, empaque o material cuya existencia quieras controlar.",
+    bullets: [
+      "Usa nombres claros y una unidad de uso consistente.",
+      "Evita duplicar el mismo insumo con unidades diferentes.",
+      "Busca y edita los registros desde esta pestaña.",
+    ],
     view: "items",
     selector: "[data-tour='inventory-nav-items']",
   },
   {
-    title: "Recetas",
-    body: "Define cuánto consume cada producto base y cada variación. Al vender, esas cantidades se descuentan automáticamente del inventario.",
+    chapter: "Insumos",
+    title: "Crear un insumo",
+    body: "Nuevo insumo abre la ficha completa. Captura primero cómo se utiliza y después cómo se compra.",
+    bullets: [
+      "Existencia actual: lo que realmente tienes al registrarlo.",
+      "Mínimo: punto donde debe aparecer una alerta.",
+      "Existencia ideal: nivel al que quieres volver al comprar.",
+    ],
+    view: "items",
+    selector: "[data-tour='inventory-new-item-header']",
+  },
+  {
+    chapter: "Insumos",
+    title: "Unidad de uso y unidad de compra",
+    body: "La unidad de uso es lo que descuenta una receta. La unidad de compra es el paquete que entrega el proveedor.",
+    bullets: [
+      "Ejemplo: utilizas piezas, pero compras una caja.",
+      "El factor de conversión indica cuántas unidades contiene cada compra.",
+      "El costo total del paquete permite calcular el costo real por unidad.",
+    ],
+    tip: "Si compras 12 piezas por paquete, usa factor 12. No registres el precio del paquete como costo de una sola pieza.",
+    view: "items",
+    selector: "[data-tour='inventory-view-items']",
+  },
+  {
+    chapter: "Insumos",
+    title: "Proveedor, ubicación y archivo",
+    body: "Completa proveedor, teléfono, ubicación y frecuencia de conteo para que otra persona pueda operar sin adivinar.",
+    bullets: [
+      "Archivar oculta el insumo sin destruir su historial.",
+      "Reactívalo si vuelves a utilizarlo.",
+      "Elimina solo registros nuevos que nunca tuvieron movimientos.",
+    ],
+    view: "items",
+    selector: "[data-tour='inventory-view-items']",
+  },
+  {
+    chapter: "Recetas",
+    title: "Conecta cada venta con el almacén",
+    body: "Una receta define cuánto se descuenta al vender un producto del menú.",
+    bullets: [
+      "Configurada: todas sus secciones tienen ingredientes.",
+      "Parcial: todavía falta completar alguna variación.",
+      "Sin receta: la venta no descontará insumos.",
+    ],
     view: "recipes",
     selector: "[data-tour='inventory-nav-recipes']",
   },
   {
-    title: "Comprar",
-    body: "Prepara pedidos a proveedores y registra lo que realmente recibes. El costo promedio se actualiza con la compra confirmada.",
+    chapter: "Recetas",
+    title: "Producto base y variaciones",
+    body: "Configura primero lo que siempre consume el producto. Después abre cada extra o variación y agrega únicamente lo adicional.",
+    bullets: [
+      "La base se descuenta en toda venta del producto.",
+      "Una variación se descuenta solo cuando el cliente la selecciona.",
+      "La cantidad siempre se expresa en la unidad de uso del insumo.",
+    ],
+    tip: "Una receta puede guardarse vacía para indicar conscientemente que ese producto no descuenta inventario.",
+    view: "recipes",
+    selector: "[data-tour='inventory-view-recipes']",
+  },
+  {
+    chapter: "Recetas",
+    title: "Comprueba el costo estimado",
+    body: "El editor suma el costo de los ingredientes según su consumo. Úsalo para detectar recetas incompletas o productos con margen bajo.",
+    bullets: [
+      "Revisa cantidades cuando cambie la porción.",
+      "Actualiza el costo desde una recepción, no desde la receta.",
+      "Las ventas futuras usarán la receta guardada.",
+    ],
+    view: "recipes",
+    selector: "[data-tour='inventory-view-recipes']",
+  },
+  {
+    chapter: "Comprar",
+    title: "Prepara cantidades sugeridas",
+    body: "Comprar compara existencia actual, mínimo, nivel ideal y presentación de compra.",
+    bullets: [
+      "La sugerencia busca recuperar la existencia ideal.",
+      "Respeta la cantidad mínima definida para el proveedor.",
+      "Puedes ajustar el número de paquetes antes de guardar.",
+    ],
     view: "purchase",
     selector: "[data-tour='inventory-nav-purchase']",
   },
   {
-    title: "Contar",
-    body: "Escribe la cantidad que encuentras físicamente. Mideli la compara con el sistema y solicita un motivo cuando existe una diferencia.",
+    chapter: "Comprar",
+    title: "Pedido a proveedor o entrada directa",
+    body: "Guarda un pedido cuando la mercancía llegará después. Usa entrada directa si ya tienes la compra frente a ti.",
+    bullets: [
+      "Guardar un pedido no aumenta existencias.",
+      "Recibir mercancía sí aumenta existencias.",
+      "Una entrega parcial conserva lo que falta por recibir.",
+    ],
+    view: "purchase",
+    selector: "[data-tour='inventory-view-purchase']",
+  },
+  {
+    chapter: "Comprar",
+    title: "Recibe lo que realmente llegó",
+    body: "Al recibir, captura paquetes reales, costo total y caducidad. Mideli convierte cantidades y recalcula el costo promedio.",
+    bullets: [
+      "No confirmes cantidades que el proveedor no entregó.",
+      "Registra caducidad para utilizar primero lo más antiguo.",
+      "El historial conserva proveedor, fecha y costo.",
+    ],
+    tip: "Cuenta y revisa la mercancía antes de confirmar la entrada.",
+    view: "purchase",
+    selector: "[data-tour='inventory-view-purchase']",
+  },
+  {
+    chapter: "Contar",
+    title: "Comprueba la existencia física",
+    body: "Contar compara lo que existe en el sistema con lo que encuentras realmente en el local.",
+    bullets: [
+      "Rápido incluye agotados y existencias bajas.",
+      "Completo incluye todos los insumos activos.",
+      "Solo puede existir un conteo abierto a la vez.",
+    ],
     view: "count",
     selector: "[data-tour='inventory-nav-count']",
   },
   {
-    title: "Movimientos",
-    body: "Consulta la bitácora de compras, ventas, mermas, uso interno y correcciones. Aquí puedes saber por qué cambió una existencia.",
+    chapter: "Contar",
+    title: "Captura primero, compara después",
+    body: "Escribe la cantidad que ves. La cifra del sistema aparece después para que no influya en tu conteo.",
+    bullets: [
+      "Avanza insumo por insumo desde el celular.",
+      "El borrador se conserva en este dispositivo.",
+      "No finalices hasta revisar todas las ubicaciones.",
+    ],
+    view: "count",
+    selector: "[data-tour='inventory-view-count']",
+  },
+  {
+    chapter: "Contar",
+    title: "Explica y concilia diferencias",
+    body: "Cuando no coincide, selecciona un motivo y agrega una nota útil. El ajuste queda registrado, nunca oculto.",
+    bullets: [
+      "Puede indicar merma, recepción incorrecta o uso interno.",
+      "Las diferencias importantes quedan para revisión administrativa.",
+      "Finalizar actualiza la existencia con el conteo autorizado.",
+    ],
+    tip: "Una diferencia repetida suele señalar una receta incompleta o un procedimiento que falta registrar.",
+    view: "count",
+    selector: "[data-tour='inventory-view-count']",
+  },
+  {
+    chapter: "Movimientos",
+    title: "Registra salidas que no son ventas",
+    body: "Merma, caducidad, daño y consumo interno deben registrarse en cuanto ocurren.",
+    bullets: [
+      "Selecciona el motivo correcto.",
+      "Escribe una nota concreta.",
+      "La salida conserva responsable, fecha y costo.",
+    ],
     view: "movements",
     selector: "[data-tour='inventory-nav-movements']",
+  },
+  {
+    chapter: "Movimientos",
+    title: "La bitácora explica cada cambio",
+    body: "El historial reúne compras, consumos por venta, devoluciones, conteos y mermas.",
+    bullets: [
+      "Busca por insumo, tipo o referencia.",
+      "Los pedidos muestran su folio como referencia.",
+      "Las caducidades ayudan a decidir qué lote utilizar primero.",
+    ],
+    view: "movements",
+    selector: "[data-tour='inventory-view-movements']",
+  },
+  {
+    chapter: "Rutina recomendada",
+    title: "Qué hacer durante el turno",
+    body: "Mantén el inventario útil con una rutina pequeña y constante.",
+    bullets: [
+      "Diario: revisar Resumen, recibir compras y registrar mermas.",
+      "Cada pocos días: conteo rápido de críticos.",
+      "Semanal: conteo completo y revisión de diferencias.",
+      "Cuando cambie una porción: actualizar su receta.",
+    ],
+    tip: "La exactitud mejora más registrando cada movimiento a tiempo que haciendo un conteo enorme al final del mes.",
+    view: "overview",
+    selector: "[data-tour='inventory-view-overview']",
+  },
+  {
+    chapter: "Listo",
+    title: "Ya puedes operar el inventario",
+    body: "Empieza creando los insumos principales, configura sus recetas y realiza un conteo inicial. Después usa Resumen como guía diaria.",
+    bullets: [
+      "El botón de interrogación reinicia esta guía.",
+      "Archivar conserva historial; eliminar es excepcional.",
+      "Toda diferencia importante debe tener una explicación.",
+    ],
+    view: "overview",
   },
 ];
 
@@ -68,11 +274,18 @@ type TargetRect = {
 
 function findVisibleTarget(selector?: string) {
   if (!selector) return null;
-  return Array.from(document.querySelectorAll<HTMLElement>(selector)).find((element) => {
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-  }) ?? null;
+  return (
+    Array.from(document.querySelectorAll<HTMLElement>(selector)).find((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== "none" &&
+        style.visibility !== "hidden"
+      );
+    }) ?? null
+  );
 }
 
 export function InventoryOnboardingTour({
@@ -109,7 +322,6 @@ export function InventoryOnboardingTour({
       shouldStart = true;
     }
     if (!shouldStart) return;
-
     const timeout = window.setTimeout(startTour, 0);
     return () => window.clearTimeout(timeout);
   }, [startTour, storageKey]);
@@ -140,7 +352,7 @@ export function InventoryOnboardingTour({
         height: rect.height,
       });
     };
-    const timeout = window.setTimeout(updateRect, 160);
+    const timeout = window.setTimeout(updateRect, 180);
     window.addEventListener("resize", updateRect);
     window.addEventListener("scroll", updateRect, true);
     return () => {
@@ -157,7 +369,7 @@ export function InventoryOnboardingTour({
     try {
       localStorage.setItem(storageKey, value);
     } catch {
-      // El tutorial sigue funcionando aunque el navegador bloquee storage.
+      // La guía sigue disponible aunque el dispositivo bloquee el almacenamiento.
     }
   }
 
@@ -187,41 +399,115 @@ export function InventoryOnboardingTour({
   const viewportHeight = typeof window === "undefined" ? 768 : window.innerHeight;
   const tooltipStyle = targetRect
     ? {
-        left: Math.max(12, Math.min(targetRect.left, viewportWidth - 356)),
-        top: targetRect.bottom + 12 < viewportHeight - 230
-          ? targetRect.bottom + 12
-          : Math.max(12, targetRect.top - 222),
+        left: Math.max(12, Math.min(targetRect.left, viewportWidth - 392)),
+        top: Math.max(12, Math.min(targetRect.bottom + 12, viewportHeight - 520)),
       }
     : undefined;
+  const progress = ((stepIndex + 1) / STEPS.length) * 100;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[90]" aria-live="polite">
       {targetRect ? (
-        <div className="fixed rounded-xl ring-4 ring-brand ring-offset-4 ring-offset-background/80 transition-[top,left,width,height] duration-200 motion-reduce:transition-none" style={{ left: targetRect.left, top: targetRect.top, width: targetRect.width, height: targetRect.height, boxShadow: "0 0 0 9999px rgb(5 4 8 / 0.76)" }} />
+        <div
+          className="fixed rounded-xl ring-4 ring-brand ring-offset-4 ring-offset-background/80 transition-[top,left,width,height] duration-200 motion-reduce:transition-none"
+          style={{
+            left: targetRect.left,
+            top: targetRect.top,
+            width: targetRect.width,
+            height: targetRect.height,
+            boxShadow: "0 0 0 9999px rgb(5 4 8 / 0.78)",
+          }}
+        />
       ) : (
-        <div className="absolute inset-0 bg-background/80" />
+        <div className="absolute inset-0 bg-background/85" />
       )}
 
-      <section role="dialog" aria-modal="true" aria-labelledby="inventory-tour-title" className={`pointer-events-auto fixed w-[calc(100%_-_1.5rem)] max-w-[344px] rounded-2xl border border-border bg-surface p-5 shadow-float ${targetRect ? "" : "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"}`} style={tooltipStyle}>
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-light text-brand"><Compass size={19} /></span>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="inventory-tour-title"
+        className={`pointer-events-auto fixed flex max-h-[calc(100dvh_-_1.5rem)] w-[calc(100%_-_1.5rem)] max-w-[380px] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-float ${
+          targetRect
+            ? ""
+            : "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+        }`}
+        style={tooltipStyle}
+      >
+        <div className="h-1 bg-surface-raised">
+          <div className="h-full bg-brand transition-[width]" style={{ width: `${progress}%` }} />
+        </div>
+        <header className="flex items-start gap-3 border-b border-border p-4 pb-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-light text-brand">
+            <Compass aria-hidden size={19} />
+          </span>
           <div className="min-w-0 flex-1">
-            <p className="font-data text-[10px] font-bold uppercase tracking-[0.18em] text-brand">Guía {stepIndex + 1} de {STEPS.length}</p>
-            <h2 id="inventory-tour-title" className="mt-1 font-heading text-base font-bold text-foreground">{currentStep.title}</h2>
+            <p className="font-data text-[10px] font-bold uppercase tracking-[0.18em] text-brand">
+              {currentStep.chapter} · {stepIndex + 1} de {STEPS.length}
+            </p>
+            <h2 id="inventory-tour-title" className="mt-1 font-heading text-base font-bold text-foreground">
+              {currentStep.title}
+            </h2>
           </div>
-          <button type="button" onClick={skip} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground" aria-label="Cerrar guía"><X size={17} /></button>
-        </div>
-        <p className="mt-4 font-body text-sm leading-6 text-muted-foreground">{currentStep.body}</p>
-        <div className="mt-5 flex items-center gap-2">
-          {stepIndex > 0 ? (
-            <button type="button" onClick={() => showStep(stepIndex - 1)} className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-border px-3 font-heading text-xs font-bold text-muted-foreground hover:text-foreground"><ArrowLeft size={15} /> Atrás</button>
-          ) : (
-            <button type="button" onClick={skip} className="h-11 rounded-xl px-3 font-heading text-xs font-bold text-muted-foreground hover:text-foreground">Omitir</button>
-          )}
-          <button type="button" onClick={next} className="ml-auto inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white shadow-lg shadow-brand/20 hover:bg-brand-hover">
-            {stepIndex === STEPS.length - 1 ? <><Check size={15} /> Terminar</> : <>Siguiente <ArrowRight size={15} /></>}
+          <button
+            type="button"
+            onClick={skip}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+            aria-label="Cerrar guía"
+          >
+            <X aria-hidden size={17} />
           </button>
+        </header>
+
+        <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-4">
+          <p className="font-body text-sm leading-6 text-muted-foreground">{currentStep.body}</p>
+          {currentStep.bullets?.length ? (
+            <ul className="mt-3 space-y-2">
+              {currentStep.bullets.map((bullet) => (
+                <li key={bullet} className="flex gap-2 font-body text-xs leading-5 text-foreground">
+                  <Check aria-hidden size={14} className="mt-0.5 shrink-0 text-success" />
+                  <span>{bullet}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {currentStep.tip ? (
+            <div className="mt-4 flex gap-2 rounded-xl bg-gold/10 p-3 text-gold">
+              <Lightbulb aria-hidden size={16} className="mt-0.5 shrink-0" />
+              <p className="font-body text-xs leading-5">{currentStep.tip}</p>
+            </div>
+          ) : null}
         </div>
+
+        <footer className="flex items-center gap-2 border-t border-border p-3">
+          {stepIndex > 0 ? (
+            <button
+              type="button"
+              onClick={() => showStep(stepIndex - 1)}
+              className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-border px-3 font-heading text-xs font-bold text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft aria-hidden size={15} /> Atrás
+            </button>
+          ) : (
+            <button type="button" onClick={skip} className="h-11 rounded-xl px-3 font-heading text-xs font-bold text-muted-foreground hover:text-foreground">
+              Omitir
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={next}
+            className="ml-auto inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white shadow-lg shadow-brand/20 hover:bg-brand-hover"
+          >
+            {stepIndex === STEPS.length - 1 ? (
+              <>
+                <Check aria-hidden size={15} /> Terminar
+              </>
+            ) : (
+              <>
+                Siguiente <ArrowRight aria-hidden size={15} />
+              </>
+            )}
+          </button>
+        </footer>
       </section>
     </div>
   );

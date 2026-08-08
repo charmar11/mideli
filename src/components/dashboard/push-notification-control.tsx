@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   enablePushNotifications,
   getPushStatus,
+  pausePushNotifications,
   type PushStatus,
 } from "@/lib/push-notifications";
 import { primeReadyOrderAudio } from "@/lib/ready-order-audio";
@@ -16,6 +17,7 @@ const STATUS_COPY: Record<PushStatus, string> = {
   install_required: "Instala Mideli en la pantalla de inicio para activar avisos",
   denied: "Los avisos están bloqueados en la configuración del dispositivo",
   available: "Activar avisos de pedidos listos",
+  paused: "Avisos pausados en este dispositivo",
   production_required: "Probar sonido de pedidos listos",
   enabled: "Avisos de pedidos listos activados",
 };
@@ -56,6 +58,15 @@ export function PushNotificationControl() {
 
     setWorking(true);
     try {
+      if (status === "enabled") {
+        const nextStatus = await pausePushNotifications();
+        setStatus(nextStatus);
+        toast.success("Avisos pausados", {
+          description: "Este dispositivo no recibirá alertas hasta que vuelvas a activarlas.",
+        });
+        return;
+      }
+
       const audioPromise = primeReadyOrderAudio(true);
 
       if (status === "production_required") {
@@ -64,19 +75,6 @@ export function PushNotificationControl() {
           audioReady ? "Sonido de pedidos listo" : "Toca de nuevo para probar el sonido",
           {
             description: "Los avisos Push se activan en la versión publicada de Mideli.",
-          }
-        );
-        return;
-      }
-
-      if (status === "enabled") {
-        const audioReady = await audioPromise;
-        toast[audioReady ? "success" : "error"](
-          audioReady ? "Avisos y sonido listos" : "El sonido sigue bloqueado",
-          {
-            description: audioReady
-              ? "Escuchaste el mismo sonido que usará Mideli con la app abierta."
-              : "Revisa que el dispositivo no esté en silencio y vuelve a tocar la campana.",
           }
         );
         return;
@@ -103,7 +101,10 @@ export function PushNotificationControl() {
     }
   }
 
-  const Icon = status === "denied" || status === "unsupported" ? BellOff : Bell;
+  const Icon =
+    status === "denied" || status === "unsupported" || status === "paused"
+      ? BellOff
+      : Bell;
   return (
     <button
       type="button"
@@ -113,6 +114,8 @@ export function PushNotificationControl() {
       className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors ${
         status === "enabled"
           ? "border-success/35 bg-success/10 text-success"
+          : status === "paused"
+            ? "border-warning/40 bg-warning/10 text-warning hover:bg-warning/15"
           : "border-border bg-surface text-muted-foreground hover:border-brand/45 hover:text-brand"
       }`}
     >
@@ -121,7 +124,7 @@ export function PushNotificationControl() {
       ) : (
         <Icon size={16} />
       )}
-      {status === "available" ? (
+      {status === "available" || status === "paused" ? (
         <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-warning" />
       ) : null}
     </button>

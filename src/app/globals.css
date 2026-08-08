@@ -439,7 +439,9 @@
   }
 
   .payment-receipt-print-root,
-  .payment-receipt-print-root * {
+  .payment-receipt-print-root *,
+  .kitchen-ticket-print-root,
+  .kitchen-ticket-print-root * {
     visibility: visible !important;
   }
 
@@ -448,6 +450,15 @@
     inset: 0 auto auto 0 !important;
     width: var(--ticket-width) !important;
     max-width: none !important;
+    min-height: 0 !important;
+    box-shadow: none !important;
+    print-color-adjust: exact;
+  }
+
+  .kitchen-ticket-print-root {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 48mm !important;
     min-height: 0 !important;
     box-shadow: none !important;
     print-color-adjust: exact;

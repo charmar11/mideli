@@ -11,6 +11,7 @@ import {
   Landmark,
   HelpCircle,
   LogOut,
+  Printer,
   Settings,
   UtensilsCrossed,
 } from "lucide-react";
@@ -70,6 +71,12 @@ const ADMIN_NAV = [
     icon: Landmark,
     match: (path: string) => path.startsWith("/settings/caja"),
   },
+  {
+    href: "/settings/impresion",
+    label: "Impresión",
+    icon: Printer,
+    match: (path: string) => path.startsWith("/settings/impresion"),
+  },
 ] as const;
 
 interface DashboardShellProps {
@@ -108,7 +115,9 @@ export function DashboardShell({
     ...(canUseKitchen ? [NAV[1]] : []),
     ...(canUseInventory ? [ADMIN_NAV[3]] : []),
     ...(isAdmin ? [NAV[2]] : []),
-    ...(isAdmin ? [...ADMIN_NAV.slice(0, 3), ADMIN_NAV[4]] : []),
+    ...(isAdmin
+      ? [ADMIN_NAV[0], ADMIN_NAV[1], ADMIN_NAV[2], ADMIN_NAV[4], ADMIN_NAV[5]]
+      : []),
   ];
 
   return (

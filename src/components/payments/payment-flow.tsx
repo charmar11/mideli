@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
   Banknote,
   Check,
   CheckCircle2,
   ChevronRight,
+  CircleHelp,
   CreditCard,
   Loader2,
   Minus,
@@ -255,6 +257,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showPaymentGuide, setShowPaymentGuide] = useState(false);
   const fetchActiveOrders = useOrderStore((state) => state.fetchActiveOrders);
 
   useEffect(() => {
@@ -625,6 +628,17 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
               })}
             </div>
           ) : null}
+          {stage !== "receipt" ? (
+            <button
+              type="button"
+              onClick={() => setShowPaymentGuide(true)}
+              aria-label="Abrir guía de cobro"
+              title="Guía de cobro"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-brand"
+            >
+              <CircleHelp aria-hidden size={18} />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
@@ -850,6 +864,72 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
           </footer>
         ) : null}
       </div>
+      {showPaymentGuide ? <PaymentGuide onClose={() => setShowPaymentGuide(false)} /> : null}
+    </div>
+  );
+}
+
+const PAYMENT_GUIDE_STEPS = [
+  {
+    title: "Elige qué vas a cobrar",
+    body: "Cuenta completa liquida todo el saldo abierto de la mesa, incluso si se acumuló en varios pedidos. Si cierras el cobro, la cuenta permanece pendiente sin cambios.",
+  },
+  {
+    title: "Divide en partes iguales",
+    body: "Selecciona cuántas personas pagarán. Registra una parte y usa Cobrar siguiente parte hasta terminar. Cada pago genera su propio ticket.",
+  },
+  {
+    title: "Divide por productos",
+    body: "Marca la cantidad de cada producto que pagará la persona actual. Lo no seleccionado permanece en la cuenta para cobrarlo después.",
+  },
+  {
+    title: "Descuento y propina",
+    body: "El descuento puede ser porcentaje o monto fijo y requiere el PIN de una persona autorizada. La propina se agrega únicamente a esta parte del cobro.",
+  },
+  {
+    title: "Efectivo, tarjeta o transferencia",
+    body: "En efectivo captura lo recibido para calcular el cambio. Tarjeta y transferencia registran la operación realizada fuera de Mideli.",
+  },
+  {
+    title: "Pago combinado",
+    body: "Combinar permite pagar una parte en efectivo y otra con tarjeta o transferencia. La suma distribuida debe ser exactamente igual al total antes de confirmar.",
+  },
+  {
+    title: "Ticket y correcciones",
+    body: "Al confirmar se crea un ticket de 48 mm. Puedes reimprimirlo desde Historial. Administración también puede corregir el método de pago dejando un motivo en auditoría.",
+  },
+] as const;
+
+function PaymentGuide({ onClose }: { onClose: () => void }) {
+  const [index, setIndex] = useState(0);
+  const step = PAYMENT_GUIDE_STEPS[index];
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-ink/80 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <section role="dialog" aria-modal="true" aria-labelledby="payment-guide-title" className="w-full max-w-md overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:rounded-2xl">
+        <div className="h-1 bg-surface-raised">
+          <div className="h-full bg-brand transition-[width]" style={{ width: `${((index + 1) / PAYMENT_GUIDE_STEPS.length) * 100}%` }} />
+        </div>
+        <header className="flex items-start gap-3 border-b border-border p-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-light text-brand"><CircleHelp aria-hidden size={19} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="font-data text-[10px] font-bold uppercase tracking-[0.18em] text-brand">Cobro · {index + 1} de {PAYMENT_GUIDE_STEPS.length}</p>
+            <h2 id="payment-guide-title" className="mt-1 font-heading text-base font-bold">{step.title}</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar guía" className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised"><X aria-hidden size={17} /></button>
+        </header>
+        <div className="p-5">
+          <p className="font-body text-sm leading-6 text-muted-foreground">{step.body}</p>
+          <div className="mt-5 flex items-center gap-2">
+            <button type="button" onClick={() => setIndex((current) => Math.max(0, current - 1))} disabled={index === 0} className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-border px-3 font-heading text-xs font-bold text-muted-foreground disabled:opacity-30"><ArrowLeft aria-hidden size={15} /> Atrás</button>
+            {index === PAYMENT_GUIDE_STEPS.length - 1 ? (
+              <button type="button" onClick={onClose} className="action-success ml-auto inline-flex h-11 items-center gap-2 rounded-xl px-4 font-heading text-xs font-bold"><Check aria-hidden size={15} /> Entendido</button>
+            ) : (
+              <button type="button" onClick={() => setIndex((current) => Math.min(PAYMENT_GUIDE_STEPS.length - 1, current + 1))} className="ml-auto inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white">Siguiente <ArrowRight aria-hidden size={15} /></button>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -889,16 +969,6 @@ function PaymentSummary({ gross, discount, tip, total, emphasis = false }: { gro
 }
 
 function ReceiptSuccess({ receipt, remainingBalance, onClose, onContinue }: { receipt: PaymentReceipt; remainingBalance: number; onClose: () => void; onContinue: () => void }) {
-  const [ticketWidth, setTicketWidth] = useState<58 | 80>(() => {
-    if (typeof window === "undefined") return 80;
-    return window.localStorage.getItem("mideli-ticket-width") === "58" ? 58 : 80;
-  });
-
-  function selectWidth(width: 58 | 80) {
-    setTicketWidth(width);
-    window.localStorage.setItem("mideli-ticket-width", String(width));
-  }
-
   return (
     <div className="pos-scroll min-h-0 flex-1 overflow-y-auto bg-background p-4 sm:p-5">
       <div className="mx-auto grid max-w-3xl gap-5 lg:grid-cols-[1fr_auto]">
@@ -908,13 +978,9 @@ function ReceiptSuccess({ receipt, remainingBalance, onClose, onContinue }: { re
           <p className="mt-1 font-body text-sm text-muted-foreground">
             Ticket {receipt.transaction.folio} · {formatPaymentMoney(receipt.transaction.total_amount)}
           </p>
-          <div className="mt-5 flex rounded-xl bg-surface p-1">
-            {[80, 58].map((width) => (
-              <button key={width} type="button" onClick={() => selectWidth(width as 58 | 80)} className={`h-10 flex-1 rounded-lg font-heading text-xs font-bold ${ticketWidth === width ? "bg-brand text-white" : "text-muted-foreground hover:text-foreground"}`}>
-                {width} mm
-              </button>
-            ))}
-          </div>
+          <p className="mt-5 rounded-xl bg-surface px-3 py-2 font-body text-xs text-muted-foreground">
+            Formato optimizado para rollo de 48 mm.
+          </p>
           <button type="button" onClick={() => window.print()} className="mt-3 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-brand font-heading text-sm font-bold text-white shadow-lg shadow-brand/20 hover:bg-brand-hover">
             <Printer size={17} />
             Imprimir ticket
@@ -927,17 +993,13 @@ function ReceiptSuccess({ receipt, remainingBalance, onClose, onContinue }: { re
           ) : null}
           <button type="button" onClick={onClose} className="mt-2 h-11 rounded-xl font-heading text-sm font-bold text-muted-foreground hover:bg-surface hover:text-foreground">Cerrar</button>
         </div>
-        <ReceiptPaper receipt={receipt} width={ticketWidth} />
+        <ReceiptPaper receipt={receipt} />
       </div>
     </div>
   );
 }
 
 export function ReceiptDialog({ receipt, onClose, reprint = true }: { receipt: PaymentReceipt; onClose: () => void; reprint?: boolean }) {
-  const [ticketWidth, setTicketWidth] = useState<58 | 80>(() => {
-    if (typeof window === "undefined") return 80;
-    return window.localStorage.getItem("mideli-ticket-width") === "58" ? 58 : 80;
-  });
   return (
     <div className="fixed inset-0 z-[85] flex items-end justify-center bg-ink/70 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-label="Vista previa del ticket" className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-surface shadow-float sm:rounded-2xl">
@@ -948,10 +1010,10 @@ export function ReceiptDialog({ receipt, onClose, reprint = true }: { receipt: P
         </header>
         <div className="pos-scroll min-h-0 flex-1 overflow-y-auto bg-background p-4">
           <div className="mx-auto flex max-w-md flex-col items-center gap-4">
-            <div className="flex w-full rounded-xl bg-surface p-1">
-              {[80, 58].map((width) => <button key={width} type="button" onClick={() => { setTicketWidth(width as 58 | 80); window.localStorage.setItem("mideli-ticket-width", String(width)); }} className={`h-10 flex-1 rounded-lg font-heading text-xs font-bold ${ticketWidth === width ? "bg-brand text-white" : "text-muted-foreground"}`}>{width} mm</button>)}
-            </div>
-            <ReceiptPaper receipt={receipt} width={ticketWidth} reprint={reprint} />
+            <p className="w-full rounded-xl bg-surface px-3 py-2 text-center font-body text-xs text-muted-foreground">
+              Vista previa para rollo de 48 mm
+            </p>
+            <ReceiptPaper receipt={receipt} reprint={reprint} />
           </div>
         </div>
         <footer className="flex gap-2 border-t border-border px-4 py-3"><button type="button" onClick={onClose} className="h-12 flex-1 rounded-xl font-heading text-sm font-bold text-muted-foreground hover:bg-surface-raised">Cerrar</button><button type="button" onClick={() => window.print()} className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-brand font-heading text-sm font-bold text-white"><Printer size={17} /> Imprimir</button></footer>
@@ -960,7 +1022,7 @@ export function ReceiptDialog({ receipt, onClose, reprint = true }: { receipt: P
   );
 }
 
-function ReceiptPaper({ receipt, width, reprint = false }: { receipt: PaymentReceipt; width: 58 | 80; reprint?: boolean }) {
+function ReceiptPaper({ receipt, reprint = false }: { receipt: PaymentReceipt; reprint?: boolean }) {
   const transaction = receipt.transaction;
   const date = new Intl.DateTimeFormat("es-MX", {
     timeZone: "America/Hermosillo",
@@ -971,7 +1033,7 @@ function ReceiptPaper({ receipt, width, reprint = false }: { receipt: PaymentRec
   return (
     <article
       className="payment-receipt-print-root order-1 w-full shrink-0 bg-[#fffdf4] px-5 py-6 text-[#111] shadow-float lg:order-2"
-      style={{ maxWidth: width === 80 ? "302px" : "219px", ["--ticket-width" as string]: `${width}mm` }}
+      style={{ maxWidth: "181px", ["--ticket-width" as string]: "48mm" }}
     >
       <div className="text-center">
         <p className="font-brand text-3xl text-[#111]">Mideli</p>

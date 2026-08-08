@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Compass, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/types/database";
 
-const TOUR_VERSION = 1;
+const TOUR_VERSION = 2;
 
 type TourStep = {
   title: string;

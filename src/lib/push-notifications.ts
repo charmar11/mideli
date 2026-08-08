@@ -9,8 +9,20 @@ export type PushStatus =
   | "install_required"
   | "denied"
   | "available"
+  | "paused"
   | "production_required"
   | "enabled";
+
+const DEVICE_ALERTS_KEY = "mideli.device-alerts-enabled";
+
+function setDeviceAlertsEnabled(enabled: boolean) {
+  window.localStorage.setItem(DEVICE_ALERTS_KEY, enabled ? "true" : "false");
+}
+
+export function areDeviceAlertsEnabled() {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(DEVICE_ALERTS_KEY) !== "false";
+}
 
 type NavigatorWithStandalone = Navigator & { standalone?: boolean };
 
@@ -52,13 +64,24 @@ function supportsWebPush() {
 
 export async function getPushStatus(): Promise<PushStatus> {
   if (!supportsWebPush()) return "unsupported";
+  if (!areDeviceAlertsEnabled()) return "paused";
   if (process.env.NODE_ENV === "development") return "production_required";
   if (isAppleMobile() && !isStandaloneApp()) return "install_required";
   if (Notification.permission === "denied") return "denied";
 
   const registration = await navigator.serviceWorker.getRegistration();
   const subscription = await registration?.pushManager.getSubscription();
-  return subscription ? "enabled" : "available";
+  if (!subscription) return "available";
+
+  const { data, error } = await createClient()
+    .from("push_subscriptions")
+    .select("is_active")
+    .eq("endpoint", subscription.endpoint)
+    .maybeSingle();
+
+  if (error) return "enabled";
+  if (!data) return "available";
+  return data?.is_active === false ? "paused" : "enabled";
 }
 
 export async function enablePushNotifications(): Promise<PushStatus> {
@@ -98,5 +121,30 @@ export async function enablePushNotifications(): Promise<PushStatus> {
   });
   if (error) throw new Error(error.message);
 
+  setDeviceAlertsEnabled(true);
+
   return "enabled";
+}
+
+export async function pausePushNotifications(): Promise<PushStatus> {
+  if (typeof window === "undefined") return "unsupported";
+
+  setDeviceAlertsEnabled(false);
+  if (!supportsWebPush() || process.env.NODE_ENV === "development") return "paused";
+
+  const registration = await navigator.serviceWorker.getRegistration();
+  const subscription = await registration?.pushManager.getSubscription();
+  if (!subscription) return "paused";
+
+  const { error } = await createClient()
+    .from("push_subscriptions")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("endpoint", subscription.endpoint);
+
+  if (error) {
+    setDeviceAlertsEnabled(true);
+    throw new Error(error.message);
+  }
+
+  return "paused";
 }
