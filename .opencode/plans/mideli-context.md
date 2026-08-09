@@ -141,7 +141,8 @@ Desde 2026-08-01 el sistema se bloquea al vencer la licencia mensual:
 
 - Una fila única en `public.app_license` guarda estado, `valid_until` y `updated_at`. RLS: lectura para `anon` y `authenticated`; escritura solo en servidor con service role.
 - El proxy (`src/proxy.ts`) redirige `/dashboard`, `/menu` y `/settings` a `/sistema-bloqueado` cuando la licencia no está vigente, y `LicenseHeartbeat` bloquea sesiones abiertas al vencer.
-- `/control/licencia` es la herramienta privada del vendedor; cada operación exige `MIDELI_LICENSE_ADMIN_SECRET` (solo servidor). Permite activar 30 días, definir fecha exacta y suspender.
+- `/control/licencia` es la herramienta privada del vendedor. Si todavía no existe una credencial, una sesión activa owner/admin permite crearla una sola vez sin pedir el secreto técnico. Después, todas las operaciones exigen la contraseña privada del vendedor y una sesión firmada de 30 minutos.
+- `MIDELI_LICENSE_ADMIN_SECRET` queda reservado para recuperación técnica. La contraseña privada usa `scrypt`, bloqueo temporal tras cinco fallos y auditoría de renovaciones, suspensión y reactivación.
 - La pantalla de bloqueo no expone la ruta de control ni detalles técnicos.
 - Login e Inicio se rediseñaron: sin texto "Mi Momento", el campo Usuario ya no muestra el sufijo `@mideli.com` (se completa internamente) y se aceptan correos completos.
 

@@ -4,6 +4,7 @@ import { createHmac, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createServerClient } from "@/lib/supabase/server";
 
 const scryptAsync = promisify(scrypt);
 const SESSION_COOKIE = "mideli_license_control";
@@ -135,6 +136,25 @@ export async function getLicenseCredential() {
 
   if (error) throw new Error("No se pudo consultar el acceso privado");
   return data as LicenseCredential | null;
+}
+
+export async function canCreateInitialLicenseCredential() {
+  const supabase = await createServerClient();
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims?.sub;
+  if (claimsError || !userId) return false;
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role, is_active")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return Boolean(
+    !profileError &&
+      profile?.is_active &&
+      ["owner", "admin"].includes(profile.role)
+  );
 }
 
 export async function setLicenseControlSession(credentialVersion: number) {

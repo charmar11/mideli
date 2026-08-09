@@ -2,7 +2,7 @@
 
 Fecha: 2026-08-09
 
-Estado: diseño principal aprobado; corrección de primer acceso aprobada y pendiente de revisión escrita
+Estado: diseño principal y corrección de primer acceso aprobados
 
 ## Objetivo
 

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  canCreateInitialLicenseCredential,
   clearLicenseControlSession,
   getLicenseCredential,
   hashVendorPassword,
@@ -78,8 +79,13 @@ async function recordLoginAttempt(success: boolean) {
 }
 
 async function setupCredential(formData: FormData) {
-  const recoverySecret = String(formData.get("recoverySecret") ?? "");
-  if (!recoverySecretMatches(recoverySecret)) return errorState("Clave de recuperación incorrecta");
+  const existingCredential = await getLicenseCredential();
+  if (existingCredential) return errorState("El acceso privado ya fue configurado");
+  if (!(await canCreateInitialLicenseCredential())) {
+    return errorState(
+      "Inicia sesión como propietario o administrador para crear el acceso privado"
+    );
+  }
   const pair = getPasswordPair(formData);
   if (!pair.ok) return errorState(pair.error);
   await storeCredential(pair.password, "create");

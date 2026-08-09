@@ -2,7 +2,18 @@ import { LockKeyhole } from "lucide-react";
 import { AccessBrandPanel } from "@/components/auth/access-brand-panel";
 import { LoginForm } from "@/components/auth/login-form";
 
-export default function LoginPage() {
+function safeRedirect(value: string | undefined) {
+  if (!value?.startsWith("/") || value.startsWith("//")) return "/dashboard";
+  return value;
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const params = await searchParams;
+
   return (
     <div className="grid min-h-dvh bg-background lg:grid-cols-[0.94fr_1.06fr]">
       <AccessBrandPanel compact />
@@ -18,7 +29,7 @@ export default function LoginPage() {
           <p className="mt-2 mb-8 font-body text-base text-muted-foreground">
             Usa el usuario y la contraseña asignados para tu turno.
           </p>
-          <LoginForm />
+          <LoginForm redirectTo={safeRedirect(params.next)} />
           <p className="mt-7 border-t border-border pt-5 text-center font-body text-sm text-muted-foreground">
             ¿No puedes entrar? Contacta al administrador del local.
           </p>

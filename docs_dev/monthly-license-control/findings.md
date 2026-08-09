@@ -28,6 +28,10 @@
 - `OwnerDailyControl` mezcla las métricas del dueño con la tarjeta de correo. Se conservarán todas las métricas y se renderizará la tarjeta únicamente cuando el feature flag del servidor sea verdadero.
 - Playwright ya está instalado, pero no hay pruebas unitarias. Las funciones criptográficas se mantendrán puras donde sea posible y la verificación combinará SQL transaccional, lint, build y flujo de navegador.
 - La migración completa pasó una prueba remota dentro de una sola transacción con `ROLLBACK`: credencial inicial, bloqueo tras cinco intentos, renovación, suspensión, rechazo de escrituras y reactivación.
+- La producción tiene cero filas en `license_control_credentials`; el error no proviene de una credencial dañada.
+- Vercel sí contiene `MIDELI_LICENSE_ADMIN_SECRET`, pero está cifrado y no es la contraseña que el vendedor intenta crear.
+- El flujo defectuoso compara siempre el primer formulario contra ese secreto técnico. La autorización inicial aprobada usará `getClaims()` más el perfil activo owner/admin, patrón ya utilizado por Analíticas.
+- Después de crear la primera credencial, el rol de restaurante no autorizará ninguna operación de licencia.
 
 ## Fuentes
 

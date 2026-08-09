@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -110,26 +111,42 @@ function AccessPanel({
         </h2>
         <p className="mt-1 font-body text-sm leading-6 text-muted-foreground">
           {isSetup
-            ? "Esta contraseña será la que usarás para renovar o suspender el sistema."
+            ? "Crea directamente la contraseña que usarás para renovar o suspender el sistema."
             : "Usa la clave de recuperación del servidor para establecer una contraseña nueva."}
         </p>
         <form action={formAction} className="mt-6 grid gap-4">
           <input type="hidden" name="operation" value={isSetup ? "setup" : "recover"} />
-          <label className="grid gap-1.5">
-            <span className="font-heading text-xs font-bold text-muted-foreground">Clave de recuperación</span>
-            <input name="recoverySecret" type="password" required autoComplete="off" className="license-input" />
-          </label>
+          {isSetup ? (
+            <div className="rounded-xl border border-success/25 bg-success-light px-3.5 py-3">
+              <p className="font-heading text-xs font-bold text-success">Sesión administrativa requerida</p>
+              <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">
+                Debes haber iniciado sesión como propietario o administrador en este dispositivo. No necesitas la clave técnica de recuperación.
+              </p>
+            </div>
+          ) : (
+            <label className="grid gap-1.5">
+              <span className="font-heading text-xs font-bold text-muted-foreground">Clave técnica de recuperación</span>
+              <input name="recoverySecret" type="password" required autoComplete="off" className="license-input" />
+            </label>
+          )}
           <PasswordFields />
           <Feedback state={state} />
           <button type="submit" disabled={pending} className="action-success h-12 rounded-xl font-heading text-sm font-bold disabled:opacity-50">
             {pending ? "Guardando..." : isSetup ? "Crear acceso privado" : "Guardar nueva contraseña"}
           </button>
         </form>
-        {!isSetup ? (
+        {isSetup ? (
+          <Link
+            href="/login?next=%2Fcontrol%2Flicencia"
+            className="mt-3 flex h-10 w-full items-center justify-center font-heading text-xs font-bold text-muted-foreground hover:text-foreground"
+          >
+            Iniciar sesión primero
+          </Link>
+        ) : (
           <button type="button" onClick={() => setRecovering(false)} className="mt-3 h-10 w-full font-heading text-xs font-bold text-muted-foreground hover:text-foreground">
             Volver a iniciar sesión
           </button>
-        ) : null}
+        )}
       </section>
     );
   }
