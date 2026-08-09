@@ -300,6 +300,7 @@ export function OwnerDailyControl({
               onChange={(event) => setEmail(event.target.value)}
               placeholder="dueno@negocio.com"
               autoComplete="email"
+              suppressHydrationWarning
               className="h-12 rounded-xl"
             />
           </label>
