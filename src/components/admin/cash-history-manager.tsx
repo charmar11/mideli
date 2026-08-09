@@ -26,7 +26,12 @@ import {
 import { toast } from "sonner";
 import { useCashShiftStore } from "@/lib/stores";
 import { formatOrderLocation } from "@/lib/order-location";
-import type { CashAuthorizer, CashShift, CashShiftDetail } from "@/types/cash";
+import type {
+  CashAuthorizer,
+  CashShift,
+  CashShiftDeletionImpact,
+  CashShiftDetail,
+} from "@/types/cash";
 
 function money(value: number | null | undefined) {
   return `$${Number(value ?? 0).toLocaleString("es-MX", {
@@ -72,6 +77,10 @@ export function CashHistoryManager() {
   const recordAdjustment = useCashShiftStore((state) => state.recordAdjustment);
   const archiveShift = useCashShiftStore((state) => state.archiveShift);
   const restoreShift = useCashShiftStore((state) => state.restoreShift);
+  const getDeletionImpact = useCashShiftStore((state) => state.getDeletionImpact);
+  const permanentlyDeleteShift = useCashShiftStore(
+    (state) => state.permanentlyDeleteShift
+  );
 
   const [shifts, setShifts] = useState<CashShift[]>([]);
   const [selected, setSelected] = useState<CashShiftDetail | null>(null);
@@ -94,6 +103,12 @@ export function CashHistoryManager() {
   const [archiving, setArchiving] = useState(false);
   const [restoreDialog, setRestoreDialog] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [deleteImpact, setDeleteImpact] = useState<CashShiftDeletionImpact | null>(null);
+  const [deleteImpactLoading, setDeleteImpactLoading] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deletingPermanently, setDeletingPermanently] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -234,6 +249,57 @@ export function CashHistoryManager() {
     });
   }
 
+  async function openPermanentDeleteDialog() {
+    if (!selected) return;
+    setDeleteDialog(true);
+    setDeleteImpact(null);
+    setDeleteReason("");
+    setDeleteConfirmation("");
+    setDeleteImpactLoading(true);
+    const result = await getDeletionImpact(selected.id);
+    setDeleteImpactLoading(false);
+    if (result.error || !result.data) {
+      toast.error(result.error ?? "No se pudo revisar el corte");
+      return;
+    }
+    setDeleteImpact(result.data);
+  }
+
+  async function confirmPermanentDelete() {
+    if (!selected || !deleteImpact?.deletable) return;
+    const reason = deleteReason.trim();
+    if (reason.length < 4) {
+      toast.error("Escribe un motivo de al menos 4 caracteres");
+      return;
+    }
+    if (deleteConfirmation !== "ELIMINAR DEFINITIVAMENTE") {
+      toast.error("Escribe ELIMINAR DEFINITIVAMENTE para confirmar");
+      return;
+    }
+
+    setDeletingPermanently(true);
+    const result = await permanentlyDeleteShift({
+      shiftId: selected.id,
+      reason,
+      confirmation: deleteConfirmation,
+    });
+    setDeletingPermanently(false);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+
+    const historyResult = await listHistory();
+    if (historyResult.error) {
+      toast.error(historyResult.error);
+      return;
+    }
+    setShifts(historyResult.data ?? []);
+    setSelected(null);
+    setDeleteDialog(false);
+    toast.success("Corte eliminado definitivamente");
+  }
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return shifts.filter((shift) => {
@@ -324,8 +390,9 @@ export function CashHistoryManager() {
                   <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="font-heading text-xl font-black">Corte #{selected.number}</h2><ShiftStatus shift={selected} /></div><p className="font-body text-xs text-muted-foreground print:text-gray-600">{dateTime(selected.opened_at)} a {dateTime(selected.closed_at)}</p></div>
                   {selected.status === "closed" ? <button type="button" onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold print:hidden"><Printer size={15} />Imprimir</button> : null}
                   {selected.status === "closed" && !selected.archived_at ? <button type="button" onClick={() => void openAdjustment()} className="flex h-10 items-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning print:hidden"><RotateCcw size={15} /><span className="hidden sm:inline">Corregir</span></button> : null}
-                  {selected.status === "closed" && !selected.archived_at ? <button type="button" aria-label="Eliminar corte" onClick={openArchiveDialog} className="flex h-10 items-center gap-2 rounded-xl bg-destructive/12 px-3 font-heading text-xs font-bold text-destructive print:hidden"><Trash2 size={15} /><span className="hidden sm:inline">Eliminar</span></button> : null}
+                  {selected.status === "closed" && !selected.archived_at ? <button type="button" aria-label="Archivar corte" onClick={openArchiveDialog} className="flex h-10 items-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning print:hidden"><Trash2 size={15} /><span className="hidden sm:inline">Archivar</span></button> : null}
                   {selected.archived_at ? <button type="button" onClick={() => setRestoreDialog(true)} className="action-success flex h-10 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold print:hidden"><ArchiveRestore size={15} />Restaurar</button> : null}
+                  {selected.archived_at ? <button type="button" onClick={() => void openPermanentDeleteDialog()} className="flex h-10 items-center gap-2 rounded-xl bg-destructive px-3 font-heading text-xs font-bold text-white transition-colors hover:bg-destructive/85 print:hidden"><Trash2 size={15} /><span className="hidden sm:inline">Eliminar definitivamente</span></button> : null}
                 </div>
                 <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-5 print:overflow-visible print:bg-white print:text-black">
                   <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric label="Venta neta" value={money(selected.net_sales)} tone="gold" /><Metric label="Cobrado" value={money(selected.collected_total)} tone="success" /><Metric label="Esperado" value={money(selected.expected_cash)} /><Metric label="Diferencia" value={money(selected.difference)} tone={Math.abs(Number(selected.difference ?? 0)) <= 20 ? "success" : "danger"} /></div>
@@ -360,11 +427,11 @@ export function CashHistoryManager() {
 
       {archiveDialog && selected ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/80 sm:items-center sm:p-4">
-          <section role="dialog" aria-modal="true" aria-labelledby="archive-shift-title" className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-destructive/35 bg-surface p-4 shadow-float sm:rounded-2xl sm:p-5">
+          <section role="dialog" aria-modal="true" aria-labelledby="archive-shift-title" className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-warning/35 bg-surface p-4 shadow-float sm:rounded-2xl sm:p-5">
             <div className="mb-4 flex items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-destructive/12 text-destructive"><Trash2 size={20} /></span>
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-warning/12 text-warning"><Trash2 size={20} /></span>
               <div>
-                <h2 id="archive-shift-title" className="font-heading text-lg font-black">Eliminar corte #{selected.number}</h2>
+                <h2 id="archive-shift-title" className="font-heading text-lg font-black">Archivar corte #{selected.number}</h2>
                 <p className="mt-1 font-body text-sm text-muted-foreground">Se ocultará del historial principal, pero sus pedidos, cobros y auditoría se conservarán.</p>
               </div>
             </div>
@@ -378,17 +445,17 @@ export function CashHistoryManager() {
             <div className="space-y-3">
               <label className="block">
                 <span className="mb-1.5 block font-heading text-xs font-bold">Motivo obligatorio</span>
-                <textarea value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} maxLength={500} rows={3} placeholder="Ej. Corte duplicado o captura incorrecta" className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-sm outline-none focus:border-destructive" />
+                <textarea value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} maxLength={500} rows={3} placeholder="Ej. Corte duplicado o captura incorrecta" className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-sm outline-none focus:border-warning" />
               </label>
               <label className="block">
                 <span className="mb-1.5 block font-heading text-xs font-bold">Escribe ELIMINAR para confirmar</span>
-                <input value={archiveConfirmation} onChange={(event) => setArchiveConfirmation(event.target.value.toUpperCase())} autoComplete="off" placeholder="ELIMINAR" className="h-12 w-full rounded-xl border border-border bg-background px-3 font-data text-sm font-bold tracking-[0.12em] outline-none focus:border-destructive" />
+                <input value={archiveConfirmation} onChange={(event) => setArchiveConfirmation(event.target.value.toUpperCase())} autoComplete="off" placeholder="ELIMINAR" className="h-12 w-full rounded-xl border border-border bg-background px-3 font-data text-sm font-bold tracking-[0.12em] outline-none focus:border-warning" />
               </label>
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" disabled={archiving} onClick={() => setArchiveDialog(false)} className="h-12 rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground disabled:opacity-50">Cancelar</button>
-              <button type="button" disabled={archiving || archiveReason.trim().length < 4 || archiveConfirmation !== "ELIMINAR"} onClick={() => void confirmArchive()} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-destructive font-heading text-sm font-bold text-white disabled:opacity-40">{archiving ? <Loader2 size={17} className="animate-spin" /> : <Trash2 size={17} />}Eliminar del historial</button>
+              <button type="button" disabled={archiving || archiveReason.trim().length < 4 || archiveConfirmation !== "ELIMINAR"} onClick={() => void confirmArchive()} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-warning font-heading text-sm font-bold text-ink disabled:opacity-40">{archiving ? <Loader2 size={17} className="animate-spin" /> : <Trash2 size={17} />}Archivar corte</button>
             </div>
           </section>
         </div>
@@ -403,6 +470,74 @@ export function CashHistoryManager() {
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" disabled={restoring} onClick={() => setRestoreDialog(false)} className="h-12 rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground disabled:opacity-50">Cancelar</button>
               <button type="button" disabled={restoring} onClick={() => void confirmRestore()} className="action-success inline-flex h-12 items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold disabled:opacity-50">{restoring ? <Loader2 size={17} className="animate-spin" /> : <ArchiveRestore size={17} />}Restaurar</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {deleteDialog && selected ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/85 sm:items-center sm:p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="permanent-delete-title" className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-destructive/40 bg-surface p-4 shadow-float sm:rounded-2xl sm:p-5">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-destructive/12 text-destructive"><Trash2 size={20} /></span>
+              <div className="min-w-0">
+                <h2 id="permanent-delete-title" className="font-heading text-lg font-black">Eliminar definitivamente corte #{selected.number}</h2>
+                <p className="mt-1 font-body text-sm leading-5 text-muted-foreground">Esta acción no se puede deshacer. Solo se permite cuando el corte no conserva actividad operativa.</p>
+              </div>
+            </div>
+
+            {deleteImpactLoading ? (
+              <div className="mt-5 flex min-h-32 items-center justify-center rounded-xl bg-background/70"><Loader2 className="animate-spin text-brand" /></div>
+            ) : deleteImpact ? (
+              <>
+                <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-background/70 p-4 sm:grid-cols-3">
+                  {[
+                    ["Pedidos", deleteImpact.orders],
+                    ["Pagos", deleteImpact.payments],
+                    ["Movimientos", deleteImpact.movements],
+                    ["Correcciones", deleteImpact.adjustments],
+                    ["Traspasos", deleteImpact.transfers],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <p className="font-body text-xs text-muted-foreground">{label}</p>
+                      <p className="mt-1 font-data text-lg font-black">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {!deleteImpact.deletable ? (
+                  <div className="mt-4 rounded-xl border border-warning/35 bg-warning/8 p-4">
+                    <div className="flex gap-3">
+                      <CircleAlert size={19} className="mt-0.5 shrink-0 text-warning" />
+                      <div>
+                        <h3 className="font-heading text-sm font-bold text-warning">Este corte conserva información real</h3>
+                        <p className="mt-1 font-body text-sm leading-5 text-muted-foreground">No puede borrarse sin romper pedidos, cobros o auditoría. Déjalo archivado para que permanezca fuera de los indicadores.</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-xl border border-success/30 bg-success/8 p-3 font-body text-sm text-success">El corte está vacío y puede eliminarse de forma segura.</div>
+                    <label className="block">
+                      <span className="mb-1.5 block font-heading text-xs font-bold">Motivo obligatorio</span>
+                      <textarea value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} maxLength={500} rows={3} placeholder="Ej. Corte de prueba creado por error" className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-sm outline-none focus:border-destructive" />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block font-heading text-xs font-bold">Escribe ELIMINAR DEFINITIVAMENTE</span>
+                      <input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value.toUpperCase())} autoComplete="off" placeholder="ELIMINAR DEFINITIVAMENTE" className="h-12 w-full rounded-xl border border-border bg-background px-3 font-data text-xs font-bold tracking-[0.08em] outline-none focus:border-destructive" />
+                    </label>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="mt-5 rounded-xl border border-destructive/30 bg-destructive/8 p-4 font-body text-sm text-destructive">No se pudo comprobar si el corte está vacío. Cierra esta ventana e inténtalo de nuevo.</div>
+            )}
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" disabled={deletingPermanently} onClick={() => setDeleteDialog(false)} className="h-12 rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground disabled:opacity-50">Cerrar</button>
+              {deleteImpact?.deletable ? (
+                <button type="button" disabled={deletingPermanently || deleteReason.trim().length < 4 || deleteConfirmation !== "ELIMINAR DEFINITIVAMENTE"} onClick={() => void confirmPermanentDelete()} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-destructive px-3 font-heading text-sm font-bold text-white transition-colors hover:bg-destructive/85 disabled:opacity-40">{deletingPermanently ? <Loader2 size={17} className="animate-spin" /> : <Trash2 size={17} />}Eliminar definitivamente</button>
+              ) : <span />}
             </div>
           </section>
         </div>

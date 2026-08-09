@@ -12,7 +12,6 @@ import {
   Flame,
   Maximize2,
   Minimize2,
-  PackageCheck,
   RefreshCw,
   Volume2,
   VolumeX,
@@ -21,7 +20,6 @@ import {
 import { toast } from "sonner";
 import type { OrderItem } from "@/types/database";
 import type { OrderWithItems } from "@/lib/stores/order-store";
-import { MenuAvailabilityDialog } from "@/components/menu/menu-availability-dialog";
 
 const NEW_ORDER_SOUND_SRC = "/sounds/akshai26-notification-for-orders-313025.mp3";
 
@@ -169,7 +167,6 @@ export function CocinaView() {
   const alertPlaybackWarningRef = useRef(false);
   const [now, setNow] = useState(() => new Date());
   const [filter, setFilter] = useState<KitchenFilter>("pending");
-  const [showAvailability, setShowAvailability] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [orderUpdates, setOrderUpdates] = useState<Record<string, KitchenOrderUpdate>>({});
@@ -532,15 +529,6 @@ export function CocinaView() {
         <div className="ml-auto flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => setShowAvailability(true)}
-            aria-label="Cambiar disponibilidad del menú"
-            className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-border bg-surface px-2.5 font-heading text-xs font-bold text-muted-foreground hover:border-brand/50 hover:text-brand"
-          >
-            <PackageCheck size={15} />
-            <span className="hidden sm:inline">Disponibilidad</span>
-          </button>
-          <button
-            type="button"
             onClick={() => void fetchActiveOrders()}
             disabled={loading}
             aria-label="Actualizar pedidos de cocina"
@@ -602,11 +590,6 @@ export function CocinaView() {
           </div>
         )}
       </div>
-      <MenuAvailabilityDialog
-        open={showAvailability}
-        onClose={() => setShowAvailability(false)}
-        source="kitchen"
-      />
     </div>
   );
 }

@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   BellRing,
   CheckCircle2,
   CircleDashed,
@@ -587,13 +589,13 @@ export function SystemDiagnostics() {
       <header className="border-b border-border bg-surface px-4 py-4 sm:px-6 lg:px-8">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
+            <Link href="/dashboard/mesero" aria-label="Volver al panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+              <ArrowLeft aria-hidden size={18} />
+            </Link>
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-light text-brand">
               <Activity aria-hidden size={21} />
             </span>
             <div className="min-w-0">
-              <p className="font-body text-xs font-semibold uppercase tracking-[0.16em] text-brand">
-                Salud del sistema
-              </p>
               <h1 className="font-heading text-xl font-bold sm:text-2xl">Diagnóstico</h1>
               <p className="mt-0.5 font-body text-sm text-muted-foreground">
                 Comprueba Mideli antes de una demostración o turno.

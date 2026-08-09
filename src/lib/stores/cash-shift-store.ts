@@ -8,6 +8,7 @@ import type {
   CashDirection,
   CashMovementType,
   CashShift,
+  CashShiftDeletionImpact,
   CashShiftDetail,
 } from "@/types/cash";
 
@@ -71,6 +72,14 @@ interface CashShiftState {
     reason: string;
   }) => Promise<CashShiftResult<{ id: string }>>;
   restoreShift: (shiftId: string) => Promise<CashShiftResult<{ id: string }>>;
+  getDeletionImpact: (
+    shiftId: string
+  ) => Promise<CashShiftResult<CashShiftDeletionImpact>>;
+  permanentlyDeleteShift: (input: {
+    shiftId: string;
+    reason: string;
+    confirmation: string;
+  }) => Promise<CashShiftResult<{ id: string; number: number; deleted: boolean }>>;
   subscribe: () => () => void;
 }
 
@@ -277,6 +286,40 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
       return { data: null, error: message(error, "No se pudo restaurar el corte") };
     }
     return { data: data as { id: string }, error: null };
+  },
+
+  getDeletionImpact: async (shiftId) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc(
+      "get_cash_shift_deletion_impact",
+      { p_shift_id: shiftId }
+    );
+    if (error || !data) {
+      return {
+        data: null,
+        error: message(error, "No se pudo revisar el contenido del corte"),
+      };
+    }
+    return { data: data as CashShiftDeletionImpact, error: null };
+  },
+
+  permanentlyDeleteShift: async ({ shiftId, reason, confirmation }) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("permanently_delete_cash_shift", {
+      p_shift_id: shiftId,
+      p_reason: reason,
+      p_confirmation: confirmation,
+    });
+    if (error || !data) {
+      return {
+        data: null,
+        error: message(error, "No se pudo eliminar el corte definitivamente"),
+      };
+    }
+    return {
+      data: data as { id: string; number: number; deleted: boolean },
+      error: null,
+    };
   },
 
   subscribe: () => {

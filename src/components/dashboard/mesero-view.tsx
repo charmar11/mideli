@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   History as HistoryIcon,
-  PackageCheck,
   ShoppingBag,
   Plus,
 } from "lucide-react";
@@ -72,14 +71,6 @@ const PaymentFlow = dynamic(
   { ssr: false }
 );
 
-const MenuAvailabilityDialog = dynamic(
-  () =>
-    import("@/components/menu/menu-availability-dialog").then(
-      (module) => module.MenuAvailabilityDialog
-    ),
-  { ssr: false }
-);
-
 export function MeseroView() {
   const [mode, setMode] = useState<"pos" | "status" | "history">("pos");
   const [orderType, setOrderType] = useState<"comedor" | "domicilio" | "para_llevar">("comedor");
@@ -95,7 +86,6 @@ export function MeseroView() {
   const [createdOrderForPayment, setCreatedOrderForPayment] = useState<OrderWithItems | null>(null);
   const [addedProduct, setAddedProduct] = useState<{ id: string; token: number } | null>(null);
   const [addedAnnouncement, setAddedAnnouncement] = useState("");
-  const [showAvailability, setShowAvailability] = useState(false);
   const addedFeedbackTimerRef = useRef<number | null>(null);
 
   const fetchCatalog = useCatalogStore((state) => state.fetchCatalog);
@@ -420,14 +410,6 @@ export function MeseroView() {
             Historial
           </button>
       </div>
-      <button
-        type="button"
-        onClick={() => setShowAvailability(true)}
-        aria-label="Cambiar disponibilidad del menú"
-        className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-brand"
-      >
-        <PackageCheck size={16} />
-      </button>
       <CashShiftControl />
       <PushNotificationControl />
     </div>
@@ -436,11 +418,6 @@ export function MeseroView() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <ReadyOrderNotifier />
-      <MenuAvailabilityDialog
-        open={showAvailability}
-        onClose={() => setShowAvailability(false)}
-        source="pos"
-      />
       {mode === "history" ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {modeSwitcher}

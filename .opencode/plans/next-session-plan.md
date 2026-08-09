@@ -4,7 +4,7 @@ Fecha de preparación: 2026-08-08
 Base de trabajo: `v0.9-piloto`
 Producción: https://mideli.vercel.app
 
-Actualización 2026-08-09: la primera versión de las fases 4 y 5 ya está implementada en local y Supabase. Incluye centro diario del dueño, correo programable, disponibilidad manual o limitada y rentabilidad estimada por receta. Sigue pendiente validarla en dispositivos reales y configurar `CRON_SECRET` antes del próximo despliegue.
+Actualización 2026-08-09: la primera versión de las fases 4 y 5 ya está implementada en local y Supabase. Incluye centro diario del dueño, correo reemplazable y rentabilidad estimada por receta. La disponibilidad manual se retiró; el inventario por receta puede quedar negativo sin bloquear la venta. Sigue pendiente validarla en dispositivos reales y configurar `CRON_SECRET` antes del próximo despliegue.
 
 ## Objetivo
 
@@ -66,14 +66,14 @@ La primera versión debe enviarse por correo usando la infraestructura existente
 
 Resultado esperado: el dueño recibe valor visible aunque no abra el panel.
 
-### Fase 5: control de disponibilidad y rentabilidad
+### Fase 5: inventario y rentabilidad
 
-1. Permitir marcar productos agotados temporalmente desde POS o cocina.
-2. Relacionar disponibilidad con insumos críticos cuando las recetas estén completas.
-3. Mostrar costo estimado, margen y cambios de costo por producto.
-4. Comparar inventario teórico contra conteo real para detectar merma o captura incorrecta.
+1. Completar las recetas de los productos activos.
+2. Mostrar costo estimado, margen y cambios de costo por producto.
+3. Comparar inventario teórico contra conteo real para detectar merma o captura incorrecta.
+4. Revisar existencias negativas como tarea operativa, sin bloquear el POS.
 
-Resultado esperado: evitar ventas imposibles y convertir inventario en decisiones de compra y precio.
+Resultado esperado: convertir inventario en decisiones de compra y precio sin detener el servicio por una captura incompleta.
 
 ### Fase 6: crecimiento, solo después del piloto estable
 

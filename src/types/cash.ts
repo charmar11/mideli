@@ -145,6 +145,19 @@ export interface CashShiftDetail extends CashShift {
   payments: CashShiftPaymentSummary[];
 }
 
+export interface CashShiftDeletionImpact {
+  id: string;
+  number: number;
+  status: CashShiftStatus;
+  archived_at: string | null;
+  orders: number;
+  payments: number;
+  movements: number;
+  adjustments: number;
+  transfers: number;
+  deletable: boolean;
+}
+
 export interface CashClosePreview extends CashShiftTotals {
   counted_cash: number;
   expected_cash: number;

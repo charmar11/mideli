@@ -33,6 +33,7 @@ export interface OwnerOperationalData {
   period: AnalyticsPeriod;
   cash: {
     closedShifts: number;
+    archivedShifts: number;
     expectedCash: number;
     countedCash: number;
     difference: number;

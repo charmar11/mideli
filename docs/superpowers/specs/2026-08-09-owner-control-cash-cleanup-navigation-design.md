@@ -8,7 +8,7 @@ Estado: aprobado para implementación
 
 Simplificar el control diario del dueño y corregir tres problemas operativos: una disponibilidad manual de productos que no corresponde al negocio, cortes archivados que contaminan los indicadores de caja y pantallas administrativas de las que es difícil regresar.
 
-Esta decisión reemplaza la sección de disponibilidad del diseño anterior `2026-08-09-owner-daily-control-and-menu-availability-design.md`.
+Esta decisión reemplaza la sección de disponibilidad del diseño anterior `2026-08-09-owner-daily-control-availability-profitability-design.md`.
 
 ## 1. Inventario sin disponibilidad manual
 

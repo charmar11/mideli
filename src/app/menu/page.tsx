@@ -9,13 +9,11 @@ import {
   Pencil,
   Trash2,
   GripVertical,
-  PackageCheck,
   Tags,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCatalogStore } from "@/lib/stores";
 import { CategoryManager, ProductFormModal } from "@/components/admin";
-import { MenuAvailabilityDialog } from "@/components/menu/menu-availability-dialog";
 import type { MenuItem } from "@/types/database";
 
 export default function MenuPage() {
@@ -32,7 +30,6 @@ export default function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
-  const [showAvailability, setShowAvailability] = useState(false);
 
   useEffect(() => {
     fetchCategories();
@@ -97,14 +94,6 @@ export default function MenuPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowAvailability(true)}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:border-brand/50 hover:text-brand"
-          >
-            <PackageCheck size={16} />
-            <span className="hidden sm:inline">Disponibilidad</span>
-          </button>
           <div className="hidden rounded-full bg-brand-light px-3 py-1 font-heading text-[11px] font-bold text-brand sm:block">
             {menuItems.length} platillos
           </div>
@@ -214,19 +203,6 @@ export default function MenuPage() {
                             {item.modifiers.length} mod{item.modifiers.length > 1 ? "s" : ""}
                           </span>
                         )}
-                        {item.availability_status !== "available" && (
-                          <span
-                            className={`rounded-md px-2 py-0.5 font-heading text-[10px] font-bold ${
-                              item.availability_status === "limited"
-                                ? "bg-warning/12 text-warning"
-                                : "bg-destructive/12 text-destructive"
-                            }`}
-                          >
-                            {item.availability_status === "limited"
-                              ? `${item.available_quantity ?? 0} disponibles`
-                              : "Agotado"}
-                          </span>
-                        )}
                       </div>
                       {item.description && (
                         <p className="mt-1 line-clamp-2 font-body text-sm leading-5 text-muted-foreground">
@@ -295,11 +271,6 @@ export default function MenuPage() {
           }}
         />
       )}
-      <MenuAvailabilityDialog
-        open={showAvailability}
-        onClose={() => setShowAvailability(false)}
-        source="menu"
-      />
     </div>
   );
 }

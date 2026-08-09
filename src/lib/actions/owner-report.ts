@@ -39,16 +39,22 @@ export async function fetchOwnerControl(period: AnalyticsPeriod) {
 export async function updateOwnerReportSettings(input: {
   enabled: boolean;
   recipientEmail: string;
-}): Promise<{ error: string | null }> {
+}): Promise<{ error: string | null; recipientEmail: string | null }> {
   try {
     const { supabase, userId } = await requireReportAdmin();
     const recipientEmail = input.recipientEmail.trim().toLowerCase();
 
-    if (input.enabled && !EMAIL_PATTERN.test(recipientEmail)) {
-      return { error: "Escribe un correo válido antes de activar el reporte." };
+    if (
+      (input.enabled || recipientEmail.length > 0) &&
+      !EMAIL_PATTERN.test(recipientEmail)
+    ) {
+      return {
+        error: "Escribe un correo válido antes de activar el reporte.",
+        recipientEmail: null,
+      };
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("owner_report_settings")
       .update({
         enabled: input.enabled,
@@ -56,11 +62,13 @@ export async function updateOwnerReportSettings(input: {
         updated_by: userId,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", 1);
+      .eq("id", 1)
+      .select("recipient_email")
+      .single();
     if (error) throw error;
 
     revalidatePath("/dashboard/analiticas");
-    return { error: null };
+    return { error: null, recipientEmail: data.recipient_email };
   } catch (error) {
     console.error("No se pudo guardar el reporte diario", error);
     return {
@@ -68,8 +76,25 @@ export async function updateOwnerReportSettings(input: {
         error instanceof Error
           ? error.message
           : "No se pudo guardar la configuración.",
+      recipientEmail: null,
     };
   }
+}
+
+function reportDeliveryError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("testing emails") ||
+    normalized.includes("verify a domain") ||
+    normalized.includes("own email") ||
+    normalized.includes("domain is not verified")
+  ) {
+    return "El correo quedó guardado, pero el servicio de envío necesita un remitente verificado para entregar a esta dirección.";
+  }
+
+  return message || "No se pudo enviar la prueba.";
 }
 
 export async function sendOwnerReportTest(input: {
@@ -91,9 +116,6 @@ export async function sendOwnerReportTest(input: {
     return { error: null };
   } catch (error) {
     console.error("No se pudo enviar la prueba del reporte", error);
-    return {
-      error:
-        error instanceof Error ? error.message : "No se pudo enviar la prueba.",
-    };
+    return { error: reportDeliveryError(error) };
   }
 }

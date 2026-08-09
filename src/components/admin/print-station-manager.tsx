@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowLeft,
   CheckCircle2,
   Laptop,
   Loader2,
@@ -277,14 +279,16 @@ export function PrintStationManager() {
     <div className="pos-scroll h-full overflow-y-auto bg-background p-3 pb-10 sm:p-5 lg:p-6">
       <div className="mx-auto max-w-6xl space-y-5">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="font-data text-[10px] font-bold uppercase tracking-[0.2em] text-brand">
-              Laptop de impresión
-            </p>
-            <h1 className="mt-1 font-heading text-2xl font-bold">Estación de cocina</h1>
-            <p className="mt-1 font-body text-sm text-muted-foreground">
-              Recibe pedidos en esta laptop y prepara cada ticket para una impresora USB de 48 mm.
-            </p>
+          <div className="flex min-w-0 items-start gap-3">
+            <Link href="/dashboard/mesero" aria-label="Volver al panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+              <ArrowLeft aria-hidden size={18} />
+            </Link>
+            <div className="min-w-0">
+              <h1 className="font-heading text-2xl font-bold">Estación de cocina</h1>
+              <p className="mt-1 font-body text-sm text-muted-foreground">
+                Recibe pedidos en este dispositivo y prepara tickets para una impresora USB de 48 mm.
+              </p>
+            </div>
           </div>
           <button
             type="button"

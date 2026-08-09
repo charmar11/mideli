@@ -131,7 +131,7 @@ El inventario se diseñó como una herramienta personalizable, no como un catál
 - Movimientos de compra, ajuste, consumo y devolución.
 - Alertas de existencias bajas mediante la comparación entre `current_stock` y `minimum_stock`.
 
-La interfaz administrativa vive en `/settings/inventario`. La base ya tiene `inventory_items`, `inventory_recipes` e `inventory_movements`. En el corte actual no hay insumos capturados. El descuento automático de inventario al vender todavía debe validarse o implementarse con una operación transaccional antes de considerarse terminado.
+La interfaz administrativa vive en `/settings/inventario`. La base ya tiene `inventory_items`, `inventory_recipes` e `inventory_movements`. El descuento automático por receta se ejecuta al vender y permite existencias negativas para que un faltante de captura no bloquee la operación; el valor negativo queda visible para corregir compras, conteos o recetas.
 
 Actualización 2026-08: el inventario se endureció con unidades de compra, recepciones (`inventory_receipts`), órdenes de compra, lotes, conteos físicos (`inventory_counts` con líneas), guías de captura vía RPC, borrado seguro de insumos, reemplazo transaccional de recetas y corrección de inventario al editar pedidos. La interfaz se reorganizó en paneles (`src/components/admin/inventory/`) con biblioteca de recetas y un tutorial de 20 pasos que recorre cada pestaña, explica unidades, compras, recetas, conteos, diferencias, mermas y la rutina recomendada.
 
@@ -295,7 +295,7 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- Migraciones locales y remotas alineadas: 38 migraciones, de `00001` a `20260808160831`.
+- Migraciones locales y remotas alineadas: 40 migraciones, de `00001` a `20260809082829`.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
@@ -347,19 +347,21 @@ Sentry está integrado manualmente con `@sentry/nextjs` 10.69.0 en navegador, No
 
 La política es de privacidad estricta: no recolecta identidad, cookies, headers, cuerpos, query params, variables locales ni contenido operativo; anonimiza rutas locales y evita ubicación, hostname, hardware y cultura. Vercel tiene las variables de runtime en Development y Production. Preview y el token externo de source maps siguen pendientes. La verificación real quedó documentada en `docs_dev/sentry-monitoring/`.
 
-### Control diario, disponibilidad y rentabilidad
+### Control diario y rentabilidad
 
-Analíticas incorpora un centro de control para owner/admin con alertas de caja, cocina, inventario, cobertura de recetas, productos sin movimiento y márgenes estimados. El reporte del día anterior puede enviarse por correo con una ruta cron protegida y registro idempotente por fecha. Antes de desplegar esta fase, Vercel debe tener `CRON_SECRET` configurado.
+Analíticas incorpora un centro de control para owner/admin con alertas de caja, cocina, inventario, cobertura de recetas, productos sin movimiento y márgenes estimados. El reporte del día anterior puede enviarse a un único correo reemplazable, con una ruta cron protegida y registro idempotente por fecha. Para entregar a correos distintos a la cuenta de prueba, el proveedor necesita un remitente verificado. Antes de desplegar esta fase, Vercel debe tener `CRON_SECRET` configurado.
 
-Los productos ahora distinguen disponible, limitado y agotado. Menú, Cocina y POS comparten un panel rápido; Realtime actualiza el catálogo, el POS bloquea agotados y la base descuenta o devuelve existencias limitadas al crear, editar, cancelar o eliminar pedidos. Los cambios manuales se auditan en `menu_item_availability_log`.
+La disponibilidad manual de productos fue eliminada por decisión del dueño. Menú, Cocina y POS ya no muestran ni bloquean estados Disponible, Limitado o Agotado. El inventario se descuenta por recetas y puede quedar negativo.
+
+Los indicadores de caja excluyen cortes archivados. La eliminación definitiva solo se permite sobre cortes cerrados, archivados y sin pedidos, pagos, movimientos, correcciones ni traspasos asociados. Los cortes con actividad real permanecen archivados y fuera de las métricas. Impresión y Diagnóstico tienen regreso visible al panel, igual que Caja, Inventario, Mesas, Menú y Personal.
 
 Pendientes prioritarios:
 
 1. Ejecutar el checklist de piloto de `docs/releases/v0.9-piloto.md` en tablet, móvil, laptop e impresora reales.
 2. Diseñar e implementar un modo de contingencia para continuar tomando pedidos ante una caída de internet.
-3. Completar monitoreo de disponibilidad, source maps privados y un procedimiento probado de respaldo y restauración.
-4. Validar en operación real todos los cobros, correcciones, cierres de caja, impresión, disponibilidad limitada y notificaciones PWA.
-5. Agregar pruebas automatizadas para pedidos, cobro, caja, impresión, inventario, disponibilidad y permisos.
+3. Completar monitoreo técnico, source maps privados y un procedimiento probado de respaldo y restauración.
+4. Validar en operación real todos los cobros, correcciones, cierres de caja, impresión, inventario negativo y notificaciones PWA.
+5. Agregar pruebas automatizadas para pedidos, cobro, caja, impresión, inventario y permisos.
 6. Después de estabilizar el piloto, priorizar clientes/lealtad y pedidos directos.
 
 El plan ordenado para continuar vive en `.opencode/plans/next-session-plan.md`.

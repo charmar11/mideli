@@ -54,7 +54,7 @@ function CompactMetric({
   tone?: "default" | "warning" | "danger" | "success";
 }) {
   return (
-    <div className="rounded-xl bg-surface-raised/65 p-3.5 ring-1 ring-foreground/5">
+    <div className="border-t border-border/70 px-1 pt-3">
       <div className="flex items-start justify-between gap-3">
         <span className="min-w-0">
           <span className="block font-body text-xs text-muted-foreground">{label}</span>
@@ -98,8 +98,11 @@ export function OwnerDailyControl({
 }) {
   const [enabled, setEnabled] = useState(operation.report.enabled);
   const [email, setEmail] = useState(operation.report.recipientEmail);
+  const [savedEmail, setSavedEmail] = useState(operation.report.recipientEmail);
   const [isSaving, startSaving] = useTransition();
   const [isSending, startSending] = useTransition();
+  const normalizedEmail = email.trim().toLowerCase();
+  const hasUnsavedEmail = normalizedEmail !== savedEmail;
   const averageKitchen =
     operation.kitchen.averageMinutes === null
       ? "Sin datos"
@@ -117,6 +120,9 @@ export function OwnerDailyControl({
         toast.error(result.error);
         return;
       }
+      const persistedEmail = result.recipientEmail ?? email.trim().toLowerCase();
+      setEmail(persistedEmail);
+      setSavedEmail(persistedEmail);
       toast.success("Reporte diario actualizado");
     });
   }
@@ -141,12 +147,9 @@ export function OwnerDailyControl({
         <CardContent className="p-4 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="font-data text-[10px] font-bold uppercase tracking-[0.18em] text-brand">
-                Control del dueño
-              </p>
-              <h2 className="mt-1 font-heading text-xl font-bold">Qué requiere atención</h2>
+              <h2 className="font-heading text-xl font-bold">Control del dueño</h2>
               <p className="mt-1 font-body text-sm text-muted-foreground">
-                Una lectura breve de ventas, caja, cocina e inventario.
+                Revisa lo importante del periodo y entra directo a resolverlo.
               </p>
             </div>
             <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-gold-light px-3 py-2 font-data text-xs font-bold text-gold">
@@ -184,14 +187,14 @@ export function OwnerDailyControl({
                 <Link
                   key={action.id}
                   href={action.href}
-                  className="flex min-h-24 gap-3 rounded-xl border border-border bg-surface p-3 transition-colors hover:border-brand/40 hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                  className="flex min-h-20 gap-3 rounded-xl border border-border bg-surface p-3 transition-colors hover:border-brand/40 hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                 >
                   {content}
                 </Link>
               ) : (
                 <div
                   key={action.id}
-                  className="flex min-h-24 gap-3 rounded-xl border border-border bg-surface p-3"
+                  className="flex min-h-20 gap-3 rounded-xl border border-border bg-surface p-3"
                 >
                   {content}
                 </div>
@@ -204,7 +207,7 @@ export function OwnerDailyControl({
               icon={WalletCards}
               label="Diferencia de caja"
               value={formatCurrency(operation.cash.difference)}
-              detail={`${operation.cash.closedShifts} cortes cerrados`}
+              detail={`${operation.cash.closedShifts} incluidos · ${operation.cash.archivedShifts} archivados excluidos`}
               tone={Math.abs(operation.cash.difference) > 0.009 ? "danger" : "success"}
             />
             <CompactMetric
@@ -290,7 +293,7 @@ export function OwnerDailyControl({
           </label>
 
           <label className="mt-3 block">
-            <span className="mb-1.5 block font-heading text-xs font-bold">Correo del dueño</span>
+            <span className="mb-1.5 block font-heading text-xs font-bold">Correo que recibirá el resumen</span>
             <Input
               type="email"
               value={email}
@@ -300,6 +303,20 @@ export function OwnerDailyControl({
               className="h-12 rounded-xl"
             />
           </label>
+
+          <p className="mt-2 font-body text-xs leading-4 text-muted-foreground">
+            Puedes reemplazarlo cuando quieras. Para enviar a un correo distinto, el servicio debe tener un remitente verificado.
+          </p>
+
+          {hasUnsavedEmail ? (
+            <p className="mt-2 font-body text-xs text-warning">
+              Hay un cambio de correo sin guardar.
+            </p>
+          ) : savedEmail ? (
+            <p className="mt-2 font-body text-xs text-success">
+              Destinatario guardado: {savedEmail}
+            </p>
+          ) : null}
 
           <p className="mt-3 font-body text-xs leading-4 text-muted-foreground">
             {lastRunLabel(operation.report)}

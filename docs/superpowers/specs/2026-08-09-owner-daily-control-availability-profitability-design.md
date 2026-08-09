@@ -1,5 +1,7 @@
 # Centro diario del dueño, disponibilidad y rentabilidad
 
+> Actualización 2026-08-09: la disponibilidad manual descrita en este documento fue retirada por decisión del dueño. El diseño vigente está en `2026-08-09-owner-control-cash-cleanup-navigation-design.md`. El control diario, correo y rentabilidad permanecen vigentes.
+
 Fecha: 2026-08-09
 
 ## Objetivo

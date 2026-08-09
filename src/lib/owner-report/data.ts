@@ -15,6 +15,7 @@ interface CashShiftRow {
   expected_cash: number | string | null;
   counted_cash: number | string | null;
   difference: number | string | null;
+  archived_at: string | null;
 }
 
 interface KitchenStatusRow {
@@ -151,7 +152,7 @@ export async function fetchOwnerOperationalData(
   ] = await Promise.all([
     supabase
       .from("cash_shifts")
-      .select("expected_cash,counted_cash,difference")
+      .select("expected_cash,counted_cash,difference,archived_at")
       .eq("status", "closed")
       .gte("closed_at", start)
       .lte("closed_at", end),
@@ -217,6 +218,8 @@ export async function fetchOwnerOperationalData(
   }
 
   const cashShifts = (cashResult.data ?? []) as CashShiftRow[];
+  const activeCashShifts = cashShifts.filter((shift) => !shift.archived_at);
+  const archivedCashShifts = cashShifts.length - activeCashShifts.length;
   const statusRows = (kitchenResult.data ?? []) as KitchenStatusRow[];
   const inventoryItems = (inventoryResult.data ?? []) as InventoryItemRow[];
   const movements = (movementsResult.data ?? []) as InventoryMovementRow[];
@@ -290,7 +293,7 @@ export async function fetchOwnerOperationalData(
   const productsWithoutSales = menuItems.filter(
     (item) => !soldProductIds.has(item.id)
   );
-  const cashDifference = cashShifts.reduce(
+  const cashDifference = activeCashShifts.reduce(
     (sum, shift) => sum + numberValue(shift.difference),
     0
   );
@@ -300,12 +303,13 @@ export async function fetchOwnerOperationalData(
   return {
     period,
     cash: {
-      closedShifts: cashShifts.length,
-      expectedCash: cashShifts.reduce(
+      closedShifts: activeCashShifts.length,
+      archivedShifts: archivedCashShifts,
+      expectedCash: activeCashShifts.reduce(
         (sum, shift) => sum + numberValue(shift.expected_cash),
         0
       ),
-      countedCash: cashShifts.reduce(
+      countedCash: activeCashShifts.reduce(
         (sum, shift) => sum + numberValue(shift.counted_cash),
         0
       ),

@@ -34,18 +34,9 @@ export interface MenuItem {
   sort_order: number;
   modifiers: ModifierGroup[];
   image_url: string;
-  availability_status: MenuItemAvailabilityStatus;
-  available_quantity: number | null;
-  availability_updated_at: string;
-  availability_updated_by: string | null;
   created_at: string;
   updated_at: string;
 }
-
-export type MenuItemAvailabilityStatus =
-  | "available"
-  | "limited"
-  | "out_of_stock";
 
 export type TableShape = "round" | "square" | "rectangle" | "bar";
 

@@ -84,6 +84,8 @@ export function renderOwnerDailyEmail(
           <tr><td style="padding:8px 0;color:#b9aebc;">Descuentos</td><td style="text-align:right;font-weight:700;">${escapeHtml(formatCurrency(sales.discounts))}</td></tr>
           <tr><td style="padding:8px 0;color:#b9aebc;">Propinas</td><td style="text-align:right;font-weight:700;">${escapeHtml(formatCurrency(sales.tips))}</td></tr>
           <tr><td style="padding:8px 0;color:#b9aebc;">Cancelaciones</td><td style="text-align:right;font-weight:700;">${sales.cancellations}</td></tr>
+          <tr><td style="padding:8px 0;color:#b9aebc;">Cortes incluidos</td><td style="text-align:right;font-weight:700;">${operation.cash.closedShifts}</td></tr>
+          <tr><td style="padding:8px 0;color:#b9aebc;">Cortes archivados excluidos</td><td style="text-align:right;font-weight:700;">${operation.cash.archivedShifts}</td></tr>
           <tr><td style="padding:8px 0;color:#b9aebc;">Pedidos demorados</td><td style="text-align:right;font-weight:700;">${operation.kitchen.delayedOrders}</td></tr>
           <tr><td style="padding:8px 0;color:#b9aebc;">Insumos bajos</td><td style="text-align:right;font-weight:700;">${operation.inventory.lowStockItems}</td></tr>
           <tr><td style="padding:8px 0;color:#b9aebc;">Merma estimada</td><td style="text-align:right;font-weight:700;">${escapeHtml(formatCurrency(operation.inventory.wasteCost))}</td></tr>
