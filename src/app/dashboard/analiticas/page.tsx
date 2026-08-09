@@ -5,6 +5,7 @@ import {
 } from "@/lib/actions/analytics";
 import { normalizePeriod } from "@/lib/analytics/period";
 import { fetchOwnerControl } from "@/lib/actions/owner-report";
+import { isOwnerReportEmailEnabled } from "@/lib/owner-report/feature";
 
 const SERVICES: AnalyticsServiceFilter[] = [
   "todos",
@@ -33,5 +34,11 @@ export default async function AnaliticasPage({
     fetchOwnerControl(period),
   ]);
 
-  return <AnalyticsDashboard data={data} ownerControl={ownerControl} />;
+  return (
+    <AnalyticsDashboard
+      data={data}
+      ownerControl={ownerControl}
+      ownerReportEmailEnabled={isOwnerReportEmailEnabled()}
+    />
+  );
 }

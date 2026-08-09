@@ -7,6 +7,10 @@ import {
 } from "@/lib/owner-report/data";
 import { renderOwnerDailyEmail } from "@/lib/owner-report/email";
 import { sendEmail } from "@/server/resend";
+import {
+  isOwnerReportEmailEnabled,
+  OWNER_REPORT_EMAIL_DISABLED_MESSAGE,
+} from "@/lib/owner-report/feature";
 
 interface ReportSettingsRow {
   enabled: boolean;
@@ -37,6 +41,9 @@ export async function sendOwnerReportPreview(
   recipientEmail: string,
   reportDate: string
 ) {
+  if (!isOwnerReportEmailEnabled()) {
+    throw new Error(OWNER_REPORT_EMAIL_DISABLED_MESSAGE);
+  }
   const { sales, operation } = await prepareReportData(reportDate);
   return sendEmail({
     to: recipientEmail,
@@ -48,6 +55,10 @@ export async function sendOwnerReportPreview(
 export async function deliverOwnerDailyReport(reportDate: string): Promise<{
   status: "disabled" | "already_sent" | "already_running" | "sent";
 }> {
+  if (!isOwnerReportEmailEnabled()) {
+    return { status: "disabled" };
+  }
+
   const supabase = createAdminClient();
   const { data: settingsData, error: settingsError } = await supabase
     .from("owner_report_settings")

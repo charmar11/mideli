@@ -92,9 +92,11 @@ function lastRunLabel(report: OwnerOperationalData["report"]): string {
 export function OwnerDailyControl({
   analytics,
   operation,
+  emailEnabled,
 }: {
   analytics: AnalyticsData;
   operation: OwnerOperationalData;
+  emailEnabled: boolean;
 }) {
   const [enabled, setEnabled] = useState(operation.report.enabled);
   const [email, setEmail] = useState(operation.report.recipientEmail);
@@ -142,7 +144,12 @@ export function OwnerDailyControl({
   }
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,.65fr)]">
+    <section
+      className={cn(
+        "grid gap-4",
+        emailEnabled && "xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,.65fr)]"
+      )}
+    >
       <Card className="gap-0 overflow-hidden rounded-2xl py-0">
         <CardContent className="p-4 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -265,7 +272,7 @@ export function OwnerDailyControl({
         </CardContent>
       </Card>
 
-      <Card className="gap-0 rounded-2xl py-0">
+      {emailEnabled ? <Card className="gap-0 rounded-2xl py-0">
         <CardContent className="p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -345,7 +352,7 @@ export function OwnerDailyControl({
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card> : null}
     </section>
   );
 }

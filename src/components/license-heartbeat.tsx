@@ -35,8 +35,17 @@ export function LicenseHeartbeat() {
   useEffect(() => {
     if (!shouldCheck) return;
 
+    const supabase = createClient();
     void checkLicense();
     const interval = window.setInterval(() => void checkLicense(), 60_000);
+    const channel = supabase
+      .channel("app-license-heartbeat")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "app_license", filter: `id=eq.${APP_LICENSE_ID}` },
+        () => void checkLicense()
+      )
+      .subscribe();
     const onVisibility = () => {
       if (document.visibilityState === "visible") void checkLicense();
     };
@@ -45,6 +54,7 @@ export function LicenseHeartbeat() {
     window.addEventListener("focus", checkLicense);
     return () => {
       window.clearInterval(interval);
+      void supabase.removeChannel(channel);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", checkLicense);
     };

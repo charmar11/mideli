@@ -283,9 +283,11 @@ function downloadCsv(data: AnalyticsData) {
 export function AnalyticsDashboard({
   data,
   ownerControl,
+  ownerReportEmailEnabled,
 }: {
   data: AnalyticsData;
   ownerControl: OwnerOperationalData;
+  ownerReportEmailEnabled: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -349,7 +351,11 @@ export function AnalyticsDashboard({
           ))}
         </div>
 
-        <OwnerDailyControl analytics={data} operation={ownerControl} />
+        <OwnerDailyControl
+          analytics={data}
+          operation={ownerControl}
+          emailEnabled={ownerReportEmailEnabled}
+        />
 
         <section className="analytics-split-grid analytics-split-grid-wide">
           <Card className="gap-0 rounded-2xl py-0">

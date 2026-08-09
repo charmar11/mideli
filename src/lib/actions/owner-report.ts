@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import type { AnalyticsPeriod } from "@/lib/analytics/period";
 import { fetchOwnerOperationalData } from "@/lib/owner-report/data";
 import { sendOwnerReportPreview } from "@/lib/owner-report/delivery";
+import {
+  isOwnerReportEmailEnabled,
+  OWNER_REPORT_EMAIL_DISABLED_MESSAGE,
+} from "@/lib/owner-report/feature";
 import { createClient } from "@/lib/supabase/server";
 
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -40,6 +44,10 @@ export async function updateOwnerReportSettings(input: {
   enabled: boolean;
   recipientEmail: string;
 }): Promise<{ error: string | null; recipientEmail: string | null }> {
+  if (!isOwnerReportEmailEnabled()) {
+    return { error: OWNER_REPORT_EMAIL_DISABLED_MESSAGE, recipientEmail: null };
+  }
+
   try {
     const { supabase, userId } = await requireReportAdmin();
     const recipientEmail = input.recipientEmail.trim().toLowerCase();
@@ -101,6 +109,10 @@ export async function sendOwnerReportTest(input: {
   recipientEmail: string;
   reportDate: string;
 }): Promise<{ error: string | null }> {
+  if (!isOwnerReportEmailEnabled()) {
+    return { error: OWNER_REPORT_EMAIL_DISABLED_MESSAGE };
+  }
+
   try {
     await requireReportAdmin();
     const recipientEmail = input.recipientEmail.trim().toLowerCase();

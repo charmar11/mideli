@@ -369,6 +369,25 @@
   box-shadow: 0 0 0 4px var(--brand-light);
 }
 
+.license-input {
+  height: 2.75rem;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--background);
+  padding: 0 0.875rem;
+  color: var(--foreground);
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.license-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px var(--brand-light);
+}
+
 /* Operational actions: color communicates consequence across every module. */
 .action-success,
 .action-warning,
