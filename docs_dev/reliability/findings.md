@@ -1,0 +1,26 @@
+# Findings: base de confiabilidad y diagnóstico
+
+- No hay framework de pruebas ni scripts de test instalados.
+- Solo `dashboard/analiticas` tiene un `error.tsx`; no existen límites generales ni `global-error.tsx`.
+- El cliente Supabase ya reconecta Realtime al recuperar red o visibilidad y puede reutilizarse para una prueba temporal de canal.
+- El proxy ya protege `/settings/*` para owner/admin, excepto la excepción explícita de Inventario, por lo que `/settings/diagnostico` hereda la protección administrativa.
+- La estación de impresión ya expone configuración y cola mediante tablas de solo lectura para administradores.
+- `getPushStatus` permite comprobar Push sin solicitar permisos ni activar avisos.
+- Next.js recomienda límites `error.tsx` y `global-error.tsx` para excepciones inesperadas.
+- Next.js recomienda pruebas E2E para recorridos que incluyen Server Components.
+- El changelog actual de Supabase bloquea modificaciones al esquema `realtime`; la solución solo abrirá un canal temporal y no tocará ese esquema.
+- No se necesita migración de base de datos para esta primera fase.
+- `getPushStatus()` es seguro para diagnóstico porque no solicita permisos; en desarrollo devuelve `production_required` antes de consultar la suscripción.
+- `isReadyOrderAudioUnlocked()` permite reportar el desbloqueo de audio sin reproducirlo.
+- La PWA usa Serwist y declara `/manifest.webmanifest` desde el layout raíz.
+- El layout carga fuentes mediante `next/font`; `global-error.tsx` necesitará estilos propios porque reemplaza ese layout.
+- En desarrollo, `PWAProvider` desactiva Serwist y elimina registros previos; el diagnóstico debe mostrar esto como advertencia esperada, no como error.
+- El manifiesto, iconos y ambos archivos de sonido requeridos existen en el proyecto.
+- Las tablas de impresión ya se consultan directamente desde el cliente actual, por lo que el diagnóstico puede usar el mismo contrato de lectura.
+- Las páginas de Caja e Impresión delegan toda su interfaz a un componente cliente; Diagnóstico puede seguir el mismo patrón simple.
+- Los tokens de color globales ya incluyen éxito, advertencia, destructivo y marca, suficientes para estados accesibles sin agregar CSS global.
+- El acceso usa etiquetas `Usuario` y `Contraseña`; no renderiza el sufijo `@mideli.com`, aunque lo completa internamente para Auth.
+- TypeScript ya incluye todos los archivos `*.ts`, por lo que `playwright.config.ts` y las pruebas también quedarán sometidos al chequeo estricto.
+- `.gitignore` ya excluye `test-results`, pero debe ampliarse para el reporte HTML de Playwright.
+- La instalación de Playwright terminó correctamente. `npm audit` mantiene 6 vulnerabilidades transitivas; no se aplicará `audit fix` dentro de esta función por riesgo de cambios mayores.
+- Las 21 pruebas de humo pasan en los tres perfiles. Next.js detecta un sistema de archivos local lento para `.next/dev`, una condición del entorno de desarrollo y no un fallo de las rutas probadas.

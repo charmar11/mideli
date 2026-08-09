@@ -46,6 +46,8 @@ next-env.d.ts
 # QA artifacts and local tooling state
 /.tmp/
 /test-results/
+/playwright-report/
+/blob-report/
 /.impeccable/
 
 # audio sources live in public/sounds

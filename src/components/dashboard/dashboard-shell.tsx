@@ -20,6 +20,7 @@ import {
   Printer,
   Settings,
   SlidersHorizontal,
+  Stethoscope,
   UtensilsCrossed,
   X,
   type LucideIcon,
@@ -102,6 +103,13 @@ const CONTROL_ITEMS: NavItem[] = [
     description: "Estación de tickets",
     icon: Printer,
     match: (path) => path.startsWith("/settings/impresion"),
+  },
+  {
+    href: "/settings/diagnostico",
+    label: "Diagnóstico",
+    description: "Conexiones y salud del sistema",
+    icon: Stethoscope,
+    match: (path) => path.startsWith("/settings/diagnostico"),
   },
 ];
 
