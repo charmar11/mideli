@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-08-08
+Actualizado: 2026-08-09
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -341,11 +341,17 @@ El Word no muestra precio para Low Carb, Limonada Natural, Limonada Mineral, Té
 
 Los conteos son una fotografía, no una garantía futura. Si una tarea depende de ellos, volver a consultar.
 
+### Monitoreo de errores
+
+Sentry está integrado manualmente con `@sentry/nextjs` 10.69.0 en navegador, Node.js y Edge. Conserva los wrappers de Serwist y las pantallas de error de Mideli. Captura errores y trazas con 10 por ciento de muestreo en producción, excluye `/api/health` y descarta ruido conocido de extensiones.
+
+La política es de privacidad estricta: no recolecta identidad, cookies, headers, cuerpos, query params, variables locales ni contenido operativo; anonimiza rutas locales y evita ubicación, hostname, hardware y cultura. Vercel tiene las variables de runtime en Development y Production. Preview y el token externo de source maps siguen pendientes. La verificación real quedó documentada en `docs_dev/sentry-monitoring/`.
+
 Pendientes prioritarios:
 
 1. Ejecutar el checklist de piloto de `docs/releases/v0.9-piloto.md` en tablet, móvil, laptop e impresora reales.
 2. Diseñar e implementar un modo de contingencia para continuar tomando pedidos ante una caída de internet.
-3. Configurar monitoreo de errores, verificación de disponibilidad y un procedimiento probado de respaldo y restauración.
+3. Completar monitoreo de disponibilidad, source maps privados y un procedimiento probado de respaldo y restauración.
 4. Crear el resumen diario del dueño con ventas, corte, inventario, mermas, cancelaciones y tiempos de cocina.
 5. Validar en operación real todos los cobros, correcciones, cierres de caja, impresión y notificaciones PWA.
 6. Agregar pruebas automatizadas para pedidos, cobro, caja, impresión, inventario y permisos.

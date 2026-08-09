@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import {
+  createSentryDataCollection,
+  filterSentryPrivacyIntegrations,
   prepareSentryBreadcrumb,
   prepareSentryErrorEvent,
   sanitizeSentryEvent,
@@ -13,10 +15,13 @@ Sentry.init({
   enabled: Boolean(dsn),
   environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV,
   sendDefaultPii: false,
+  includeServerName: false,
+  dataCollection: createSentryDataCollection(),
   enableLogs: false,
   debug: false,
   maxBreadcrumbs: 30,
   tracesSampler: sentryTracesSampler,
+  integrations: filterSentryPrivacyIntegrations,
   beforeBreadcrumb: prepareSentryBreadcrumb,
   beforeSend: prepareSentryErrorEvent,
   beforeSendTransaction: sanitizeSentryEvent,

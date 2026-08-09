@@ -19,7 +19,17 @@
 - Trazas al 100 por ciento en desarrollo y 10 por ciento en producción.
 - Source maps privados durante builds configurados.
 - Sentry MCP autenticado para la organización `mideli`.
+- Proyecto Sentry verificado: `javascript-nextjs`.
 - La versión instalada admite `captureRouterTransitionStart`, `captureRequestError`, telemetría de build desactivable y borrado de source maps tras subirlos.
+
+## Verificación real
+
+- El evento controlado `8d17c6b0eb0843cfb4a2ee166ff93678` llegó al issue `JAVASCRIPT-NEXTJS-1`.
+- Sentry conservó el título, la URL sin query string, el runtime y un frame de primera parte.
+- La ruta local se guardó como `C:\Users\[usuario]\...`.
+- No se guardaron ubicación real, nombre del equipo, hardware, cultura, correo, token ni contenido operativo.
+- Node.js requirió la IP no enrutable `0.0.0.0` para impedir la inferencia geográfica de Relay. Por ello Sentry muestra una sola identidad técnica anónima y no personas reales.
+- El endpoint temporal de verificación se eliminó y el issue sintético quedó resuelto.
 
 ## Dependencias
 
@@ -27,8 +37,8 @@
 - No se ejecutará `npm audit fix` automáticamente porque puede cambiar el árbol de dependencias fuera del alcance.
 - El origen y la actualización segura se revisarán después de estabilizar la integración.
 
-## Pendiente de comprobar
+## Pendiente externo
 
-- Nombre o identificador exacto del proyecto Sentry.
-- DSN y token de build configurados fuera del repositorio.
-- Recepción de un error real y calidad de sus frames.
+- Vercel ya tiene `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`, `SENTRY_ORG` y `SENTRY_PROJECT` en Development y Production. Se activarán en el siguiente despliegue.
+- Preview quedó pendiente porque el CLI no interactivo de Vercel exige una rama concreta aunque su documentación permite aplicar la variable a todas las ramas.
+- Configurar el token de build fuera del repositorio para subir source maps privados.

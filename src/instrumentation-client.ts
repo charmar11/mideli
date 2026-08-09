@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import {
+  createSentryDataCollection,
+  filterSentryPrivacyIntegrations,
   prepareSentryBreadcrumb,
   prepareSentryErrorEvent,
   sanitizeSentryEvent,
@@ -11,11 +13,13 @@ Sentry.init({
   enabled: Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN),
   environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? process.env.NODE_ENV,
   sendDefaultPii: false,
+  dataCollection: createSentryDataCollection(),
   enableLogs: false,
   debug: false,
   maxBreadcrumbs: 30,
   tracesSampler: sentryTracesSampler,
-  integrations: [
+  integrations: (defaultIntegrations) => [
+    ...filterSentryPrivacyIntegrations(defaultIntegrations),
     Sentry.thirdPartyErrorFilterIntegration({
       filterKeys: ["mideli"],
       behaviour: "drop-error-if-exclusively-contains-third-party-frames",

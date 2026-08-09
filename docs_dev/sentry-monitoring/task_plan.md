@@ -12,7 +12,7 @@ Instrumentar Mideli en navegador, servidor y Edge sin afectar Serwist, el flujo 
 - [x] Fase 4: Instalar y configurar `@sentry/nextjs`.
 - [x] Fase 5: Aplicar filtros de privacidad y ruido.
 - [x] Fase 6: Verificar lint, build, E2E y Serwist.
-- [ ] Fase 7: Verificar un evento real mediante Sentry MCP después de recargar Codex.
+- [x] Fase 7: Verificar un evento real mediante Sentry MCP después de recargar Codex.
 
 ## Decisiones
 
@@ -33,3 +33,5 @@ Instrumentar Mideli en navegador, servidor y Edge sin afectar Serwist, el flujo 
 | El build exigió que `beforeSend` devolviera `ErrorEvent` | 1 | Se estrechó la firma del filtro sin cambiar su comportamiento |
 | `TracesSamplerSamplingContext` no se reexporta desde `@sentry/nextjs` | 1 | Se definió una interfaz estructural mínima para no depender de un paquete transitivo |
 | `git diff --check` detectó líneas vacías finales | 1 | Se retiraron antes de crear el commit |
+| El servidor de desarrollo conservó la configuración anterior tras el hot reload | 1 | Se reinició solo el proceso de Next.js antes de repetir la verificación |
+| Sentry infirió geolocalización con `ip_address: null` en Node.js | 1 | Se usa la IP no enrutable `0.0.0.0`, se elimina la ubicación real y todos los eventos comparten una identidad técnica anónima |

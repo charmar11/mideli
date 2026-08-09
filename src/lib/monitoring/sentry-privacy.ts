@@ -28,9 +28,47 @@ const SAFE_SPAN_KEYS = new Set([
   "sentry.origin",
   "url.path",
 ]);
+const SAFE_CONTEXT_KEYS = new Set(["browser", "os", "react", "runtime", "trace"]);
+const REMOVED_INTEGRATIONS = new Set(["Context", "CultureContext"]);
+
+export function createSentryDataCollection() {
+  return {
+    userInfo: false,
+    cookies: false,
+    httpHeaders: {
+      request: false,
+      response: false,
+    },
+    httpBodies: [],
+    urlQueryParams: false,
+    graphQL: {
+      document: false,
+      variables: false,
+    },
+    genAI: {
+      inputs: false,
+      outputs: false,
+    },
+    databaseQueryData: false,
+    stackFrameVariables: false,
+    frameContextLines: 5,
+  };
+}
+
+export function filterSentryPrivacyIntegrations<T extends { name: string }>(
+  integrations: T[]
+): T[] {
+  return integrations.filter(({ name }) => !REMOVED_INTEGRATIONS.has(name));
+}
+
+function redactLocalPath(value: string): string {
+  return value
+    .replace(/([A-Z]:[\\/]Users[\\/])[^\\/]+/gi, "$1[usuario]")
+    .replace(/([\\/](?:home|Users)[\\/])[^\\/]+/g, "$1[usuario]");
+}
 
 function sanitizeUrl(value: string): string {
-  const withoutQuery = value.split(/[?#]/, 1)[0] ?? value;
+  const withoutQuery = redactLocalPath(value.split(/[?#]/, 1)[0] ?? value);
 
   if (!/^https?:\/\//i.test(value)) {
     return withoutQuery;
@@ -116,8 +154,13 @@ function isInjectedExtensionError(event: ErrorEvent, hint: EventHint): boolean {
 }
 
 export function sanitizeSentryEvent<T extends Event>(event: T): T {
-  event.user = undefined;
+  event.user = { ip_address: "0.0.0.0" };
   event.extra = undefined;
+  event.server_name = undefined;
+  event.tags = {
+    ...event.tags,
+    privacy_mode: "strict",
+  };
 
   if (event.request) {
     event.request = {
@@ -128,7 +171,7 @@ export function sanitizeSentryEvent<T extends Event>(event: T): T {
 
   if (event.contexts) {
     for (const key of Object.keys(event.contexts)) {
-      if (SENSITIVE_KEY.test(key)) {
+      if (!SAFE_CONTEXT_KEYS.has(key) || SENSITIVE_KEY.test(key)) {
         delete event.contexts[key];
       }
     }
@@ -148,6 +191,13 @@ export function sanitizeSentryEvent<T extends Event>(event: T): T {
     event.message = redactText(event.message);
   }
 
+  if (event.logentry) {
+    event.logentry = {
+      message: event.logentry.message ? redactText(event.logentry.message) : undefined,
+      params: undefined,
+    };
+  }
+
   if (event.transaction) {
     event.transaction = redactText(event.transaction);
   }
@@ -161,7 +211,16 @@ export function sanitizeSentryEvent<T extends Event>(event: T): T {
       if (frame.filename) {
         frame.filename = sanitizeUrl(frame.filename);
       }
+      if (frame.abs_path) {
+        frame.abs_path = sanitizeUrl(frame.abs_path);
+      }
       frame.vars = undefined;
+    }
+  }
+
+  for (const image of event.debug_meta?.images ?? []) {
+    if (image.code_file) {
+      image.code_file = sanitizeUrl(image.code_file);
     }
   }
 
