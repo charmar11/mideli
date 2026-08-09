@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 
 export default function GlobalError({
@@ -10,7 +11,11 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Mideli global error", error);
+    Sentry.captureException(error);
+
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Mideli global error", error);
+    }
   }, [error]);
 
   return (

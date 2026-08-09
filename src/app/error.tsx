@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { AlertTriangle, Home, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
@@ -13,7 +14,11 @@ export default function AppError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Mideli application error", error);
+    Sentry.captureException(error);
+
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Mideli application error", error);
+    }
   }, [error]);
 
   return (
