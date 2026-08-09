@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useMemo } from "react";
-import { Check, Search, Plus } from "lucide-react";
+import { Check, Search, Plus, PackageX } from "lucide-react";
 import { useCartStore, useCatalogStore, useUIStore } from "@/lib/stores";
 import type { MenuItem } from "@/types/database";
 
@@ -85,6 +85,11 @@ export const ProductGrid = memo(function ProductGrid({
             {filteredItems.map((item) => {
               const quantityInCart = quantitiesByProduct.get(item.id) ?? 0;
               const wasJustAdded = addedProduct?.id === item.id;
+              const isOutOfStock = item.availability_status === "out_of_stock";
+              const reachedLimit =
+                item.availability_status === "limited" &&
+                quantityInCart >= (item.available_quantity ?? 0);
+              const cannotAdd = isOutOfStock || reachedLimit;
 
               return (
               <button
@@ -92,12 +97,36 @@ export const ProductGrid = memo(function ProductGrid({
                 type="button"
                 data-product-id={item.id}
                 onClick={() => onProductClick(item)}
-                className={`group relative flex min-h-[9rem] flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float active:scale-[0.985] ${
+                disabled={cannotAdd}
+                aria-label={
+                  isOutOfStock
+                    ? `${item.name}, agotado`
+                    : reachedLimit
+                      ? `${item.name}, alcanzaste la cantidad disponible`
+                      : undefined
+                }
+                className={`group relative flex min-h-[9rem] flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition-[border-color,box-shadow,transform] duration-150 enabled:hover:-translate-y-0.5 enabled:hover:border-brand/40 enabled:hover:shadow-float enabled:active:scale-[0.985] disabled:cursor-not-allowed ${
                   wasJustAdded
                     ? "pos-product-added border-success/70"
                     : "border-border/80"
+                } ${
+                  cannotAdd ? "opacity-60 grayscale-[.25]" : ""
                 }`}
               >
+                {item.availability_status !== "available" ? (
+                  <span
+                    className={`absolute left-2 top-2 z-10 inline-flex h-7 items-center gap-1 rounded-full px-2 font-heading text-[10px] font-bold shadow-md ${
+                      isOutOfStock
+                        ? "bg-destructive text-white"
+                        : "bg-warning text-ink"
+                    }`}
+                  >
+                    {isOutOfStock ? <PackageX size={12} /> : null}
+                    {isOutOfStock
+                      ? "Agotado"
+                      : `${item.available_quantity ?? 0} restantes`}
+                  </span>
+                ) : null}
                 {quantityInCart > 0 ? (
                   <span
                     className="absolute right-2 top-2 z-10 flex h-7 min-w-7 items-center justify-center rounded-full bg-success px-2 font-data text-xs font-black text-ink shadow-md"
@@ -145,10 +174,16 @@ export const ProductGrid = memo(function ProductGrid({
                     </span>
                     <span
                       className={`flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors ${
-                        wasJustAdded ? "bg-success text-ink" : "bg-ink group-hover:bg-brand"
+                        cannotAdd
+                          ? "bg-surface-raised text-muted-foreground"
+                          : wasJustAdded
+                            ? "bg-success text-ink"
+                            : "bg-ink group-hover:bg-brand"
                       }`}
                     >
-                      {wasJustAdded ? (
+                      {cannotAdd ? (
+                        <PackageX size={17} />
+                      ) : wasJustAdded ? (
                         <Check size={18} strokeWidth={3} />
                       ) : (
                         <Plus size={18} strokeWidth={2.5} />

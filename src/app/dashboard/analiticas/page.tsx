@@ -4,6 +4,7 @@ import {
   type AnalyticsServiceFilter,
 } from "@/lib/actions/analytics";
 import { normalizePeriod } from "@/lib/analytics/period";
+import { fetchOwnerControl } from "@/lib/actions/owner-report";
 
 const SERVICES: AnalyticsServiceFilter[] = [
   "todos",
@@ -27,7 +28,10 @@ export default async function AnaliticasPage({
   const service = SERVICES.includes(params.servicio as AnalyticsServiceFilter)
     ? (params.servicio as AnalyticsServiceFilter)
     : "todos";
-  const data = await fetchAnalytics({ period, service });
+  const [data, ownerControl] = await Promise.all([
+    fetchAnalytics({ period, service }),
+    fetchOwnerControl(period),
+  ]);
 
-  return <AnalyticsDashboard data={data} />;
+  return <AnalyticsDashboard data={data} ownerControl={ownerControl} />;
 }

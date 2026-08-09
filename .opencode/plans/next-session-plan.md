@@ -4,6 +4,8 @@ Fecha de preparación: 2026-08-08
 Base de trabajo: `v0.9-piloto`
 Producción: https://mideli.vercel.app
 
+Actualización 2026-08-09: la primera versión de las fases 4 y 5 ya está implementada en local y Supabase. Incluye centro diario del dueño, correo programable, disponibilidad manual o limitada y rentabilidad estimada por receta. Sigue pendiente validarla en dispositivos reales y configurar `CRON_SECRET` antes del próximo despliegue.
+
 ## Objetivo
 
 Convertir el piloto actual en un servicio mensual confiable para un restaurante pequeño. La siguiente sesión no debe comenzar agregando módulos comerciales. Primero debe reducir el riesgo de que el local se detenga, pierda datos o descubra un error durante el servicio.

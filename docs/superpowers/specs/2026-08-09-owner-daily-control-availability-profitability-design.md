@@ -59,7 +59,7 @@ Las recetas de variaciones seguirán apareciendo como costo adicional y no se me
 - `src/lib/owner-report/`: funciones puras para métricas, recomendaciones y plantilla de correo.
 - `src/components/analytics/owner-daily-control.tsx`: resumen y configuración del reporte.
 - `src/app/api/cron/owner-daily-report/route.ts`: cron autenticado e idempotente.
-- `src/lib/actions/menu-availability.ts`: cambio manual autenticado y auditado.
+- `public.set_menu_item_availability`: cambio manual autenticado y auditado, consumido desde el catálogo.
 - `src/components/menu/menu-availability-dialog.tsx`: panel reutilizable en Menú y Cocina.
 - `menu_items`: columnas de estado y cantidad.
 - `menu_item_availability_log`: bitácora operativa con RLS.

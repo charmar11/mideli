@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { DateRangePicker } from "@/components/analytics/date-range-picker";
 import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
+import { OwnerDailyControl } from "@/components/analytics/owner-daily-control";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type {
@@ -34,6 +35,7 @@ import type {
 } from "@/lib/actions/analytics";
 import { periodLabel } from "@/lib/analytics/period";
 import { cn } from "@/lib/utils";
+import type { OwnerOperationalData } from "@/lib/owner-report/types";
 
 const SERVICE_FILTERS: Array<{
   id: AnalyticsServiceFilter;
@@ -278,7 +280,13 @@ function downloadCsv(data: AnalyticsData) {
   URL.revokeObjectURL(url);
 }
 
-export function AnalyticsDashboard({ data }: { data: AnalyticsData }) {
+export function AnalyticsDashboard({
+  data,
+  ownerControl,
+}: {
+  data: AnalyticsData;
+  ownerControl: OwnerOperationalData;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isFiltering, startFilterTransition] = useTransition();
@@ -340,6 +348,8 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsData }) {
             </button>
           ))}
         </div>
+
+        <OwnerDailyControl analytics={data} operation={ownerControl} />
 
         <section className="analytics-split-grid analytics-split-grid-wide">
           <Card className="gap-0 rounded-2xl py-0">

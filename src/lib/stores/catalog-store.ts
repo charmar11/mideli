@@ -1,6 +1,11 @@
 import { create } from "zustand";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
-import type { Category, MenuItem } from "@/types/database";
+import type {
+  Category,
+  MenuItem,
+  MenuItemAvailabilityStatus,
+} from "@/types/database";
 import { removeManagedProductImage } from "@/lib/product-images";
 
 interface CatalogState {
@@ -10,13 +15,31 @@ interface CatalogState {
   fetchCatalog: () => Promise<void>;
   fetchCategories: () => Promise<void>;
   fetchMenuItems: () => Promise<void>;
+  subscribeToCatalog: () => () => void;
   createCategory: (name: string) => Promise<Category | null>;
   updateCategory: (id: string, updates: Partial<Category>) => Promise<boolean>;
   deleteCategory: (id: string) => Promise<boolean>;
   reorderCategories: (categoryIds: string[]) => Promise<boolean>;
-  createMenuItem: (item: Omit<MenuItem, "id" | "created_at" | "updated_at">) => Promise<MenuItem | null>;
+  createMenuItem: (
+    item: Omit<
+      MenuItem,
+      | "id"
+      | "availability_status"
+      | "available_quantity"
+      | "availability_updated_at"
+      | "availability_updated_by"
+      | "created_at"
+      | "updated_at"
+    >
+  ) => Promise<MenuItem | null>;
   updateMenuItem: (id: string, updates: Partial<MenuItem>) => Promise<boolean>;
   deleteMenuItem: (id: string) => Promise<boolean>;
+  setMenuItemAvailability: (
+    id: string,
+    status: MenuItemAvailabilityStatus,
+    quantity: number | null,
+    source: "menu" | "kitchen" | "pos"
+  ) => Promise<{ error: string | null }>;
 }
 
 let catalogRequest: Promise<void> | null = null;
@@ -45,7 +68,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
           supabase
             .from("menu_items")
             .select(
-              "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
+              "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,availability_status,available_quantity,availability_updated_at,availability_updated_by,created_at,updated_at"
             )
             .order("sort_order", { ascending: true }),
         ]);
@@ -84,7 +107,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     const { data, error } = await supabase
       .from("menu_items")
       .select(
-        "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
+        "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,availability_status,available_quantity,availability_updated_at,availability_updated_by,created_at,updated_at"
       )
       .order("sort_order", { ascending: true });
 
@@ -92,6 +115,30 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       set({ menuItems: data });
     }
     set({ loading: false });
+  },
+
+  subscribeToCatalog: () => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`catalog-availability-${crypto.randomUUID()}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "menu_items" },
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+          const updated = payload.new as Partial<MenuItem>;
+          if (!updated.id) return;
+          set((state) => ({
+            menuItems: state.menuItems.map((item) =>
+              item.id === updated.id ? { ...item, ...updated } : item
+            ),
+          }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   },
 
   createCategory: async (name: string) => {
@@ -249,5 +296,30 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       await removeManagedProductImage(previousImage).catch(() => undefined);
     }
     return true;
+  },
+
+  setMenuItemAvailability: async (id, status, quantity, source) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("set_menu_item_availability", {
+      p_menu_item_id: id,
+      p_status: status,
+      p_quantity: status === "limited" ? quantity : null,
+      p_source: source,
+    });
+
+    if (error || !data) {
+      return {
+        error: error?.message ?? "No se pudo cambiar la disponibilidad",
+      };
+    }
+
+    const updated = data as MenuItem;
+    set((state) => ({
+      menuItems: state.menuItems.map((item) =>
+        item.id === id ? { ...item, ...updated } : item
+      ),
+    }));
+    catalogFetchedAt = Date.now();
+    return { error: null };
   },
 }));
