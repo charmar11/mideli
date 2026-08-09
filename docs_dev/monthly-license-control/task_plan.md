@@ -45,7 +45,7 @@ Implementar la especificación aprobada en `docs/superpowers/specs/2026-08-09-mo
 - [x] Autorizar la primera credencial mediante una sesión owner/admin validada en servidor
 - [x] Separar visualmente la configuración inicial de la recuperación técnica
 - [x] Verificar sesión anónima, lint, build y estado de Supabase
-- [ ] Desplegar y verificar producción
+- [x] Desplegar y verificar producción
 
 ### Hipótesis confirmada
 

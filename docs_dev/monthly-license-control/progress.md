@@ -25,3 +25,4 @@
 - Una prueba Playwright confirmó que una sesión anónima es rechazada y la base remota conserva cero credenciales.
 - La regresión local confirmó que la configuración inicial ya no muestra `recoverySecret` y que un visitante anónimo no puede registrar una clave.
 - `npm run lint` y `npm run build` finalizaron sin errores; Supabase confirmó mediante `db push --linked --dry-run` que no hay migraciones pendientes.
+- La corrección se desplegó en `https://mideli.vercel.app`; salud y control respondieron HTTP 200, el campo técnico no aparece y la configuración anónima sigue bloqueada.
