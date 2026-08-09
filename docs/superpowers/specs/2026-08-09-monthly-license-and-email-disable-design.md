@@ -2,7 +2,7 @@
 
 Fecha: 2026-08-09
 
-Estado: aprobado por el usuario, pendiente de revisión escrita
+Estado: diseño principal aprobado; corrección de primer acceso aprobada y pendiente de revisión escrita
 
 ## Objetivo
 
@@ -43,14 +43,18 @@ El panel mostrará estado, fecha de vencimiento, días restantes, última renova
 
 ## 3. Acceso exclusivo del vendedor
 
-La ruta `/control/licencia` no aparecerá en la navegación del restaurante. Owner, admin y demás perfiles de Mideli no obtendrán acceso por su rol.
+La ruta `/control/licencia` no aparecerá en la navegación del restaurante. Owner, admin y demás perfiles de Mideli no obtendrán acceso por su rol, salvo la autorización de una sola vez para crear la primera credencial cuando todavía no existe ninguna.
 
 La primera configuración funcionará así:
 
-1. El vendedor entra al panel privado.
-2. Confirma una clave maestra de recuperación que existe únicamente como variable de servidor en Vercel.
-3. Crea su propia contraseña de vendedor de al menos 8 caracteres.
+1. El vendedor inicia sesión en Mideli como un perfil activo `owner` o `admin` en el mismo dispositivo.
+2. Entra al panel privado. El servidor valida el JWT con `supabase.auth.getClaims()` y consulta el rol activo en `profiles`.
+3. Crea directamente su propia contraseña de vendedor de al menos 8 caracteres, sin introducir la clave técnica de recuperación.
 4. El servidor deriva y guarda un hash con `scrypt` y salt aleatorio, nunca la contraseña original.
+
+La sesión administrativa solo autoriza esta configuración cuando todavía no existe una credencial de vendedor. Después de crearla, pertenecer a `owner` o `admin` no concede acceso al control de licencia: será obligatorio iniciar la sesión privada con la contraseña del vendedor.
+
+Si no existe una sesión administrativa válida, el panel indicará que primero debe iniciarse sesión como propietario o administrador. No ofrecerá una configuración inicial pública ni permitirá que una persona anónima reclame el control.
 
 Después de configurarla:
 
@@ -58,7 +62,7 @@ Después de configurarla:
 - Un acceso correcto creará una sesión firmada con HMAC en una cookie `HttpOnly`, `Secure` y `SameSite=Strict`, limitada a la ruta de control.
 - La sesión durará 30 minutos y cada acción volverá a comprobar su validez.
 - Cambiar la contraseña exigirá la contraseña actual.
-- La clave maestra de recuperación permitirá establecer una contraseña nueva si se olvida.
+- La clave maestra técnica de recuperación permitirá establecer una contraseña nueva si se olvida. Esta opción se mostrará separada del primer acceso.
 - Cambiar o recuperar la contraseña invalidará las sesiones privadas anteriores.
 
 Las variables de servidor serán:
@@ -110,7 +114,8 @@ Cuando exista un dominio verificado, se configurará `RESEND_FROM_EMAIL`, se cam
 ## 7. Seguridad y errores
 
 - Todas las operaciones del panel serán Server Actions y validarán la sesión privada del vendedor.
-- La clave maestra solamente servirá para configuración inicial y recuperación, no se almacenará en base de datos.
+- La clave maestra solamente servirá para recuperación técnica, no se almacenará en base de datos.
+- La autorización administrativa de configuración inicial usará `getClaims()` en servidor y comprobará `profiles.role` e `is_active`; nunca confiará en metadatos editables del usuario.
 - Las comparaciones criptográficas evitarán diferencias de tiempo evidentes.
 - Los errores visibles no confirmarán si una credencial existe ni mostrarán detalles de Supabase.
 - Cada renovación o suspensión será transaccional y producirá un evento de auditoría.
@@ -121,19 +126,20 @@ Cuando exista un dominio verificado, se configurará `RESEND_FROM_EMAIL`, se cam
 
 La implementación se considerará completa únicamente después de comprobar:
 
-1. Configuración inicial y creación de contraseña.
-2. Inicio correcto y rechazo de contraseña incorrecta.
-3. Bloqueo temporal después de cinco intentos.
-4. Cambio y recuperación de contraseña con invalidación de sesiones anteriores.
-5. Renovación de un mes activo, un mes vencido y meses que requieran ajustar el último día.
-6. Suspensión y reactivación desde el panel privado.
-7. Redirección de todas las rutas operativas.
-8. Rechazo transaccional de escrituras con licencia vencida o suspendida.
-9. Escrituras permitidas con licencia activa.
-10. Reactivación de dispositivos mediante Realtime y comprobación manual.
-11. Ausencia total de la tarjeta de correo en Analíticas.
-12. Rechazo de envío manual y cron desactivado sin llamadas a Resend.
-13. `npm run lint` y `npm run build`.
-14. `npx supabase db push --linked --dry-run`, aplicación controlada y prueba SQL dentro de una transacción revertida.
+1. Configuración inicial con sesión activa de owner/admin y creación directa de contraseña.
+2. Rechazo de la configuración inicial anónima y confirmación de que el rol administrativo deja de conceder acceso después de crear la credencial.
+3. Inicio correcto y rechazo de contraseña incorrecta.
+4. Bloqueo temporal después de cinco intentos.
+5. Cambio y recuperación de contraseña con invalidación de sesiones anteriores.
+6. Renovación de un mes activo, un mes vencido y meses que requieran ajustar el último día.
+7. Suspensión y reactivación desde el panel privado.
+8. Redirección de todas las rutas operativas.
+9. Rechazo transaccional de escrituras con licencia vencida o suspendida.
+10. Escrituras permitidas con licencia activa.
+11. Reactivación de dispositivos mediante Realtime y comprobación manual.
+12. Ausencia total de la tarjeta de correo en Analíticas.
+13. Rechazo de envío manual y cron desactivado sin llamadas a Resend.
+14. `npm run lint` y `npm run build`.
+15. `npx supabase db push --linked --dry-run`, aplicación controlada y prueba SQL dentro de una transacción revertida.
 
 No se desplegará a producción si una licencia inactiva todavía permite crear pedidos, cobros, movimientos de caja o cambios administrativos.
