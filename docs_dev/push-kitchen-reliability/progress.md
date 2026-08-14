@@ -35,8 +35,10 @@
 
 ## Verificaciones pendientes
 
-- Pruebas de regresión iniciales.
-- Migración local y dry-run remoto.
-- Implementación y despliegue de Edge Function.
-- Lint, build y pruebas funcionales.
 - Validación Push física en PWA instalada.
+
+## Despliegue
+
+- La versión de producción `90389965202a` quedó publicada en `https://mideli.vercel.app`.
+- Inicio, salud, manifiesto PWA y service worker responden con HTTP 200.
+- El endpoint de salud confirma estado `ok` y la misma versión desplegada.
