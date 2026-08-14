@@ -20,8 +20,15 @@ import {
 import { toast } from "sonner";
 import type { OrderItem } from "@/types/database";
 import type { OrderWithItems } from "@/lib/stores/order-store";
-
-const NEW_ORDER_SOUND_SRC = "/sounds/akshai26-notification-for-orders-313025.mp3";
+import { PushNotificationControl } from "./push-notification-control";
+import {
+  isKitchenOrderAudioEnabled,
+  isKitchenOrderAudioUnlocked,
+  playKitchenOrderSound,
+  primeKitchenOrderAudio,
+  setKitchenOrderAudioEnabled,
+  stopKitchenOrderAudio,
+} from "@/lib/kitchen-order-audio";
 
 const TYPE_LABELS: Record<string, string> = {
   comedor: "Comedor",
@@ -153,6 +160,7 @@ export function CocinaView() {
   const {
     activeOrders,
     loading,
+    lastError,
     fetchActiveOrders,
     updateOrderStatus,
     subscribeToOrders,
@@ -162,79 +170,84 @@ export function CocinaView() {
   const prevOrders = useRef<Map<string, OrderWithItems>>(new Map());
   const hasHydratedOrdersRef = useRef(false);
   const updateTimers = useRef<Map<string, number>>(new Map());
-  const alertAudioRef = useRef<HTMLAudioElement | null>(null);
   const alertingOrderIdsRef = useRef<Set<string>>(new Set());
   const alertPlaybackWarningRef = useRef(false);
   const [now, setNow] = useState(() => new Date());
   const [filter, setFilter] = useState<KitchenFilter>("pending");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundReady, setSoundReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [orderUpdates, setOrderUpdates] = useState<Record<string, KitchenOrderUpdate>>({});
   const [newOrderIds, setNewOrderIds] = useState<string[]>([]);
 
   useEffect(() => {
-    const audio = new Audio(NEW_ORDER_SOUND_SRC);
-    audio.loop = false;
-    audio.preload = "auto";
-    audio.volume = 1;
-    alertAudioRef.current = audio;
-
-    return () => {
-      audio.pause();
-      audio.currentTime = 0;
-      alertAudioRef.current = null;
-    };
+    const preferenceTimer = window.setTimeout(() => {
+      setSoundEnabled(isKitchenOrderAudioEnabled());
+      setSoundReady(isKitchenOrderAudioUnlocked());
+    }, 0);
+    return () => window.clearTimeout(preferenceTimer);
   }, []);
+
+  useEffect(() => {
+    if (!soundEnabled || soundReady) return;
+
+    const unlockAudio = () => {
+      void primeKitchenOrderAudio().then((unlocked) => {
+        if (unlocked) {
+          setSoundReady(true);
+          alertPlaybackWarningRef.current = false;
+        }
+      });
+    };
+
+    window.addEventListener("pointerdown", unlockAudio, { passive: true });
+    window.addEventListener("touchend", unlockAudio, { passive: true });
+    window.addEventListener("keydown", unlockAudio);
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("touchend", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+  }, [soundEnabled, soundReady]);
 
   const dismissOrderAlert = useCallback((orderId: string) => {
     alertingOrderIdsRef.current.delete(orderId);
     setNewOrderIds((current) => current.filter((id) => id !== orderId));
 
-    const audio = alertAudioRef.current;
-    audio?.pause();
-    if (audio) audio.currentTime = 0;
+    stopKitchenOrderAudio();
   }, []);
 
   const playOrderAlert = useCallback(() => {
-    const audio = alertAudioRef.current;
-    if (!soundEnabled || !audio) return;
-
-    audio.loop = false;
-    audio.currentTime = 0;
-    void audio.play().catch(() => {
-      if (!alertPlaybackWarningRef.current) {
-        alertPlaybackWarningRef.current = true;
-        toast.warning("Activa las alertas de sonido desde el botón del altavoz");
+    if (!soundEnabled) return;
+    void playKitchenOrderSound().then((played) => {
+      if (played) {
+        setSoundReady(true);
+        return;
       }
+      if (alertPlaybackWarningRef.current) return;
+      alertPlaybackWarningRef.current = true;
+      toast.warning("Toca el botón del altavoz para activar el sonido");
     });
   }, [soundEnabled]);
 
-  function clearAudioPlayback() {
-    const audio = alertAudioRef.current;
-    audio?.pause();
-    if (audio) audio.currentTime = 0;
-  }
-
-  function handleSoundToggle() {
+  async function handleSoundToggle() {
     if (soundEnabled) {
       setSoundEnabled(false);
-      clearAudioPlayback();
+      setSoundReady(false);
+      setKitchenOrderAudioEnabled(false);
       return;
     }
 
-    setSoundEnabled(true);
-    const audio = alertAudioRef.current;
-    if (!audio) return;
-    audio.muted = true;
-    void audio.play().then(() => {
-      audio.pause();
-      audio.currentTime = 0;
-      audio.muted = false;
+    const unlocked = await primeKitchenOrderAudio();
+    if (unlocked) {
+      setKitchenOrderAudioEnabled(true);
+      setSoundEnabled(true);
+      setSoundReady(true);
       alertPlaybackWarningRef.current = false;
-    }).catch(() => {
-      audio.muted = false;
-      toast.warning("No se pudo activar el sonido en este navegador");
-    });
+      toast.success("Sonido de Cocina activado");
+      return;
+    }
+    toast.warning("No se pudo activar el sonido en este navegador");
   }
 
   useEffect(() => {
@@ -527,6 +540,7 @@ export function CocinaView() {
           </button>
         ))}
         <div className="ml-auto flex items-center gap-1.5">
+          <PushNotificationControl topic="kitchen" />
           <button
             type="button"
             onClick={() => void fetchActiveOrders()}
@@ -538,12 +552,25 @@ export function CocinaView() {
           </button>
           <button
             type="button"
-            onClick={handleSoundToggle}
-            aria-pressed={soundEnabled}
-            aria-label={soundEnabled ? "Silenciar alertas" : "Activar alertas"}
+            onClick={() => void handleSoundToggle()}
+            aria-pressed={soundEnabled && soundReady}
+            aria-label={
+              soundEnabled && soundReady
+                ? "Silenciar alertas locales"
+                : "Activar alertas locales"
+            }
+            title={
+              soundEnabled && soundReady
+                ? "Sonido local activado"
+                : soundEnabled
+                  ? "Toca para preparar el sonido local"
+                  : "Sonido local pausado"
+            }
             className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
-              soundEnabled
+              soundEnabled && soundReady
                 ? "border-success/40 bg-success-light text-success"
+                : soundEnabled
+                  ? "border-warning/40 bg-warning/10 text-warning"
                 : "border-border bg-surface text-muted-foreground"
             }`}
           >
@@ -553,6 +580,23 @@ export function CocinaView() {
       </div>
 
       <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+        {lastError ? (
+          <div
+            role="status"
+            className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-warning"
+          >
+            <AlertTriangle size={17} className="shrink-0" />
+            <p className="min-w-0 flex-1 font-body text-sm">{lastError}</p>
+            <button
+              type="button"
+              onClick={() => void fetchActiveOrders()}
+              disabled={loading}
+              className="h-9 rounded-xl border border-warning/35 px-3 font-heading text-xs font-bold hover:bg-warning/10 disabled:opacity-50"
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : null}
         {visibleOrders.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-surface shadow-card">

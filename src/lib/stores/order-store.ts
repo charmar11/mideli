@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import type { Order, OrderItem, CartItem, MenuItem } from "@/types/database";
+import {
+  ACTIVE_ORDERS_TIMEOUT_MS,
+  createRequestDeadline,
+  getRealtimeReconnectDelay,
+} from "@/lib/realtime-resilience";
 
 export interface OrderItemWithName extends OrderItem {
   menu_item_name?: string;
@@ -89,6 +94,36 @@ function calculateItemsTotal(items: CartItem[]) {
   }, 0);
 }
 
+function orderLoadError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.name === "AbortError") {
+    return "La conexión tardó demasiado. Conservamos los pedidos y volveremos a intentar.";
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
+function publishOrderNotification(
+  supabase: ReturnType<typeof createClient>,
+  orderId: string,
+  event: "new_order" | "ready"
+) {
+  void supabase.functions
+    .invoke("send-order-notification", { body: { orderId, event } })
+    .then((result: { error: { message: string } | null }) => {
+      if (!result.error) return;
+      console.warn(
+        "El pedido se guardó, pero falló el aviso Push:",
+        result.error.message
+      );
+    })
+    .catch((error: unknown) => {
+      console.warn(
+        "El pedido se guardó, pero no se pudo solicitar el aviso Push:",
+        error instanceof Error ? error.message : "Error desconocido"
+      );
+    });
+}
+
 export const useOrderStore = create<OrderState>((set, get) => ({
   activeOrders: [],
   todayOrders: [],
@@ -127,17 +162,22 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         const supabase = createClient();
         const orderSelect =
           "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at";
-        const activeResult = await supabase
-          .from("orders")
-          .select(orderSelect)
-          .in("status", ["pending", "in_kitchen", "ready", "served"])
-          .order("created_at", { ascending: false })
-          .limit(200);
+        const ordersDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
+        let activeResult;
+        try {
+          activeResult = await supabase
+            .from("orders")
+            .select(orderSelect)
+            .in("status", ["pending", "in_kitchen", "ready", "served"])
+            .order("created_at", { ascending: false })
+            .limit(200)
+            .abortSignal(ordersDeadline.signal);
+        } finally {
+          ordersDeadline.clear();
+        }
 
         if (activeResult.error) {
           set({
-            activeOrders: [],
-            todayOrders: [],
             lastError: "No se pudieron cargar los pedidos del turno",
           });
           return;
@@ -150,18 +190,24 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           return;
         }
 
-        const { data: orderItemsData, error: itemsError } = await supabase
-          .from("order_items")
-          .select("id,order_id,menu_item_id,quantity,unit_price,notes,selected_modifiers,created_at")
-          .in(
-            "order_id",
-            orders.map((order) => order.id)
-          );
+        const itemsDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
+        let orderItemsResult;
+        try {
+          orderItemsResult = await supabase
+            .from("order_items")
+            .select("id,order_id,menu_item_id,quantity,unit_price,notes,selected_modifiers,created_at")
+            .in(
+              "order_id",
+              orders.map((order) => order.id)
+            )
+            .abortSignal(itemsDeadline.signal);
+        } finally {
+          itemsDeadline.clear();
+        }
+        const { data: orderItemsData, error: itemsError } = orderItemsResult;
 
         if (itemsError || !orderItemsData) {
           set({
-            activeOrders: [],
-            todayOrders: [],
             lastError: "No se pudieron cargar los artículos de los pedidos",
           });
           return;
@@ -186,6 +232,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           activeOrders: ordersWithItems,
           todayOrders: ordersWithItems,
           lastError: null,
+        });
+      } catch (error) {
+        set({
+          lastError: orderLoadError(
+            error,
+            "No se pudieron actualizar los pedidos. Volveremos a intentar."
+          ),
         });
       } finally {
         set({ loading: false });
@@ -262,6 +315,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         ? state.todayOrders
         : [localOrder, ...state.todayOrders],
     }));
+    publishOrderNotification(supabase, order.id, "new_order");
     return { order, error: null };
   },
 
@@ -299,17 +353,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     if (status === "ready") {
-      void supabase.functions
-        .invoke("send-order-ready", { body: { orderId } })
-        .then((result: { error: { message: string } | null }) => {
-          const pushError = result.error;
-          if (pushError) {
-            console.warn(
-              "El pedido quedó listo, pero falló el aviso Push:",
-              pushError.message
-            );
-          }
-        });
+      publishOrderNotification(supabase, orderId, "ready");
     }
 
     set((state) => {
@@ -439,6 +483,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     let pollingTimer: ReturnType<typeof setInterval> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
+    let channelGeneration = 0;
     let disposed = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
@@ -480,10 +526,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       }));
     };
 
-    const handleChannelStatus = (status: string, error?: Error) => {
-      if (disposed) return;
+    const handleChannelStatus = (
+      generation: number,
+      status: string,
+      error?: Error
+    ) => {
+      if (disposed || generation !== channelGeneration) return;
 
       if (status === "SUBSCRIBED") {
+        reconnectAttempt = 0;
         scheduleRefresh();
         return;
       }
@@ -501,18 +552,27 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         console.warn("Supabase Realtime desconectado:", error.message);
       }
 
+      set({
+        lastError: "Conexión en tiempo real interrumpida. Reintentando...",
+      });
+
       if (reconnectTimer) return;
+      const reconnectDelay = getRealtimeReconnectDelay(reconnectAttempt);
+      reconnectAttempt += 1;
       reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
         if (disposed) return;
-        if (channel) void supabase.removeChannel(channel);
+        const previousChannel = channel;
+        channel = null;
+        if (previousChannel) void supabase.removeChannel(previousChannel);
         connect();
-      }, 1500);
+        reconnectTimer = null;
+      }, reconnectDelay);
     };
 
     const connect = () => {
       if (disposed) return;
 
+      const generation = ++channelGeneration;
       channel = supabase
         .channel(`orders-changes-${Math.random().toString(36).slice(2)}`)
         .on(
@@ -528,7 +588,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           { event: "*", schema: "public", table: "order_items" },
           scheduleRefresh
         )
-        .subscribe(handleChannelStatus);
+        .subscribe((status: string, error?: Error) =>
+          handleChannelStatus(generation, status, error)
+        );
     };
 
     connect();
@@ -550,6 +612,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     return () => {
       disposed = true;
+      channelGeneration += 1;
       if (refreshTimer) clearTimeout(refreshTimer);
       if (pollingTimer) clearInterval(pollingTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);

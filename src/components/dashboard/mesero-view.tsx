@@ -411,7 +411,7 @@ export function MeseroView() {
           </button>
       </div>
       <CashShiftControl />
-      <PushNotificationControl />
+      <PushNotificationControl topic="ready" />
     </div>
   );
 

@@ -124,6 +124,7 @@ const PUSH_LABELS: Record<PushStatus, string> = {
   available: "disponible sin activar",
   paused: "pausado",
   production_required: "disponible en la versión publicada",
+  error: "error de conexión",
   enabled: "activo",
 };
 
@@ -327,8 +328,9 @@ async function checkPwa(): Promise<CheckOutcome> {
 }
 
 async function checkAlerts(): Promise<CheckOutcome> {
-  const [pushStatus, soundResponse] = await Promise.all([
-    getPushStatus(),
+  const [readyPushStatus, kitchenPushStatus, soundResponse] = await Promise.all([
+    getPushStatus("ready"),
+    getPushStatus("kitchen"),
     fetch("/sounds/universfield-new-notification-051-494246.mp3", {
       method: "HEAD",
       cache: "no-store",
@@ -337,25 +339,29 @@ async function checkAlerts(): Promise<CheckOutcome> {
 
   if (!soundResponse.ok) throw new Error("sound unavailable");
   const audioReady = isReadyOrderAudioUnlocked();
-  const detail = `Push: ${PUSH_LABELS[pushStatus]}. Sonido: ${
+  const detail = `Entrega: ${PUSH_LABELS[readyPushStatus]}. Cocina: ${PUSH_LABELS[kitchenPushStatus]}. Sonido: ${
     audioReady ? "habilitado" : "pendiente de interacción"
   }.`;
 
-  if (pushStatus === "denied") {
+  if (readyPushStatus === "denied" || kitchenPushStatus === "denied") {
     return {
       status: "error",
       message: "Los avisos están bloqueados",
       detail,
     };
   }
-  if (pushStatus === "enabled" && audioReady) {
+  if (
+    (readyPushStatus === "enabled" || kitchenPushStatus === "enabled") &&
+    audioReady
+  ) {
     return { status: "ok", message: "Avisos y sonido listos", detail };
   }
 
   return {
     status: "warning",
     message:
-      pushStatus === "production_required"
+      readyPushStatus === "production_required" ||
+      kitchenPushStatus === "production_required"
         ? "Los avisos Push se validan al publicar"
         : "Los avisos requieren atención en este dispositivo",
     detail,

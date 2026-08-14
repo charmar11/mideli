@@ -7,38 +7,53 @@ import {
   enablePushNotifications,
   getPushStatus,
   pausePushNotifications,
+  type PushTopic,
   type PushStatus,
 } from "@/lib/push-notifications";
 import { primeReadyOrderAudio } from "@/lib/ready-order-audio";
 
-const STATUS_COPY: Record<PushStatus, string> = {
-  checking: "Comprobando avisos",
-  unsupported: "Este dispositivo no admite avisos Push",
-  install_required: "Instala Mideli en la pantalla de inicio para activar avisos",
-  denied: "Los avisos están bloqueados en la configuración del dispositivo",
-  available: "Activar avisos de pedidos listos",
-  paused: "Avisos pausados en este dispositivo",
-  production_required: "Probar sonido de pedidos listos",
-  enabled: "Avisos de pedidos listos activados",
+const TOPIC_LABEL: Record<PushTopic, string> = {
+  ready: "pedidos listos",
+  kitchen: "pedidos nuevos",
 };
 
-export function PushNotificationControl() {
+function statusCopy(status: PushStatus, topic: PushTopic) {
+  const label = TOPIC_LABEL[topic];
+  const copy: Record<PushStatus, string> = {
+    checking: `Comprobando avisos de ${label}`,
+    unsupported: "Este dispositivo no admite avisos Push",
+    install_required: "Instala Mideli en la pantalla de inicio para activar avisos",
+    denied: "Los avisos están bloqueados en la configuración del dispositivo",
+    available: `Activar avisos de ${label}`,
+    paused: `Avisos de ${label} pausados en este dispositivo`,
+    production_required: `Los avisos de ${label} requieren la versión publicada`,
+    error: `No se pudo comprobar los avisos de ${label}`,
+    enabled: `Avisos de ${label} activados`,
+  };
+  return copy[status];
+}
+
+type PushNotificationControlProps = {
+  topic: PushTopic;
+};
+
+export function PushNotificationControl({ topic }: PushNotificationControlProps) {
   const [status, setStatus] = useState<PushStatus>("checking");
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
     let active = true;
-    void getPushStatus()
+    void getPushStatus(topic)
       .then((nextStatus) => {
         if (active) setStatus(nextStatus);
       })
       .catch(() => {
-        if (active) setStatus("available");
+        if (active) setStatus("error");
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [topic]);
 
   async function handleClick() {
     if (working) return;
@@ -58,8 +73,14 @@ export function PushNotificationControl() {
 
     setWorking(true);
     try {
+      if (status === "error") {
+        const nextStatus = await getPushStatus(topic);
+        setStatus(nextStatus);
+        return;
+      }
+
       if (status === "enabled") {
-        const nextStatus = await pausePushNotifications();
+        const nextStatus = await pausePushNotifications(topic);
         setStatus(nextStatus);
         toast.success("Avisos pausados", {
           description: "Este dispositivo no recibirá alertas hasta que vuelvas a activarlas.",
@@ -67,9 +88,14 @@ export function PushNotificationControl() {
         return;
       }
 
-      const audioPromise = primeReadyOrderAudio(true);
+      const audioPromise =
+        topic === "ready" ? primeReadyOrderAudio(true) : Promise.resolve(true);
 
       if (status === "production_required") {
+        if (topic === "kitchen") {
+          toast.info("Los avisos Push se activan en la versión publicada de Mideli");
+          return;
+        }
         const audioReady = await audioPromise;
         toast[audioReady ? "success" : "info"](
           audioReady ? "Sonido de pedidos listo" : "Toca de nuevo para probar el sonido",
@@ -81,15 +107,17 @@ export function PushNotificationControl() {
       }
 
       const [nextStatus, audioReady] = await Promise.all([
-        enablePushNotifications(),
+        enablePushNotifications(topic),
         audioPromise,
       ]);
       setStatus(nextStatus);
       if (nextStatus === "enabled") {
         toast.success("Avisos activados", {
           description: audioReady
-            ? "La tableta te avisará cuando cocina termine uno de tus pedidos."
-            : "Push está activo. Toca otra vez la campana para probar el sonido.",
+            ? topic === "kitchen"
+              ? "Este dispositivo te avisará cuando entre un pedido nuevo."
+              : "Este dispositivo te avisará cuando cocina termine un pedido."
+            : "Push está activo. El sonido local se habilita al tocar la pantalla.",
         });
       }
     } catch (error) {
@@ -109,13 +137,15 @@ export function PushNotificationControl() {
     <button
       type="button"
       onClick={handleClick}
-      title={STATUS_COPY[status]}
-      aria-label={STATUS_COPY[status]}
+      title={statusCopy(status, topic)}
+      aria-label={statusCopy(status, topic)}
       className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors ${
         status === "enabled"
           ? "border-success/35 bg-success/10 text-success"
           : status === "paused"
             ? "border-warning/40 bg-warning/10 text-warning hover:bg-warning/15"
+            : status === "error"
+              ? "border-destructive/35 bg-destructive/10 text-destructive"
           : "border-border bg-surface text-muted-foreground hover:border-brand/45 hover:text-brand"
       }`}
     >
@@ -124,7 +154,7 @@ export function PushNotificationControl() {
       ) : (
         <Icon size={16} />
       )}
-      {status === "available" || status === "paused" ? (
+      {status === "available" || status === "paused" || status === "error" ? (
         <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-warning" />
       ) : null}
     </button>

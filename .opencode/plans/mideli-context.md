@@ -152,6 +152,7 @@ Caja compartida del local con apertura y cierre explícitos (migración `2026080
 
 - Solo un turno abierto a la vez; pedidos y cobros nuevos se vinculan al turno de forma transaccional. No se vende fuera de turno.
 - Cierre con conteo ciego, separación por efectivo, tarjeta y transferencia, y autorización cuando la diferencia es importante.
+- Después del conteo ciego, el corte muestra fondo inicial, ventas en efectivo, entradas, retiros, gastos y correcciones que forman el efectivo esperado.
 - Movimientos de efectivo (retiros, gastos, fondos, correcciones) con responsable, motivo y autorización.
 - Cuentas sin pagar pasan explícitamente al siguiente turno (`cash_shift_pending_orders`).
 - Historial inmutable en `/settings/caja` (`cash-history-manager`), control operativo en `src/components/cash/cash-shift-control.tsx` y store `cash-shift-store.ts`.
@@ -174,9 +175,13 @@ El cobro pasó a un libro mayor transaccional (migración `20260801092945_unifie
 
 - Serwist configurado (`src/app/sw.ts`, `src/app/serwist/`, `src/app/manifest.ts`, `pwa-provider.tsx`), iconos en `public/icons/`.
 - Suscripciones push en `push_subscriptions`, control en `push-notification-control.tsx`, lógica en `src/lib/push-notifications.ts`.
-- Aviso sonoro de pedido listo (`ready-order-notifier.tsx`, `ready-order-audio.ts`, sonidos en `public/sounds/`) y Edge Function `send-order-ready` en `supabase/functions/`.
+- Desde 2026-08-13 cada dispositivo configura por separado `kitchen_alerts` para pedidos nuevos y `ready_alerts` para pedidos listos. Propietario, administrador y supervisor pueden activar ambos al entrar a las vistas correspondientes.
+- La Edge Function `send-order-notification` valida JWT, consulta el pedido en servidor, entrega a todos los perfiles activos que habilitaron el tema y evita duplicados mediante `push_notification_events`.
+- El service worker suprime el banner si Cocina o Mesero ya están visibles; en esa situación se usa el sonido y la señal local. En otra sección, segundo plano o aplicación cerrada se muestra Push.
+- Avisos locales en `ready-order-notifier.tsx`, `ready-order-audio.ts` y `kitchen-order-audio.ts`, con desbloqueo después de una interacción válida.
 - Los textos de ayuda usan términos genéricos como `dispositivo`, sin marcas.
-- Cada usuario puede pausar o reactivar los avisos solo en su dispositivo. La suscripción permanece registrada, pero `is_active` evita mensajes fuera del turno.
+- Cada usuario puede pausar o reactivar cada tema solo en su dispositivo. `is_active` indica que al menos un tema permanece activo.
+- Cocina conserva los pedidos visibles ante fallos transitorios, cancela consultas colgadas a los 12 segundos y reconecta Realtime con backoff de hasta 30 segundos.
 
 ### Estación de impresión
 

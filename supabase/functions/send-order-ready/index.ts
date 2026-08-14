@@ -110,7 +110,8 @@ Deno.serve(async (req) => {
     .from("push_subscriptions")
     .select("id,endpoint,p256dh,auth_key")
     .in("user_id", [...targetUserIds])
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .eq("ready_alerts", true);
 
   if (subscriptionsError) {
     console.error("No se pudieron leer suscripciones", subscriptionsError);
@@ -174,7 +175,12 @@ Deno.serve(async (req) => {
   if (expiredIds.length > 0) {
     await admin
       .from("push_subscriptions")
-      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .update({
+        is_active: false,
+        ready_alerts: false,
+        kitchen_alerts: false,
+        updated_at: new Date().toISOString(),
+      })
       .in("id", expiredIds);
   }
 

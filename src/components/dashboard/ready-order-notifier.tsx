@@ -76,7 +76,7 @@ export function ReadyOrderNotifier() {
       );
 
       if (readyOrders.length > 0) {
-        if (!areDeviceAlertsEnabled()) {
+        if (!areDeviceAlertsEnabled("ready")) {
           previousOrdersRef.current = currentOrders;
           return;
         }

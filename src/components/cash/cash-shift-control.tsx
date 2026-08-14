@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashShiftStore } from "@/lib/stores";
+import { buildCashCloseBreakdown } from "@/lib/cash-close";
 import type {
   CashAuthorizer,
   CashClosePreview,
@@ -225,6 +226,20 @@ export function CashShiftControl() {
   const openingCountTotal = useMemo(() => denominationTotal(openingCounts), [openingCounts]);
   const closingCountTotal = useMemo(() => denominationTotal(closingCounts), [closingCounts]);
   const totals = currentShift?.operating_totals;
+  const cashBreakdown = useMemo(
+    () =>
+      preview && currentShift
+        ? buildCashCloseBreakdown({
+            openingFloat: currentShift.opening_float,
+            cashTotal: preview.cash_total ?? 0,
+            fundInTotal: preview.fund_in_total ?? 0,
+            withdrawalTotal: preview.withdrawal_total ?? 0,
+            expenseTotal: preview.expense_total ?? 0,
+            correctionTotal: preview.correction_total ?? 0,
+          })
+        : null,
+    [currentShift, preview]
+  );
 
   function resetAuthorization() {
     setAuthorizerId("");
@@ -472,6 +487,30 @@ export function CashShiftControl() {
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3"><div className="rounded-xl bg-background p-3"><p className="font-body text-xs text-muted-foreground">Contado</p><p className="mt-1 font-data text-lg font-bold">{money(preview.counted_cash)}</p></div><div className="rounded-xl bg-background p-3"><p className="font-body text-xs text-muted-foreground">Esperado</p><p className="mt-1 font-data text-lg font-bold">{money(preview.expected_cash)}</p></div><div className={`col-span-2 rounded-xl p-3 sm:col-span-1 ${Math.abs(preview.difference) <= 20 ? "bg-success/10" : "bg-destructive/10"}`}><p className="font-body text-xs text-muted-foreground">Diferencia</p><p className={`mt-1 font-data text-lg font-bold ${Math.abs(preview.difference) <= 20 ? "text-success" : "text-destructive"}`}>{money(preview.difference)}</p></div></div>
+                      {cashBreakdown ? (
+                        <div className="rounded-2xl border border-gold/25 bg-gold/5 p-4">
+                          <div className="mb-3 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-heading text-sm font-bold">Cómo se calculó el efectivo</p>
+                              <p className="mt-0.5 font-body text-xs text-muted-foreground">Incluye el dinero con el que inició el turno.</p>
+                            </div>
+                            <strong className="shrink-0 font-data text-base text-gold">{money(preview.expected_cash)}</strong>
+                          </div>
+                          <div className="space-y-2 border-t border-gold/15 pt-3">
+                            {cashBreakdown.lines.map((line, index) => {
+                              const isNegative = line.operation === "subtract" || line.amount < 0;
+                              const sign = index === 0 ? "" : isNegative ? "−" : "+";
+                              return (
+                                <div key={line.label} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 font-body text-sm">
+                                  <span className={index === 0 ? "font-bold text-foreground" : "text-muted-foreground"}>{line.label}</span>
+                                  <span className="font-data text-muted-foreground">{sign}</span>
+                                  <strong className="min-w-24 text-right font-data">{money(Math.abs(line.amount))}</strong>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="rounded-2xl border border-border bg-background/50 p-4"><div className="grid grid-cols-2 gap-y-2 font-body text-sm"><span className="text-muted-foreground">Venta neta</span><strong className="text-right font-data">{money(preview.net_sales)}</strong><span className="text-muted-foreground">Efectivo cobrado</span><strong className="text-right font-data">{money(preview.cash_total)}</strong><span className="text-muted-foreground">Tarjeta</span><strong className="text-right font-data">{money(preview.card_total)}</strong><span className="text-muted-foreground">Transferencia</span><strong className="text-right font-data">{money(preview.transfer_total)}</strong><span className="text-warning">Cuentas pendientes</span><strong className="text-right font-data text-warning">{preview.pending_order_count} · {money(preview.pending_balance)}</strong></div></div>
                       <textarea value={closeNote} onChange={(event) => setCloseNote(event.target.value)} placeholder="Nota opcional del cierre" rows={2} className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-sm outline-none focus:border-brand" />
                       {preview.requires_authorization ? <AuthorizationFields authorizers={authorizers} authorizerId={authorizerId} pin={pin} onAuthorizerChange={setAuthorizerId} onPinChange={setPin} /> : null}

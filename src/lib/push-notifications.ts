@@ -1,4 +1,10 @@
 import { createClient } from "@/lib/supabase/client";
+import {
+  getPushTopicColumn,
+  type PushTopic,
+} from "@/lib/push-notification-policy";
+
+export type { PushTopic } from "@/lib/push-notification-policy";
 
 export const WEB_PUSH_PUBLIC_KEY =
   "BIrydbbaDd7Es00U3lE3LvS3Za693T5fVBtzR3GpY34-SN0T64sH9vX_c2RtahyropfXtuypFIwNCVxgH4O6AvM";
@@ -11,17 +17,30 @@ export type PushStatus =
   | "available"
   | "paused"
   | "production_required"
+  | "error"
   | "enabled";
 
-const DEVICE_ALERTS_KEY = "mideli.device-alerts-enabled";
+const LEGACY_DEVICE_ALERTS_KEY = "mideli.device-alerts-enabled";
 
-function setDeviceAlertsEnabled(enabled: boolean) {
-  window.localStorage.setItem(DEVICE_ALERTS_KEY, enabled ? "true" : "false");
+function getDeviceAlertsKey(topic: PushTopic) {
+  return `mideli.device-alerts-${topic}`;
 }
 
-export function areDeviceAlertsEnabled() {
+function setDeviceAlertsEnabled(topic: PushTopic, enabled: boolean) {
+  window.localStorage.setItem(
+    getDeviceAlertsKey(topic),
+    enabled ? "true" : "false"
+  );
+}
+
+export function areDeviceAlertsEnabled(topic: PushTopic = "ready") {
   if (typeof window === "undefined") return true;
-  return window.localStorage.getItem(DEVICE_ALERTS_KEY) !== "false";
+  const stored = window.localStorage.getItem(getDeviceAlertsKey(topic));
+  if (stored !== null) return stored === "true";
+  if (topic === "ready") {
+    return window.localStorage.getItem(LEGACY_DEVICE_ALERTS_KEY) !== "false";
+  }
+  return false;
 }
 
 type NavigatorWithStandalone = Navigator & { standalone?: boolean };
@@ -62,9 +81,8 @@ function supportsWebPush() {
   );
 }
 
-export async function getPushStatus(): Promise<PushStatus> {
+export async function getPushStatus(topic: PushTopic): Promise<PushStatus> {
   if (!supportsWebPush()) return "unsupported";
-  if (!areDeviceAlertsEnabled()) return "paused";
   if (process.env.NODE_ENV === "development") return "production_required";
   if (isAppleMobile() && !isStandaloneApp()) return "install_required";
   if (Notification.permission === "denied") return "denied";
@@ -75,16 +93,20 @@ export async function getPushStatus(): Promise<PushStatus> {
 
   const { data, error } = await createClient()
     .from("push_subscriptions")
-    .select("is_active")
+    .select("is_active,ready_alerts,kitchen_alerts")
     .eq("endpoint", subscription.endpoint)
     .maybeSingle();
 
-  if (error) return "enabled";
+  if (error) throw new Error(error.message);
   if (!data) return "available";
-  return data?.is_active === false ? "paused" : "enabled";
+  const enabled = data.is_active && data[getPushTopicColumn(topic)] === true;
+  setDeviceAlertsEnabled(topic, enabled);
+  return enabled ? "enabled" : "paused";
 }
 
-export async function enablePushNotifications(): Promise<PushStatus> {
+export async function enablePushNotifications(
+  topic: PushTopic
+): Promise<PushStatus> {
   if (!supportsWebPush()) return "unsupported";
   if (process.env.NODE_ENV === "development") return "production_required";
   if (isAppleMobile() && !isStandaloneApp()) return "install_required";
@@ -112,39 +134,66 @@ export async function enablePushNotifications(): Promise<PushStatus> {
   }
 
   const supabase = createClient();
-  const { error } = await supabase.rpc("register_push_subscription", {
+  const { data, error } = await supabase.rpc("set_push_notification_topic", {
     p_endpoint: serialized.endpoint,
     p_p256dh: serialized.keys.p256dh,
     p_auth_key: serialized.keys.auth,
+    p_topic: topic,
+    p_enabled: true,
     p_device_label: getDeviceLabel(),
     p_user_agent: navigator.userAgent,
   });
   if (error) throw new Error(error.message);
+  const saved = Array.isArray(data) ? data[0] : data;
+  if (!saved || saved[getPushTopicColumn(topic)] !== true) {
+    throw new Error("El servidor no confirmó la activación del aviso");
+  }
 
-  setDeviceAlertsEnabled(true);
+  setDeviceAlertsEnabled(topic, true);
 
   return "enabled";
 }
 
-export async function pausePushNotifications(): Promise<PushStatus> {
+export async function pausePushNotifications(
+  topic: PushTopic
+): Promise<PushStatus> {
   if (typeof window === "undefined") return "unsupported";
 
-  setDeviceAlertsEnabled(false);
-  if (!supportsWebPush() || process.env.NODE_ENV === "development") return "paused";
+  if (!supportsWebPush() || process.env.NODE_ENV === "development") {
+    setDeviceAlertsEnabled(topic, false);
+    return "paused";
+  }
 
   const registration = await navigator.serviceWorker.getRegistration();
   const subscription = await registration?.pushManager.getSubscription();
-  if (!subscription) return "paused";
-
-  const { error } = await createClient()
-    .from("push_subscriptions")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("endpoint", subscription.endpoint);
-
-  if (error) {
-    setDeviceAlertsEnabled(true);
-    throw new Error(error.message);
+  if (!subscription) {
+    setDeviceAlertsEnabled(topic, false);
+    return "paused";
   }
 
+  const serialized = subscription.toJSON();
+  if (!serialized.endpoint || !serialized.keys?.p256dh || !serialized.keys.auth) {
+    throw new Error("El dispositivo devolvió una suscripción incompleta");
+  }
+
+  const { data, error } = await createClient().rpc("set_push_notification_topic", {
+    p_endpoint: serialized.endpoint,
+    p_p256dh: serialized.keys.p256dh,
+    p_auth_key: serialized.keys.auth,
+    p_topic: topic,
+    p_enabled: false,
+    p_device_label: getDeviceLabel(),
+    p_user_agent: navigator.userAgent,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  const saved = Array.isArray(data) ? data[0] : data;
+  if (!saved || saved[getPushTopicColumn(topic)] !== false) {
+    throw new Error("El servidor no confirmó la pausa del aviso");
+  }
+
+  setDeviceAlertsEnabled(topic, false);
   return "paused";
 }
