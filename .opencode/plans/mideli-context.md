@@ -153,6 +153,8 @@ Caja compartida del local con apertura y cierre explícitos (migración `2026080
 - Solo un turno abierto a la vez; pedidos y cobros nuevos se vinculan al turno de forma transaccional. No se vende fuera de turno.
 - Cierre con conteo ciego, separación por efectivo, tarjeta y transferencia, y autorización cuando la diferencia es importante.
 - Después del conteo ciego, el corte muestra fondo inicial, ventas en efectivo, entradas, retiros, gastos y correcciones que forman el efectivo esperado.
+- Durante el conteo ciego se muestra únicamente el fondo inicial registrado; el efectivo esperado y la diferencia permanecen ocultos hasta comparar el conteo.
+- Owner y admin pueden corregir el fondo inicial solo mientras el turno está abierto desde `/settings/caja`. El valor anterior, el nuevo, el motivo, el responsable y la fecha quedan auditados en `cash_shift_opening_float_changes` mediante `correct_cash_shift_opening_float`.
 - Movimientos de efectivo (retiros, gastos, fondos, correcciones) con responsable, motivo y autorización.
 - Cuentas sin pagar pasan explícitamente al siguiente turno (`cash_shift_pending_orders`).
 - Historial inmutable en `/settings/caja` (`cash-history-manager`), control operativo en `src/components/cash/cash-shift-control.tsx` y store `cash-shift-store.ts`.
@@ -301,11 +303,11 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- Migraciones locales y remotas alineadas: 40 migraciones, de `00001` a `20260809082829`.
+- Migraciones locales y remotas alineadas: 43 migraciones, de `00001` a `20260814030217`.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
-`profiles`, `categories`, `menu_items`, `orders`, `order_items`, `order_status_log`, `order_folio_counter`, `table_zones`, `restaurant_tables`, `table_map_labels`, `inventory_items`, `inventory_recipes`, `inventory_movements`, `inventory_lots`, `inventory_receipts`, `inventory_receipt_lines`, `inventory_purchase_orders`, `inventory_purchase_order_lines`, `inventory_counts`, `inventory_count_lines`, `payment_transactions`, `payment_tenders`, `payment_order_allocations`, `payment_item_allocations`, `cash_shifts`, `cash_movements`, `cash_shift_adjustments`, `cash_shift_pending_orders`, `app_license`, `push_subscriptions`, `user_onboarding_progress`.
+`profiles`, `categories`, `menu_items`, `orders`, `order_items`, `order_status_log`, `order_folio_counter`, `table_zones`, `restaurant_tables`, `table_map_labels`, `inventory_items`, `inventory_recipes`, `inventory_movements`, `inventory_lots`, `inventory_receipts`, `inventory_receipt_lines`, `inventory_purchase_orders`, `inventory_purchase_order_lines`, `inventory_counts`, `inventory_count_lines`, `payment_transactions`, `payment_tenders`, `payment_order_allocations`, `payment_item_allocations`, `cash_shifts`, `cash_movements`, `cash_shift_adjustments`, `cash_shift_opening_float_changes`, `cash_shift_pending_orders`, `app_license`, `push_subscriptions`, `user_onboarding_progress`.
 
 Enums:
 

@@ -125,6 +125,17 @@ export interface CashShiftAdjustment {
   created_at: string;
 }
 
+export interface CashOpeningFloatChange {
+  id: string;
+  shift_id: string;
+  previous_amount: number;
+  new_amount: number;
+  reason: string;
+  changed_by: string;
+  changed_by_name: string;
+  created_at: string;
+}
+
 export interface CashShiftPaymentSummary {
   id: string;
   folio: number;
@@ -142,6 +153,7 @@ export interface CashShiftDetail extends CashShift {
   movements: CashMovement[];
   pending_orders: CashPendingOrder[];
   adjustments: CashShiftAdjustment[];
+  opening_float_changes: CashOpeningFloatChange[];
   payments: CashShiftPaymentSummary[];
 }
 

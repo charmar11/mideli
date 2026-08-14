@@ -14,6 +14,7 @@ import {
   Landmark,
   Loader2,
   LockKeyhole,
+  Pencil,
   Printer,
   ReceiptText,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashShiftStore } from "@/lib/stores";
+import { validateOpeningFloatCorrection } from "@/lib/cash-close";
 import { formatOrderLocation } from "@/lib/order-location";
 import type {
   CashAuthorizer,
@@ -75,6 +77,7 @@ export function CashHistoryManager() {
   const listAuthorizers = useCashShiftStore((state) => state.listAuthorizers);
   const authorizeAction = useCashShiftStore((state) => state.authorizeAction);
   const recordAdjustment = useCashShiftStore((state) => state.recordAdjustment);
+  const correctOpeningFloat = useCashShiftStore((state) => state.correctOpeningFloat);
   const archiveShift = useCashShiftStore((state) => state.archiveShift);
   const restoreShift = useCashShiftStore((state) => state.restoreShift);
   const getDeletionImpact = useCashShiftStore((state) => state.getDeletionImpact);
@@ -109,6 +112,10 @@ export function CashHistoryManager() {
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletingPermanently, setDeletingPermanently] = useState(false);
+  const [editingOpeningFloat, setEditingOpeningFloat] = useState(false);
+  const [nextOpeningFloat, setNextOpeningFloat] = useState(0);
+  const [openingFloatReason, setOpeningFloatReason] = useState("");
+  const [savingOpeningFloat, setSavingOpeningFloat] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -172,6 +179,47 @@ export function CashHistoryManager() {
     setAuthorizerId("");
     setPin("");
     toast.success("Corrección registrada", { description: "El corte original no fue modificado." });
+  }
+
+  function openOpeningFloatCorrection() {
+    if (!selected || selected.status !== "open") return;
+    setNextOpeningFloat(Number(selected.opening_float));
+    setOpeningFloatReason("");
+    setEditingOpeningFloat(true);
+  }
+
+  async function saveOpeningFloatCorrection() {
+    if (!selected || selected.status !== "open") return;
+    const validation = validateOpeningFloatCorrection({
+      currentAmount: Number(selected.opening_float),
+      nextAmount: nextOpeningFloat,
+      reason: openingFloatReason,
+    });
+    if (validation.error) {
+      toast.error(validation.error);
+      return;
+    }
+
+    setSavingOpeningFloat(true);
+    const result = await correctOpeningFloat({
+      shiftId: selected.id,
+      amount: validation.amount,
+      reason: validation.reason,
+    });
+    if (result.error) {
+      setSavingOpeningFloat(false);
+      toast.error(result.error);
+      return;
+    }
+
+    const refreshed = await refreshShiftAndHistory(selected.id);
+    setSavingOpeningFloat(false);
+    if (!refreshed) return;
+
+    setEditingOpeningFloat(false);
+    toast.success("Fondo inicial corregido", {
+      description: `${money(selected.opening_float)} cambió a ${money(validation.amount)}.`,
+    });
   }
 
   async function refreshShiftAndHistory(shiftId: string) {
@@ -389,6 +437,7 @@ export function CashHistoryManager() {
                   <button type="button" onClick={() => setSelected(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-raised lg:hidden print:hidden"><ArrowLeft size={17} /></button>
                   <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="font-heading text-xl font-black">Corte #{selected.number}</h2><ShiftStatus shift={selected} /></div><p className="font-body text-xs text-muted-foreground print:text-gray-600">{dateTime(selected.opened_at)} a {dateTime(selected.closed_at)}</p></div>
                   {selected.status === "closed" ? <button type="button" onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold print:hidden"><Printer size={15} />Imprimir</button> : null}
+                  {selected.status === "open" ? <button type="button" onClick={openOpeningFloatCorrection} className="flex h-10 items-center gap-2 rounded-xl bg-gold/12 px-3 font-heading text-xs font-bold text-gold print:hidden"><Pencil size={15} /><span className="hidden sm:inline">Corregir fondo</span></button> : null}
                   {selected.status === "closed" && !selected.archived_at ? <button type="button" onClick={() => void openAdjustment()} className="flex h-10 items-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning print:hidden"><RotateCcw size={15} /><span className="hidden sm:inline">Corregir</span></button> : null}
                   {selected.status === "closed" && !selected.archived_at ? <button type="button" aria-label="Archivar corte" onClick={openArchiveDialog} className="flex h-10 items-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning print:hidden"><Trash2 size={15} /><span className="hidden sm:inline">Archivar</span></button> : null}
                   {selected.archived_at ? <button type="button" onClick={() => setRestoreDialog(true)} className="action-success flex h-10 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold print:hidden"><ArchiveRestore size={15} />Restaurar</button> : null}
@@ -415,6 +464,7 @@ export function CashHistoryManager() {
                   {selected.pending_orders.length > 0 ? <Block title={`Cuentas transferidas · ${selected.pending_orders.length}`} icon={<CircleAlert size={17} />}><div className="divide-y divide-border">{selected.pending_orders.map((order) => <div key={order.id} className="flex items-center justify-between gap-3 py-3"><div><p className="font-heading text-sm font-bold">Pedido #{order.order_number}</p><p className="font-body text-xs text-muted-foreground">{formatOrderLocation({ type: order.order_type, table_number: order.table_number, table_zone_name: order.table_zone_name, customer_name: order.customer_name })}</p></div><strong className="font-data text-warning">{money(order.outstanding_amount)}</strong></div>)}</div></Block> : null}
                   {selected.movements.length > 0 ? <Block title="Movimientos autorizados" icon={<RotateCcw size={17} />}><div className="divide-y divide-border">{selected.movements.map((movement) => <div key={movement.id} className="py-3"><div className="flex justify-between gap-3"><strong className="font-heading text-sm">{movement.reason}</strong><span className={`font-data text-sm font-bold ${movement.direction === "in" ? "text-success" : "text-destructive"}`}>{movement.direction === "in" ? "+" : "−"}{money(movement.amount)}</span></div><p className="mt-1 font-body text-xs text-muted-foreground">{movement.created_by_name} · autorizó {movement.authorized_by_name} · {dateTime(movement.created_at)}</p></div>)}</div></Block> : null}
                   {selected.adjustments.length > 0 ? <Block title="Correcciones posteriores" icon={<LockKeyhole size={17} />}><div className="divide-y divide-border">{selected.adjustments.map((adjustment) => <div key={adjustment.id} className="py-3"><div className="flex justify-between gap-3"><strong className="font-heading text-sm">{adjustment.reason}</strong><span className={`font-data text-sm font-bold ${adjustment.direction === "increase" ? "text-success" : "text-destructive"}`}>{adjustment.direction === "increase" ? "+" : "−"}{money(adjustment.amount)}</span></div><p className="mt-1 font-body text-xs text-muted-foreground">{adjustment.payment_method} · {adjustment.created_by_name} · autorizó {adjustment.authorized_by_name}</p></div>)}</div></Block> : null}
+                  {(selected.opening_float_changes ?? []).length > 0 ? <Block title="Correcciones del fondo inicial" icon={<Pencil size={17} />}><div className="divide-y divide-border">{selected.opening_float_changes.map((change) => <div key={change.id} className="py-3"><div className="flex items-start justify-between gap-3"><div><strong className="font-heading text-sm">{change.reason}</strong><p className="mt-1 font-body text-xs text-muted-foreground">{change.changed_by_name} · {dateTime(change.created_at)}</p></div><span className="shrink-0 text-right font-data text-xs"><span className="text-muted-foreground line-through">{money(change.previous_amount)}</span><strong className="ml-2 text-gold">{money(change.new_amount)}</strong></span></div></div>)}</div></Block> : null}
                   <Block title={`Tickets · ${selected.payments.length}`} icon={<ReceiptText size={17} />}><div className="divide-y divide-border">{selected.payments.length === 0 ? <p className="py-4 text-center font-body text-sm text-muted-foreground">Sin cobros en este turno</p> : selected.payments.map((payment) => <div key={payment.id} className="flex items-center justify-between gap-3 py-3"><div><p className="font-heading text-sm font-bold">Ticket #{payment.folio}</p><p className="font-body text-xs text-muted-foreground">{formatOrderLocation({ type: payment.table_number ? "comedor" : "para_llevar", table_number: payment.table_number, table_zone_name: payment.table_zone_name, customer_name: payment.customer_name })} · {payment.charged_by_name}</p></div><strong className="font-data">{money(payment.total_amount)}</strong></div>)}</div></Block>
                 </div>
               </>
@@ -422,6 +472,44 @@ export function CashHistoryManager() {
           </section>
         </div>
       </main>
+
+      {editingOpeningFloat && selected?.status === "open" ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/80 sm:items-center sm:p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="opening-float-title" className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-t-2xl border border-gold/30 bg-surface p-4 shadow-float sm:rounded-2xl sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold/12 text-gold"><Banknote size={20} /></span>
+                <div>
+                  <h2 id="opening-float-title" className="font-heading text-lg font-black">Corregir fondo inicial</h2>
+                  <p className="mt-1 font-body text-sm text-muted-foreground">Turno #{selected.number}. El cambio quedará registrado.</p>
+                </div>
+              </div>
+              <button type="button" disabled={savingOpeningFloat} onClick={() => setEditingOpeningFloat(false)} aria-label="Cerrar" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised disabled:opacity-40"><X size={18} /></button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-background/70 p-3">
+              <div><p className="font-body text-xs text-muted-foreground">Fondo actual</p><p className="mt-1 font-data text-lg font-black">{money(selected.opening_float)}</p></div>
+              <div><p className="font-body text-xs text-muted-foreground">Nuevo fondo</p><p className="mt-1 font-data text-lg font-black text-gold">{money(nextOpeningFloat)}</p></div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <label className="block">
+                <span className="mb-1.5 block font-heading text-xs font-bold">Nuevo fondo inicial</span>
+                <input type="number" inputMode="decimal" min="0" step="0.01" value={nextOpeningFloat} onChange={(event) => setNextOpeningFloat(Number(event.target.value))} className="h-13 w-full rounded-xl border border-border bg-background px-3 font-data text-lg font-bold outline-none focus:border-gold" />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block font-heading text-xs font-bold">Motivo obligatorio</span>
+                <textarea value={openingFloatReason} onChange={(event) => setOpeningFloatReason(event.target.value)} maxLength={300} rows={3} placeholder="Ej. El fondo se capturó incorrectamente al abrir" className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-sm outline-none focus:border-gold" />
+              </label>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" disabled={savingOpeningFloat} onClick={() => setEditingOpeningFloat(false)} className="h-12 rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground disabled:opacity-50">Cancelar</button>
+              <button type="button" disabled={savingOpeningFloat} onClick={() => void saveOpeningFloatCorrection()} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gold px-3 font-heading text-sm font-bold text-ink disabled:opacity-50">{savingOpeningFloat ? <Loader2 size={17} className="animate-spin" /> : <CheckCircle2 size={17} />}Guardar corrección</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {adjusting && selected ? <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/75 sm:items-center sm:p-4"><section className="w-full max-w-lg rounded-t-2xl border border-border bg-surface p-4 shadow-float sm:rounded-2xl sm:p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-heading text-lg font-black">Corregir corte #{selected.number}</h2><p className="font-body text-xs text-muted-foreground">Se agrega un registro; el corte original no cambia.</p></div><button type="button" onClick={() => setAdjusting(false)} className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground"><X size={18} /></button></div><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><select value={adjustMethod} onChange={(event) => setAdjustMethod(event.target.value as typeof adjustMethod)} className="h-11 rounded-xl border border-border bg-background px-3 font-body text-sm"><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option><option value="transferencia">Transferencia</option><option value="otro">Otro</option></select><select value={adjustDirection} onChange={(event) => setAdjustDirection(event.target.value as typeof adjustDirection)} className="h-11 rounded-xl border border-border bg-background px-3 font-body text-sm"><option value="increase">Sumar</option><option value="decrease">Restar</option></select></div><input type="number" inputMode="decimal" min="0" step="0.01" value={adjustAmount || ""} onChange={(event) => setAdjustAmount(Number(event.target.value))} placeholder="Importe" className="h-12 w-full rounded-xl border border-border bg-background px-3 font-data text-lg font-bold" /><textarea value={adjustReason} onChange={(event) => setAdjustReason(event.target.value)} placeholder="Motivo de la corrección" rows={2} className="w-full resize-none rounded-xl border border-border bg-background p-3 font-body text-sm" /><div className="rounded-xl border border-warning/30 bg-warning/8 p-3"><div className="mb-2 flex items-center gap-2 font-heading text-sm font-bold"><LockKeyhole size={16} className="text-warning" />Autorización</div><div className="grid gap-2 sm:grid-cols-2"><select value={authorizerId} onChange={(event) => setAuthorizerId(event.target.value)} className="h-11 rounded-xl border border-border bg-background px-3 font-body text-sm"><option value="">Responsable</option>{authorizers.map((authorizer) => <option key={authorizer.id} value={authorizer.id} disabled={!authorizer.pin_configured}>{authorizer.full_name}{authorizer.pin_configured ? "" : " · sin PIN"}</option>)}</select><input value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} type="password" inputMode="numeric" placeholder="PIN" className="h-11 rounded-xl border border-border bg-background px-3 font-data tracking-[0.3em]" /></div></div><button type="button" disabled={saving} onClick={() => void saveAdjustment()} className="action-success inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold disabled:opacity-50">{saving ? <Loader2 size={17} className="animate-spin" /> : <CheckCircle2 size={17} />}Autorizar y registrar</button></div></section></div> : null}
 

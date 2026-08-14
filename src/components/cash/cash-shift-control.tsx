@@ -19,7 +19,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCashShiftStore } from "@/lib/stores";
-import { buildCashCloseBreakdown } from "@/lib/cash-close";
+import {
+  buildBlindCashCountDisclosure,
+  buildCashCloseBreakdown,
+} from "@/lib/cash-close";
 import type {
   CashAuthorizer,
   CashClosePreview,
@@ -239,6 +242,13 @@ export function CashShiftControl() {
           })
         : null,
     [currentShift, preview]
+  );
+  const blindCashDisclosure = useMemo(
+    () =>
+      currentShift
+        ? buildBlindCashCountDisclosure(currentShift.opening_float)
+        : null,
+    [currentShift]
   );
 
   function resetAuthorization() {
@@ -478,6 +488,17 @@ export function CashShiftControl() {
                 <div className="space-y-4">
                   {!preview ? (
                     <>
+                      {blindCashDisclosure ? (
+                        <div className="flex items-center justify-between gap-4 rounded-2xl border border-gold/25 bg-gold/5 p-4">
+                          <div>
+                            <p className="font-body text-xs text-muted-foreground">Fondo inicial registrado</p>
+                            <p className="mt-1 font-heading text-sm font-bold">Dinero con el que inició el turno</p>
+                          </div>
+                          <strong className="shrink-0 font-data text-xl text-gold">
+                            {money(blindCashDisclosure.openingFloat)}
+                          </strong>
+                        </div>
+                      ) : null}
                       <div className="rounded-2xl bg-warning/10 p-4"><p className="font-heading text-sm font-bold text-warning">Conteo ciego</p><p className="mt-1 font-body text-xs text-muted-foreground">Cuenta el efectivo sin ver lo esperado. Después compararemos ambas cifras.</p></div>
                       <div className="grid grid-cols-2 rounded-xl bg-background p-1"><button type="button" onClick={() => setCountMode("denominations")} className={`h-10 rounded-lg font-heading text-xs font-bold ${countMode === "denominations" ? "bg-brand text-white" : "text-muted-foreground"}`}>Por billetes</button><button type="button" onClick={() => setCountMode("total")} className={`h-10 rounded-lg font-heading text-xs font-bold ${countMode === "total" ? "bg-brand text-white" : "text-muted-foreground"}`}>Total directo</button></div>
                       {countMode === "denominations" ? <><DenominationCounter counts={closingCounts} onChange={setClosingCounts} /><p className="text-right font-data text-base font-bold text-gold">Contado {money(closingCountTotal)}</p></> : <input type="number" inputMode="decimal" min="0" step="0.01" value={countedCash || ""} onChange={(event) => setCountedCash(numberValue(event.target.value))} placeholder="Efectivo contado" className="h-14 w-full rounded-xl border border-border bg-background px-4 font-data text-xl font-bold outline-none focus:border-brand" />}

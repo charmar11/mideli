@@ -27,6 +27,11 @@ interface CashShiftState {
     denominations?: Record<string, number>;
     note?: string;
   }) => Promise<CashShiftResult<CashShift>>;
+  correctOpeningFloat: (input: {
+    shiftId: string;
+    amount: number;
+    reason: string;
+  }) => Promise<CashShiftResult<CashShift>>;
   listAuthorizers: () => Promise<CashShiftResult<CashAuthorizer[]>>;
   authorizeAction: (input: {
     authorizerId: string;
@@ -129,6 +134,28 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     });
     if (error || !data) {
       return { data: null, error: message(error, "No se pudo abrir la caja") };
+    }
+    const shift = data as CashShift;
+    currentShiftFetchedAt = Date.now();
+    set({ currentShift: shift, lastError: null });
+    return { data: shift, error: null };
+  },
+
+  correctOpeningFloat: async ({ shiftId, amount, reason }) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc(
+      "correct_cash_shift_opening_float",
+      {
+        p_shift_id: shiftId,
+        p_new_amount: amount,
+        p_reason: reason,
+      }
+    );
+    if (error || !data) {
+      return {
+        data: null,
+        error: message(error, "No se pudo corregir el fondo inicial"),
+      };
     }
     const shift = data as CashShift;
     currentShiftFetchedAt = Date.now();

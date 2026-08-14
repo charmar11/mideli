@@ -7,7 +7,11 @@ import {
   createRequestDeadline,
   getRealtimeReconnectDelay,
 } from "@/lib/realtime-resilience";
-import { buildCashCloseBreakdown } from "@/lib/cash-close";
+import {
+  buildBlindCashCountDisclosure,
+  buildCashCloseBreakdown,
+  validateOpeningFloatCorrection,
+} from "@/lib/cash-close";
 
 test.describe("políticas de notificaciones", () => {
   test("cada tema usa una preferencia independiente", () => {
@@ -72,4 +76,37 @@ test("el desglose de caja incluye el fondo inicial", () => {
     "Gastos",
     "Correcciones",
   ]);
+});
+
+test("el conteo ciego muestra el fondo sin revelar el efectivo esperado", () => {
+  expect(buildBlindCashCountDisclosure(700)).toEqual({
+    openingFloat: 700,
+    expectedCash: null,
+  });
+});
+
+test("la corrección del fondo exige un cambio real y un motivo", () => {
+  expect(
+    validateOpeningFloatCorrection({
+      currentAmount: 700,
+      nextAmount: 850,
+      reason: "Corrección de captura",
+    })
+  ).toEqual({ amount: 850, reason: "Corrección de captura", error: null });
+
+  expect(
+    validateOpeningFloatCorrection({
+      currentAmount: 700,
+      nextAmount: 700,
+      reason: "Sin cambio",
+    }).error
+  ).toBe("El nuevo fondo debe ser diferente al actual.");
+
+  expect(
+    validateOpeningFloatCorrection({
+      currentAmount: 700,
+      nextAmount: -1,
+      reason: "Corrección de captura",
+    }).error
+  ).toBe("El fondo inicial no puede ser negativo.");
 });
