@@ -18,3 +18,4 @@
 - Las 42 pruebas pasan en computadora, tablet y móvil.
 - `npm run lint` y `npm run build` pasan; Serwist empaquetó 72 recursos.
 - Los asesores no reportaron advertencias específicas de la tabla o RPC nuevas; permanecen advertencias preexistentes de funciones y políticas antiguas.
+- Producción quedó desplegada en `https://mideli.vercel.app` con la versión `0ceefa9a7aed`.

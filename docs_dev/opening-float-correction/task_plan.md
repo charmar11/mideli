@@ -28,3 +28,4 @@ Mostrar el fondo inicial durante el conteo ciego y permitir que propietario o ad
 | Las dos pruebas nuevas fallan porque las políticas aún no existen | 1 | Fallo esperado que confirma la regresión antes de implementar |
 | PowerShell no entregó SQL multilínea al argumento del CLI | 1 | Los archivos SQL temporales funcionaron y se eliminaron después de verificar |
 | `--output json` produjo una tabla y falló al convertirla | 1 | Se usó `--output-format json`; confirmó 43 migraciones alineadas |
+| La variable `$home` chocó con la constante `$HOME` de PowerShell | 1 | Se cambió a `$homeResponse` y se repitió solo la lectura pública |
