@@ -19,7 +19,7 @@ test.describe("políticas de notificaciones", () => {
     expect(getPushTopicColumn("kitchen")).toBe("kitchen_alerts");
   });
 
-  test("solo suprime el banner cuando la vista responsable está visible", () => {
+  test("nunca descarta un Push aunque la vista responsable esté visible", () => {
     const clients = [
       {
         url: "https://mideli.example/dashboard/cocina",
@@ -27,7 +27,7 @@ test.describe("políticas de notificaciones", () => {
       },
     ];
 
-    expect(shouldSuppressPushBanner("kitchen", clients)).toBe(true);
+    expect(shouldSuppressPushBanner("kitchen", clients)).toBe(false);
     expect(shouldSuppressPushBanner("ready", clients)).toBe(false);
     expect(
       shouldSuppressPushBanner("kitchen", [
