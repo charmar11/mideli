@@ -37,6 +37,7 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 | Primera ejecución del test del motor no encontró los módulos nuevos | 1 | Fallo esperado de TDD; implementar los módulos y repetir |
 | Aserción de mensaje distinguía mayúscula inicial | 1 | Comparar el texto visible sin distinguir mayúsculas |
 | ESLint detectó una variable de prueba que nunca se reasigna | 1 | Cambiar `let` por `const` |
+| Primera prueba de webhook no encontró los módulos Meta | 1 | Fallo esperado de TDD; implementar firma, normalizador y proveedor |
 
 ## Puertas de seguridad
 

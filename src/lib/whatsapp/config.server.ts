@@ -1,0 +1,30 @@
+import "server-only";
+
+import { normalizePhone } from "./normalize";
+
+function enabled(value: string | undefined) {
+  return value === "true";
+}
+
+export function readWhatsappServerConfig() {
+  const provider = process.env.WHATSAPP_PROVIDER === "meta" ? "meta" : "simulator";
+  const allowedPhones = new Set(
+    (process.env.WHATSAPP_TEST_ALLOWLIST ?? "")
+      .split(",")
+      .map(normalizePhone)
+      .filter(Boolean)
+  );
+
+  return {
+    ordersEnabled: enabled(process.env.WHATSAPP_ORDERS_ENABLED),
+    provider,
+    dryRun: process.env.WHATSAPP_DRY_RUN !== "false",
+    allowedPhones,
+    graphApiVersion: process.env.META_GRAPH_API_VERSION || "v25.0",
+    accessToken: process.env.META_WHATSAPP_ACCESS_TOKEN || "",
+    phoneNumberId: process.env.META_WHATSAPP_PHONE_NUMBER_ID || "",
+    wabaId: process.env.META_WHATSAPP_WABA_ID || "",
+    verifyToken: process.env.META_WHATSAPP_VERIFY_TOKEN || "",
+    appSecret: process.env.META_APP_SECRET || "",
+  } as const;
+}
