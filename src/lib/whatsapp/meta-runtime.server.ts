@@ -285,23 +285,36 @@ async function processPersistentMessage(
     }
 
     await saveConversationResult(claimed.id, result);
-    const sent = operations.settings.auto_reply_enabled
-      ? await sendReply(config, message.phone, result.reply)
-      : null;
-    if (sent) {
-      await recordOutboundMessage({
-        conversationId: claimed.id,
-        externalMessageId: sent.messageId,
-        phone: message.phone,
-        body: result.reply,
-      });
-      summary.repliesSent += 1;
-    } else if (operations.settings.auto_reply_enabled) {
-      summary.replyFailures += 1;
-    }
     if (customerReceived) await markConversationCustomerReceived(claimed.id);
     await markInboundMessage(message.id, "received");
     summary.processed += 1;
+
+    if (operations.settings.auto_reply_enabled) {
+      try {
+        const sent = await sendReply(config, message.phone, result.reply);
+        if (sent) {
+          summary.repliesSent += 1;
+          try {
+            await recordOutboundMessage({
+              conversationId: claimed.id,
+              externalMessageId: sent.messageId,
+              phone: message.phone,
+              body: result.reply,
+            });
+          } catch {
+            console.warn(
+              "[WhatsApp Meta] La respuesta se envió, pero no pudo guardarse en el historial."
+            );
+          }
+        } else {
+          summary.replyFailures += 1;
+        }
+      } catch (error) {
+        summary.replyFailures += 1;
+        const detail = error instanceof Error ? error.message : "Error desconocido";
+        console.warn(`[WhatsApp Meta] No se pudo enviar la respuesta: ${detail}`);
+      }
+    }
 
     if (createdOrder) void notifyKitchen(createdOrder);
   } catch (error) {

@@ -11,6 +11,25 @@ export type MetaTextMessage = {
   body: string;
 };
 
+function safeMetaErrorDetail(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "";
+  const error = (payload as { error?: unknown }).error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return "";
+  const value = error as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof value.code === "number") parts.push(`código ${value.code}`);
+  if (typeof value.error_subcode === "number") {
+    parts.push(`subcódigo ${value.error_subcode}`);
+  }
+  if (typeof value.type === "string" && /^[A-Za-z]+$/.test(value.type)) {
+    parts.push(`tipo ${value.type}`);
+  }
+  if (typeof value.is_transient === "boolean") {
+    parts.push(value.is_transient ? "transitorio" : "no transitorio");
+  }
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
 function normalizeMetaRecipient(value: string) {
   const phone = normalizePhone(value);
   return /^521\d{10}$/.test(phone) ? `52${phone.slice(3)}` : phone;
@@ -50,7 +69,10 @@ export async function sendMetaTextMessage(
   );
 
   if (!response.ok) {
-    throw new Error(`Meta rechazó el mensaje con estado ${response.status}`);
+    const payload = await response.json().catch(() => null);
+    throw new Error(
+      `Meta rechazó el mensaje con estado ${response.status}${safeMetaErrorDetail(payload)}`
+    );
   }
 
   const payload = (await response.json()) as { messages?: Array<{ id?: string }> };

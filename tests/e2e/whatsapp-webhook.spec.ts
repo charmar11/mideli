@@ -111,10 +111,30 @@ test("el adaptador de Meta envía texto sin exponer el token en el resultado", a
 
 test("un error de Meta se reporta sin incluir credenciales ni cuerpo remoto", async () => {
   const fetcher: typeof fetch = async () =>
-    new Response(JSON.stringify({ error: { message: "remote sensitive detail" } }), {
+    new Response(JSON.stringify({
+      error: {
+        message: "remote sensitive detail",
+        type: "OAuthException",
+        code: 190,
+        error_subcode: 463,
+        is_transient: false,
+      },
+    }), {
       status: 401,
     });
 
+  const request = sendMetaTextMessage(
+    { to: "526440000000", body: "Prueba" },
+    {
+      graphApiVersion: "v25.0",
+      phoneNumberId: "phone-test",
+      accessToken: "secret-token",
+    },
+    fetcher
+  );
+  await expect(request).rejects.toThrow(
+    "Meta rechazó el mensaje con estado 401 (código 190, subcódigo 463, tipo OAuthException, no transitorio)"
+  );
   await expect(
     sendMetaTextMessage(
       { to: "526440000000", body: "Prueba" },
@@ -125,5 +145,5 @@ test("un error de Meta se reporta sin incluir credenciales ni cuerpo remoto", as
       },
       fetcher
     )
-  ).rejects.toThrow("Meta rechazó el mensaje con estado 401");
+  ).rejects.not.toThrow("remote sensitive detail");
 });
