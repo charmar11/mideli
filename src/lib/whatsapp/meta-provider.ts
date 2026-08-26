@@ -11,12 +11,17 @@ export type MetaTextMessage = {
   body: string;
 };
 
+function normalizeMetaRecipient(value: string) {
+  const phone = normalizePhone(value);
+  return /^521\d{10}$/.test(phone) ? `52${phone.slice(3)}` : phone;
+}
+
 export async function sendMetaTextMessage(
   message: MetaTextMessage,
   config: MetaProviderConfig,
   fetcher: typeof fetch = fetch
 ) {
-  const to = normalizePhone(message.to);
+  const to = normalizeMetaRecipient(message.to);
   const body = message.body.trim();
   if (!to) throw new Error("Falta el destinatario de WhatsApp");
   if (!body) throw new Error("El mensaje de WhatsApp está vacío");

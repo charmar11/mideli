@@ -17,6 +17,7 @@ import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
 import {
   createConversation,
   handleConversationMessage,
+  withDeliveryQuote,
 } from "@/lib/whatsapp/conversation-engine";
 import type { ConversationStage, ConversationState } from "@/lib/whatsapp/types";
 import type { MenuItem } from "@/types/database";
@@ -41,10 +42,15 @@ const INITIAL_MESSAGE: SimulatorMessage = {
 
 const STAGE_LABELS: Record<ConversationStage, string> = {
   ordering: "Armando pedido",
+  browsing_catalog: "Viendo menú",
   awaiting_modifiers: "Falta una opción",
+  awaiting_beverage: "Ofreciendo bebida",
   awaiting_fulfillment: "Tipo de entrega",
   awaiting_address: "Falta domicilio",
+  awaiting_address_reference: "Falta referencia",
+  awaiting_delivery_quote: "Calculando envío",
   awaiting_payment: "Falta pago",
+  awaiting_cash_tendered: "Falta efectivo",
   awaiting_confirmation: "Por confirmar",
   handoff: "Atención humana",
   confirmed: "Prueba completada",
@@ -189,7 +195,27 @@ export function WhatsAppSimulator({
     const customerText = draft.trim();
     if (!customerText || terminal || catalog.items.length === 0) return;
 
-    const next = handleConversationMessage(state, customerText, catalog);
+    const engineResult = handleConversationMessage(state, customerText, catalog);
+    const next =
+      engineResult.action === "request_delivery_quote"
+        ? {
+            ...engineResult,
+            action: "none" as const,
+            state: withDeliveryQuote(engineResult.state, {
+              id: null,
+              formattedAddress: engineResult.state.address ?? "Domicilio de prueba",
+              colony: "Zona de prueba",
+              latitude: 27.4828,
+              longitude: -109.9304,
+              distanceMeters: 3500,
+              baseFee: 30,
+              surcharge: 0,
+              totalFee: 30,
+            }),
+            reply:
+              "Simulación: el envío calculado es de $30. ¿Pagarás en efectivo o por transferencia?",
+          }
+        : engineResult;
     const assistantText =
       next.action === "request_order_creation"
         ? "Simulación completada. El pedido no fue creado ni enviado a Cocina porque el modo seguro está activo."

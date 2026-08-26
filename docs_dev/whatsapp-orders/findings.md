@@ -42,3 +42,30 @@
 - La migración aparece como la única pendiente en el `dry-run` remoto.
 - Este equipo no tiene Docker o Podman, así que aún falta ejecutar la migración contra un PostgreSQL desechable antes de autorizar el proyecto remoto.
 - Tailwind v4 escaneaba los junctions externos de `.opencode/skills` en desarrollo. El escaneo ahora está limitado a `src`, sin modificar esas skills.
+
+## Diseño consolidado aprobado
+
+- La primera versión usa texto sin botones ni imágenes.
+- El menú se pagina en grupos de cinco y muestra descripción, ingredientes y precio.
+- Los alimentos se ofrecen primero; las bebidas sin alcohol se ofrecen una sola vez al terminar. Alcohol solo por solicitud explícita.
+- Cada producto tendrá un control independiente `Disponible en WhatsApp`; el inventario negativo no lo oculta.
+- Domicilio acepta efectivo o transferencia y reutiliza el cobro vigente `Cobrar y entregar`.
+- El horario es configurable por día, inicialmente de 12:00 a 23:00 en `America/Hermosillo`.
+- La tarifa usa distancia por carretera, rangos editables y recargos por colonia. Más de 15 km pasa a una persona.
+- Cocina dispara `En preparación`; al marcar listo se informa que está listo y buscando repartidor. `En camino` es manual. No existe aviso automático de entregado.
+- Las conversaciones conservan contenido durante 90 días y después solo métricas anónimas.
+
+## Documentación Supabase revisada
+
+- La documentación vigente mantiene separados grants y RLS; ambos deben definirse expresamente.
+- Las funciones pueden recibir `EXECUTE` por defecto, por lo que cada RPC privilegiada debe revocarse a `PUBLIC`, `anon` y `authenticated` y concederse solo a `service_role`.
+- `SECURITY DEFINER` exige `search_path` vacío y nombres de esquema explícitos.
+- El flujo oficial recomienda revisar `supabase db push --dry-run` antes de cualquier aplicación remota.
+- No se detectó un breaking change relevante para este esquema en el índice actual del changelog.
+
+## Google Maps revisado
+
+- Geocoding acepta una dirección codificada y devuelve coordenadas y componentes; la colonia debe leerse de los componentes, no analizarse desde la dirección formateada.
+- Routes `computeRoutes` requiere un POST y un `X-Goog-FieldMask`; para este caso basta `routes.distanceMeters`.
+- La clave se mantendrá exclusivamente en servidor, restringida a Geocoding y Routes y protegida con cuotas.
+- El cliente no podrá enviar llamadas arbitrarias a Google mediante Mideli.

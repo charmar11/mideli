@@ -144,7 +144,21 @@ try {
   Write-Host "Ningún pedido afectará cocina, caja, inventario o impresión."
   Write-Host "Deja esta ventana abierta durante la prueba."
   Write-Host ""
-  Read-Host "Cuando termines todas las pruebas, presiona Enter para cerrar"
+  while ($true) {
+    $action = (Read-Host "Escribe U para copiar la URL, T para copiar el token o presiona Enter para cerrar").Trim()
+    if ([string]::IsNullOrWhiteSpace($action)) { break }
+    if ($action -ieq "U") {
+      Set-Clipboard -Value "$publicUrl/api/integraciones/whatsapp/meta"
+      Write-Host "URL copiada." -ForegroundColor Green
+      continue
+    }
+    if ($action -ieq "T") {
+      Set-Clipboard -Value $verifyToken
+      Write-Host "Token de verificación copiado." -ForegroundColor Green
+      continue
+    }
+    Write-Host "Opción no reconocida. Usa U, T o Enter." -ForegroundColor Yellow
+  }
 } finally {
   Stop-ProcessTree $tunnelProcess
   Stop-ProcessTree $serverProcess

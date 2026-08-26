@@ -84,7 +84,7 @@ test("el adaptador de Meta envía texto sin exponer el token en el resultado", a
 
   const sent = await sendMetaTextMessage(
     {
-      to: "+52 644 000 0000",
+      to: "+52 1 644 000 0000",
       body: "Tu pedido está listo.",
     },
     {

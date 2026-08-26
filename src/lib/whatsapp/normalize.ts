@@ -27,6 +27,14 @@ export function normalizePhone(value: string) {
   return value.replace(/\D/g, "");
 }
 
+export function phoneAliases(value: string) {
+  const phone = normalizePhone(value);
+  if (!phone) return [];
+  if (/^52\d{10}$/.test(phone)) return [phone, `521${phone.slice(2)}`];
+  if (/^521\d{10}$/.test(phone)) return [phone, `52${phone.slice(3)}`];
+  return [phone];
+}
+
 export function quantityFromText(value: string) {
   const normalized = normalizeText(value);
   const tokens = normalized.split(" ").filter(Boolean);

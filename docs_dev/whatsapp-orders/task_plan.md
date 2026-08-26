@@ -6,14 +6,16 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 
 ## Fases
 
-- [x] Fase 0: Aprobar diseño, revisar contexto y capturar línea base.
+- [x] Fase 0: Aprobar el diseño consolidado y capturar la línea base.
 - [x] Fase 1: Implementar contratos, catálogo conversacional y motor puro con pruebas.
-- [x] Fase 2: Implementar bandeja y simulador local sin escrituras.
-- [x] Fase 3: Implementar webhook firmado y adaptador Meta para número de prueba.
-- [ ] Fase 4: Diseñar y validar migración transaccional, RLS y repositorios. Migración local creada, pendiente de validación PostgreSQL y aprobación remota.
-- [ ] Fase 5: Persistir conversaciones y habilitar atención humana.
-- [ ] Fase 6: Completar domicilio, estados, despacho y recuperación.
-- [ ] Fase 7: Verificar y preparar liberación por puertas independientes.
+- [x] Fase 2: Implementar bandeja inicial y simulador local.
+- [x] Fase 3: Implementar webhook firmado, persistencia base y adaptador Meta.
+- [x] Fase 4: Alinear esquema, RLS y RPC con catálogo, horarios, entrega y atención humana.
+- [x] Fase 5: Completar el motor textual de cinco productos, bebidas, domicilio y pago.
+- [x] Fase 6: Implementar administración organizada, bandeja humana y controles del canal.
+- [x] Fase 7: Integrar notificaciones de estados de cocina y reparto.
+- [x] Fase 8: Completar pruebas, lint, build y dry-run de migraciones.
+- [x] Fase 9: Preparar la prueba integral local sin desplegar ni aplicar cambios remotos.
 
 ## Decisiones
 
@@ -26,6 +28,11 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 | Recalcular en PostgreSQL | Evita precios manipulados y conserva atomicidad | 2026-08-25 |
 | Reutilizar disparadores actuales | Conserva folios, inventario e impresión | 2026-08-25 |
 | No aplicar cambios remotos sin aprobación específica | El piloto debe permanecer aislado | 2026-08-25 |
+| Diseño consolidado aprobado | El usuario aprobó catálogo, entrega, horarios, atención, estados, privacidad y liberación | 2026-08-25 |
+| Primera entrega sin botones ni imágenes | Reduce complejidad y mantiene la conversación natural | 2026-08-25 |
+| Tarifa por rangos más recargo por colonia | Coincide con la operación real del negocio | 2026-08-25 |
+| Más de 15 km pasa a atención humana | Evita tarifas y cobertura incorrectas | 2026-08-25 |
+| No aplicar migraciones ni desplegar en esta fase | La autorización actual cubre implementación local | 2026-08-25 |
 
 ## Errores encontrados
 
@@ -43,6 +50,12 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 | Playwright no pudo abrir otro servidor mientras el webhook estaba activo | 1 | Reutilizar el servidor local mediante `PLAYWRIGHT_BASE_URL` |
 | Supabase local no pudo iniciar porque Docker o Podman no están instalados | 1 | Conservar la migración sin aplicar y exigir validación adicional antes del remoto |
 | Turbopack siguió junctions externos dentro de `.opencode/skills` | 1 | Limitar el escaneo de Tailwind a `src` con `source(none)` y `@source` |
+| `apply_patch` rechazó borrar y recrear el mismo plan en una sola operación | 1 | Dividir el reemplazo en dos operaciones separadas |
+| El parche del repositorio no coincidió con el orden real de las líneas | 1 | Inspeccionar secciones exactas y aplicar cambios pequeños |
+| TypeScript detectó etapas nuevas sin etiquetas en el simulador | 1 | Añadir etiquetas para catálogo, bebida, referencia, cotización y efectivo |
+| Seis pruebas repetidas por dispositivo esperaban el flujo conversacional anterior | 1 | Actualizar las expectativas al diseño aprobado y añadir cobertura nueva |
+| TypeScript no permitió reasignar resultados de Supabase con selecciones distintas | 1 | Separar resultado principal, datos y error del fallback compatible |
+| Se intentó consultar una sesión de terminal con el mecanismo de espera equivocado | 1 | Consultar la sesión unificada con `write_stdin` hasta obtener la salida final completa |
 
 ## Puertas de seguridad
 

@@ -3,7 +3,13 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { MenuItem, Order } from "@/types/database";
 import { buildConversationCatalog } from "./catalog";
-import { createConversation, handleConversationMessage } from "./conversation-engine";
+import {
+  createConversation,
+  handleConversationMessage,
+  reconcileCartWithCatalog,
+  unsupportedMessageHandoff,
+  withDeliveryQuote,
+} from "./conversation-engine";
 import type { readWhatsappServerConfig } from "./config.server";
 import type { NormalizedMetaMessage, NormalizedMetaWebhook } from "./meta-webhook";
 import { sendMetaTextMessage } from "./meta-provider";
@@ -11,10 +17,17 @@ import {
   applyOutboundStatuses,
   claimInboundMessage,
   createExternalOrder,
+  markConversationCustomerReceived,
   markInboundMessage,
   recordOutboundMessage,
   saveConversationResult,
 } from "./repository.server";
+import {
+  channelIsOpen,
+  loadWhatsappOperationsConfig,
+  quoteWhatsappDelivery,
+  type WhatsappOperationsConfig,
+} from "./operations.server";
 import type {
   ConversationCatalog,
   ConversationResult,
@@ -47,13 +60,24 @@ async function loadCatalog(): Promise<ConversationCatalog> {
   const { data, error } = await admin
     .from("menu_items")
     .select(
-      "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(is_active)"
+      "id,category_id,name,description,price,is_active,whatsapp_enabled,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(id,name,sort_order,is_active)"
     )
     .eq("is_active", true)
     .eq("categories.is_active", true)
     .order("sort_order", { ascending: true });
-  if (error) throw error;
-  return buildConversationCatalog((data ?? []) as unknown as MenuItem[]);
+  if (!error) return buildConversationCatalog((data ?? []) as unknown as MenuItem[]);
+
+  // Compatibilidad durante el piloto antes de aplicar la migración pendiente.
+  const fallback = await admin
+    .from("menu_items")
+    .select(
+      "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(id,name,sort_order,is_active)"
+    )
+    .eq("is_active", true)
+    .eq("categories.is_active", true)
+    .order("sort_order", { ascending: true });
+  if (fallback.error) throw fallback.error;
+  return buildConversationCatalog((fallback.data ?? []) as unknown as MenuItem[]);
 }
 
 function messageInput(message: NormalizedMetaMessage, state: ConversationState) {
@@ -64,17 +88,6 @@ function messageInput(message: NormalizedMetaMessage, state: ConversationState) 
     return `Ubicación compartida: https://www.google.com/maps?q=${latitude},${longitude}`;
   }
   return null;
-}
-
-function unsupportedResult(state: ConversationState): ConversationResult {
-  return {
-    state,
-    action: "none",
-    reply:
-      state.stage === "awaiting_address"
-        ? "Envíame la dirección por escrito o comparte tu ubicación desde WhatsApp."
-        : "Por ahora puedo procesar mensajes de texto y ubicaciones compartidas.",
-  };
 }
 
 function dryRunResult(result: ConversationResult) {
@@ -117,6 +130,7 @@ async function processDryRunMessage(
   message: NormalizedMetaMessage,
   catalog: ConversationCatalog,
   config: WhatsappConfig,
+  operations: WhatsappOperationsConfig,
   summary: MetaProcessingSummary
 ) {
   if (dryRunMessageIds.has(message.id)) {
@@ -128,20 +142,48 @@ async function processDryRunMessage(
 
   const current = dryRunConversations.get(message.phone) ?? createConversation(message.phone);
   const input = messageInput(message, current);
-  const result = dryRunResult(
+  let result = dryRunResult(
     input === null
-      ? unsupportedResult(current)
+      ? unsupportedMessageHandoff(current)
       : handleConversationMessage(current, input, catalog)
   );
+  if (!channelIsOpen(operations) && current.stage !== "confirmed") {
+    result = {
+      state: current,
+      action: "none",
+      reply: operations.settings.closed_message,
+    };
+  } else if (result.action === "request_delivery_quote") {
+    const quoted = await quoteWhatsappDelivery({
+      conversationId: null,
+      address: result.state.address ?? "",
+      config: operations,
+    });
+    result = quoted.status === "quoted"
+      ? {
+          state: withDeliveryQuote(result.state, quoted.quote),
+          action: "none",
+          reply: `El envío es de $${quoted.quote.totalFee}. ¿Pagarás en efectivo o por transferencia?`,
+        }
+      : {
+          state: { ...result.state, stage: "handoff" },
+          action: "handoff",
+          reply: "Necesitamos confirmar personalmente la cobertura y el costo de envío. Una persona continuará contigo.",
+        };
+  }
   dryRunConversations.set(message.phone, result.state);
   summary.processed += 1;
+
+  if (!operations.settings.auto_reply_enabled) return;
 
   try {
     const sent = await sendReply(config, message.phone, result.reply);
     if (sent) summary.repliesSent += 1;
     else summary.replyFailures += 1;
-  } catch {
+  } catch (error) {
     summary.replyFailures += 1;
+    const detail = error instanceof Error ? error.message : "Error desconocido";
+    console.warn(`[WhatsApp Meta] No se pudo enviar la respuesta: ${detail}`);
   }
 }
 
@@ -149,6 +191,7 @@ async function processPersistentMessage(
   message: NormalizedMetaMessage,
   catalog: ConversationCatalog,
   config: WhatsappConfig,
+  operations: WhatsappOperationsConfig,
   summary: MetaProcessingSummary
 ) {
   const claimed = await claimInboundMessage(message);
@@ -158,15 +201,65 @@ async function processPersistentMessage(
   }
 
   try {
+    if (claimed.state.stage === "handoff") {
+      await markInboundMessage(message.id, "received");
+      summary.processed += 1;
+      return;
+    }
     const input = messageInput(message, claimed.state);
     let result =
       input === null
-        ? unsupportedResult(claimed.state)
+        ? unsupportedMessageHandoff(claimed.state)
         : handleConversationMessage(claimed.state, input, catalog);
     let createdOrder: Order | null = null;
+    let customerReceived = false;
+
+    if (!channelIsOpen(operations) && claimed.state.stage !== "confirmed") {
+      result = {
+        state: claimed.state,
+        action: "none",
+        reply: operations.settings.closed_message,
+      };
+    } else if (result.action === "request_delivery_quote") {
+      const quoted = await quoteWhatsappDelivery({
+        conversationId: claimed.id,
+        address: result.state.address ?? "",
+        config: operations,
+      });
+      result = quoted.status === "quoted"
+        ? {
+            state: withDeliveryQuote(result.state, quoted.quote),
+            action: "none",
+            reply: `La entrega cuesta $${quoted.quote.totalFee}. Total actualizado: $${result.state.total + quoted.quote.totalFee}. ¿Pagarás en efectivo o por transferencia?`,
+          }
+        : {
+            state: { ...result.state, stage: "handoff" },
+            action: "handoff",
+            reply: "Necesitamos confirmar personalmente la cobertura y el costo de envío. Una persona continuará contigo.",
+          };
+    } else if (result.action === "mark_customer_received") {
+      customerReceived = true;
+    }
 
     if (result.action === "request_order_creation") {
-      try {
+      const reconciliation = reconcileCartWithCatalog(result.state, catalog);
+      if (reconciliation.removed.length > 0) {
+        const removedNames = reconciliation.removed.map((line) => line.name).join(", ");
+        const alternatives = reconciliation.alternatives.length > 0
+          ? ` Puedes elegir: ${reconciliation.alternatives.map((item) => item.name).join(", ")}.`
+          : " Dime qué otro producto deseas agregar.";
+        result = {
+          state: reconciliation.state,
+          action: "none",
+          reply: `${removedNames} dejó de estar disponible y lo quité del pedido.${alternatives} Te mostraré el total actualizado antes de confirmar de nuevo.`,
+        };
+      } else if (!operations.settings.create_orders_enabled) {
+        result = {
+          state: { ...result.state, stage: "handoff" },
+          action: "handoff",
+          reply: "Una persona del equipo confirmará tu pedido antes de enviarlo a cocina.",
+        };
+      } else try {
         createdOrder = await createExternalOrder({
           externalOrderId: message.id,
           conversationId: claimed.id,
@@ -188,7 +281,9 @@ async function processPersistentMessage(
     }
 
     await saveConversationResult(claimed.id, result);
-    const sent = await sendReply(config, message.phone, result.reply);
+    const sent = operations.settings.auto_reply_enabled
+      ? await sendReply(config, message.phone, result.reply)
+      : null;
     if (sent) {
       await recordOutboundMessage({
         conversationId: claimed.id,
@@ -197,9 +292,10 @@ async function processPersistentMessage(
         body: result.reply,
       });
       summary.repliesSent += 1;
-    } else {
+    } else if (operations.settings.auto_reply_enabled) {
       summary.replyFailures += 1;
     }
+    if (customerReceived) await markConversationCustomerReceived(claimed.id);
     await markInboundMessage(message.id, "received");
     summary.processed += 1;
 
@@ -230,13 +326,17 @@ export async function processMetaWebhook(
   if (!config.dryRun) await applyOutboundStatuses(webhook.statuses);
   if (webhook.messages.length === 0) return summary;
 
-  const catalog = await loadCatalog();
+  const [catalog, operations] = await Promise.all([
+    loadCatalog(),
+    loadWhatsappOperationsConfig(),
+  ]);
+  if (!operations.settings.receive_enabled) return summary;
   for (const message of webhook.messages) {
     try {
       if (config.dryRun) {
-        await processDryRunMessage(message, catalog, config, summary);
+        await processDryRunMessage(message, catalog, config, operations, summary);
       } else {
-        await processPersistentMessage(message, catalog, config, summary);
+        await processPersistentMessage(message, catalog, config, operations, summary);
       }
     } catch {
       summary.processingFailures += 1;

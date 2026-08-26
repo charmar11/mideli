@@ -2,10 +2,15 @@ import type { ModifierGroup } from "@/types/database";
 
 export type ConversationStage =
   | "ordering"
+  | "browsing_catalog"
   | "awaiting_modifiers"
+  | "awaiting_beverage"
   | "awaiting_fulfillment"
   | "awaiting_address"
+  | "awaiting_address_reference"
+  | "awaiting_delivery_quote"
   | "awaiting_payment"
+  | "awaiting_cash_tendered"
   | "awaiting_confirmation"
   | "handoff"
   | "confirmed"
@@ -14,6 +19,8 @@ export type ConversationStage =
 export type ConversationAction =
   | "none"
   | "handoff"
+  | "request_delivery_quote"
+  | "mark_customer_received"
   | "request_order_creation";
 
 export type ConversationServiceType = "domicilio" | "para_llevar";
@@ -21,6 +28,24 @@ export type ConversationServiceType = "domicilio" | "para_llevar";
 export type ConversationPayment = {
   method: "efectivo" | "tarjeta" | "transferencia";
   cashTendered: number | null;
+};
+
+export type ConversationDeliveryQuote = {
+  id: string | null;
+  formattedAddress: string;
+  colony: string;
+  latitude: number | null;
+  longitude: number | null;
+  distanceMeters: number;
+  baseFee: number;
+  surcharge: number;
+  totalFee: number;
+};
+
+export type ConversationSavedAddress = {
+  id: string;
+  address: string;
+  reference: string;
 };
 
 export type ConversationModifier = {
@@ -34,11 +59,18 @@ export type ConversationModifier = {
 export type ConversationCartLine = {
   id: string;
   menuItemId: string;
+  categoryId?: string;
   name: string;
   quantity: number;
   unitPrice: number;
   selectedModifiers: ConversationModifier[];
   notes: string;
+};
+
+export type ConversationCartReconciliation = {
+  state: ConversationState;
+  removed: ConversationCartLine[];
+  alternatives: ConversationCatalogItem[];
 };
 
 export type ConversationState = {
@@ -49,7 +81,13 @@ export type ConversationState = {
   pendingLineId: string | null;
   serviceType: ConversationServiceType | null;
   address: string | null;
+  addressReference: string;
+  deliveryQuote: ConversationDeliveryQuote | null;
+  savedAddress: ConversationSavedAddress | null;
   payment: ConversationPayment | null;
+  beveragesOffered: boolean;
+  catalogPage: number;
+  selectedCategoryId: string | null;
   ambiguityCount: number;
   nextLineNumber: number;
 };
@@ -63,13 +101,28 @@ export type ConversationResult = {
 export type ConversationCatalogItem = {
   id: string;
   name: string;
+  description: string;
   normalizedName: string;
   price: number;
+  categoryId: string;
+  categoryName: string;
+  categorySortOrder: number;
+  sortOrder: number;
+  isBeverage: boolean;
+  isAlcoholic: boolean;
   modifiers: ModifierGroup[];
+};
+
+export type ConversationCatalogCategory = {
+  id: string;
+  name: string;
+  normalizedName: string;
+  sortOrder: number;
 };
 
 export type ConversationCatalog = {
   items: ConversationCatalogItem[];
+  categories: ConversationCatalogCategory[];
 };
 
 export type CatalogProductMatch = {

@@ -31,6 +31,7 @@ export interface MenuItem {
   description: string;
   price: number;
   is_active: boolean;
+  whatsapp_enabled?: boolean;
   sort_order: number;
   modifiers: ModifierGroup[];
   image_url: string;
@@ -267,6 +268,7 @@ export interface Order {
   delivery_address?: string | null;
   delivery_reference?: string | null;
   delivery_fee?: number;
+  delivery_status?: "pending" | "searching_driver" | "driver_on_way" | "customer_received";
   external_order_id?: string | null;
   payment_method_requested?: "efectivo" | "tarjeta" | "transferencia" | null;
   requested_cash_tendered?: number | null;
@@ -298,6 +300,11 @@ export interface CustomerAddress {
   reference: string;
   latitude: number | null;
   longitude: number | null;
+  formatted_address?: string | null;
+  colony?: string | null;
+  distance_meters?: number | null;
+  delivery_fee?: number | null;
+  geocoded_at?: string | null;
   is_default: boolean;
   last_used_at: string;
   created_at: string;
@@ -313,6 +320,11 @@ export interface ChannelConversation {
   stage: string;
   state: Record<string, unknown>;
   assigned_to: string | null;
+  bot_enabled?: boolean;
+  assigned_at?: string | null;
+  handoff_reason?: string | null;
+  closed_at?: string | null;
+  content_redacted_at?: string | null;
   last_inbound_at: string | null;
   last_outbound_at: string | null;
   created_at: string;
@@ -330,6 +342,80 @@ export interface ChannelMessage {
   status: "received" | "processing" | "sent" | "delivered" | "read" | "failed" | "ignored";
   metadata: Record<string, unknown>;
   occurred_at: string;
+  created_at: string;
+  redacted_at?: string | null;
+}
+
+export interface WhatsappChannelSettings {
+  id: 1;
+  receive_enabled: boolean;
+  auto_reply_enabled: boolean;
+  create_orders_enabled: boolean;
+  delivery_quotes_enabled: boolean;
+  status_notifications_enabled: boolean;
+  human_handoff_enabled: boolean;
+  timezone: string;
+  catalog_page_size: number;
+  message_retention_days: number;
+  store_address: string;
+  store_latitude: number | null;
+  store_longitude: number | null;
+  closed_message: string;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhatsappBusinessHours {
+  id: string;
+  day_of_week: number;
+  is_open: boolean;
+  opens_at: string;
+  closes_at: string;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface WhatsappDeliveryRate {
+  id: string;
+  min_distance_km: number;
+  max_distance_km: number;
+  fee: number;
+  sort_order: number;
+  is_active: boolean;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhatsappDeliverySurcharge {
+  id: string;
+  colony_name: string;
+  aliases: string[];
+  fee: number;
+  is_active: boolean;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhatsappDeliveryQuote {
+  id: string;
+  conversation_id: string;
+  customer_address_id: string | null;
+  input_address: string;
+  formatted_address: string;
+  colony: string;
+  latitude: number | null;
+  longitude: number | null;
+  distance_meters: number | null;
+  base_fee: number;
+  surcharge: number;
+  total_fee: number;
+  status: "quoted" | "needs_handoff" | "failed";
+  failure_reason: string;
+  expires_at: string;
+  used_at: string | null;
   created_at: string;
 }
 

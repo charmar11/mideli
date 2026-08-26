@@ -7,6 +7,7 @@ import {
   createRequestDeadline,
   getRealtimeReconnectDelay,
 } from "@/lib/realtime-resilience";
+import { notifyWhatsappOrderStatusAction } from "@/lib/actions/whatsapp-order-status";
 
 export interface OrderItemWithName extends OrderItem {
   menu_item_name?: string;
@@ -160,8 +161,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       set({ loading: true });
       try {
         const supabase = createClient();
-        const orderSelect =
+        const legacyOrderSelect =
           "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at";
+        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_phone,delivery_address,delivery_reference,delivery_fee,delivery_status,payment_method_requested,requested_cash_tendered`;
         const ordersDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
         let activeResult;
         try {
@@ -174,6 +176,23 @@ export const useOrderStore = create<OrderState>((set, get) => ({
             .abortSignal(ordersDeadline.signal);
         } finally {
           ordersDeadline.clear();
+        }
+
+        // El despliegue de la interfaz puede ocurrir antes que la migración del canal.
+        // En ese caso preservamos el POS actual y omitimos únicamente los metadatos nuevos.
+        if (activeResult.error) {
+          const fallbackDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
+          try {
+            activeResult = await supabase
+              .from("orders")
+              .select(legacyOrderSelect)
+              .in("status", ["pending", "in_kitchen", "ready", "served"])
+              .order("created_at", { ascending: false })
+              .limit(200)
+              .abortSignal(fallbackDeadline.signal);
+          } finally {
+            fallbackDeadline.clear();
+          }
         }
 
         if (activeResult.error) {
@@ -354,6 +373,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     if (status === "ready") {
       publishOrderNotification(supabase, orderId, "ready");
+    }
+
+    if (status === "in_kitchen" || status === "ready") {
+      void notifyWhatsappOrderStatusAction(orderId, status).then((result) => {
+        if (!result.success) {
+          console.warn("El pedido cambió de estado, pero no se pudo avisar por WhatsApp.");
+        }
+      });
     }
 
     set((state) => {

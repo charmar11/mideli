@@ -2,9 +2,12 @@ import { expect, test } from "@playwright/test";
 import {
   createConversation,
   handleConversationMessage,
+  reconcileCartWithCatalog,
+  unsupportedMessageHandoff,
+  withDeliveryQuote,
 } from "@/lib/whatsapp/conversation-engine";
 import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
-import { normalizePhone, normalizeText } from "@/lib/whatsapp/normalize";
+import { normalizePhone, normalizeText, phoneAliases } from "@/lib/whatsapp/normalize";
 import type { MenuItem } from "@/types/database";
 
 const now = "2026-08-25T00:00:00.000Z";
@@ -97,6 +100,14 @@ const catalog = buildConversationCatalog(menuItems);
 test("normaliza texto y teléfonos mexicanos sin alterar el contenido útil", () => {
   expect(normalizeText("  DÓS   Califórnia!!! ")).toBe("dos california");
   expect(normalizePhone("+52 (644) 279-3641")).toBe("526442793641");
+  expect(phoneAliases("+52 (644) 279-3641")).toEqual([
+    "526442793641",
+    "5216442793641",
+  ]);
+  expect(phoneAliases("5216442793641")).toEqual([
+    "5216442793641",
+    "526442793641",
+  ]);
 });
 
 test("recibe un saludo sin contarlo como producto desconocido", () => {
@@ -109,7 +120,8 @@ test("recibe un saludo sin contarlo como producto desconocido", () => {
   expect(result.state.stage).toBe("ordering");
   expect(result.state.ambiguityCount).toBe(0);
   expect(result.reply).toContain("asistente de Mideli");
-  expect(result.reply).toContain("California");
+  expect(result.reply).toContain("menú");
+  expect(result.reply).not.toContain("Caguama");
 });
 
 test("agrega varios productos, cantidades y variaciones reales", () => {
@@ -183,6 +195,10 @@ test("completa domicilio, efectivo y solicita crear solo después de confirmar",
   ).state;
 
   let result = handleConversationMessage(state, "Ya es todo", catalog);
+  expect(result.state.stage).toBe("awaiting_beverage");
+  expect(result.reply).toContain("bebida");
+
+  result = handleConversationMessage(result.state, "No gracias", catalog);
   expect(result.state.stage).toBe("awaiting_fulfillment");
   expect(result.action).toBe("none");
 
@@ -194,17 +210,64 @@ test("completa domicilio, efectivo y solicita crear solo después de confirmar",
     "Calle Kino 123, colonia Centro, portón negro",
     catalog
   );
-  expect(result.state.stage).toBe("awaiting_payment");
+  expect(result.state.stage).toBe("awaiting_address_reference");
 
-  result = handleConversationMessage(result.state, "Efectivo, pago con 500", catalog);
+  result = handleConversationMessage(result.state, "Omitir", catalog);
+  expect(result.state.stage).toBe("awaiting_delivery_quote");
+  expect(result.action).toBe("request_delivery_quote");
+
+  const quotedState = withDeliveryQuote(result.state, {
+    id: "quote-1",
+    formattedAddress: "Calle Kino 123, Centro",
+    colony: "Centro",
+    latitude: 27.49,
+    longitude: -109.94,
+    distanceMeters: 3500,
+    baseFee: 30,
+    surcharge: 0,
+    totalFee: 30,
+  });
+
+  result = handleConversationMessage(quotedState, "Efectivo, pago con 500", catalog);
   expect(result.state.stage).toBe("awaiting_confirmation");
   expect(result.state.payment).toMatchObject({ method: "efectivo", cashTendered: 500 });
   expect(result.action).toBe("none");
-  expect(result.reply).toContain("$125");
+  expect(result.reply).toContain("$155");
 
   result = handleConversationMessage(result.state, "Sí, confirmo", catalog);
   expect(result.state.stage).toBe("confirmed");
   expect(result.action).toBe("request_order_creation");
+});
+
+test("ofrece reutilizar el último domicilio pero vuelve a cotizarlo", () => {
+  const withAddress = {
+    ...createConversation("5216440000000"),
+    cart: [{
+      id: "line-1",
+      menuItemId: "california",
+      categoryId: "sushis",
+      name: "California",
+      quantity: 1,
+      unitPrice: 125,
+      selectedModifiers: [],
+      notes: "",
+    }],
+    total: 125,
+    stage: "awaiting_fulfillment" as const,
+    savedAddress: {
+      id: "address-1",
+      address: "Calle Kino 123, Centro",
+      reference: "Portón negro",
+    },
+  };
+
+  const delivery = handleConversationMessage(withAddress, "A domicilio", catalog);
+  expect(delivery.reply).toContain("domicilio anterior");
+
+  const reuse = handleConversationMessage(delivery.state, "Sí", catalog);
+  expect(reuse.action).toBe("request_delivery_quote");
+  expect(reuse.state.address).toBe("Calle Kino 123, Centro");
+  expect(reuse.state.addressReference).toBe("Portón negro");
 });
 
 test("un producto inactivo nunca aparece como coincidencia", () => {
@@ -214,6 +277,55 @@ test("un producto inactivo nunca aparece como coincidencia", () => {
     catalog
   );
   expect(result.state.cart).toHaveLength(0);
+});
+
+test("un producto oculto solo de WhatsApp no aparece aunque siga activo en POS", () => {
+  const whatsappCatalog = buildConversationCatalog([
+    {
+      ...menuItems[0],
+      id: "solo-pos",
+      name: "Solo POS",
+      whatsapp_enabled: false,
+    },
+  ]);
+  const result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Quiero Solo POS",
+    whatsappCatalog
+  );
+  expect(result.state.cart).toHaveLength(0);
+});
+
+test("retira un producto desactivado antes de crear el pedido y exige reconfirmar", () => {
+  const original = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Quiero un California y un Boneless BBQ de 12 piezas",
+    catalog
+  ).state;
+  const withoutCalifornia = buildConversationCatalog([menuItems[1]]);
+
+  const reconciliation = reconcileCartWithCatalog(
+    {
+      ...original,
+      stage: "confirmed",
+      payment: { method: "transferencia", cashTendered: null },
+    },
+    withoutCalifornia
+  );
+
+  expect(reconciliation.removed.map((line) => line.name)).toEqual(["California"]);
+  expect(reconciliation.state.stage).toBe("ordering");
+  expect(reconciliation.state.payment).toBeNull();
+  expect(reconciliation.state.cart.map((line) => line.name)).toEqual(["Boneless"]);
+  expect(reconciliation.state.total).toBe(159);
+});
+
+test("un archivo no compatible pasa la conversación a atención humana", () => {
+  const result = unsupportedMessageHandoff(createConversation("5216440000000"));
+
+  expect(result.action).toBe("handoff");
+  expect(result.state.stage).toBe("handoff");
+  expect(result.reply).toContain("persona del equipo");
 });
 
 test("tolera plural y un error ortográfico claro sin ampliar el catálogo", () => {
@@ -246,4 +358,19 @@ test("permite cambiar cantidad y quitar un producto del carrito", () => {
   result = handleConversationMessage(result.state, "Quita California", catalog);
   expect(result.state.cart).toHaveLength(0);
   expect(result.state.total).toBe(0);
+});
+
+test("permite pedir atención humana después de confirmar", () => {
+  const state = { ...createConversation("5216442793641"), stage: "confirmed" as const };
+  const result = handleConversationMessage(state, "quiero hablar con una persona", catalog);
+  expect(result.action).toBe("handoff");
+  expect(result.state.stage).toBe("handoff");
+});
+
+test("puede comenzar otro pedido desde una conversación confirmada", () => {
+  const state = { ...createConversation("5216442793641"), stage: "confirmed" as const };
+  const result = handleConversationMessage(state, "nuevo pedido", catalog);
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.cart).toHaveLength(0);
+  expect(result.reply).toContain("menú");
 });

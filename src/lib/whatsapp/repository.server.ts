@@ -3,11 +3,12 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Order } from "@/types/database";
-import { createConversation } from "./conversation-engine";
+import { createConversation, hydrateConversation } from "./conversation-engine";
 import type {
   ConversationResult,
   ConversationState,
 } from "./types";
+import { isMissingWhatsappSchema } from "./schema-compat";
 import type {
   NormalizedMetaMessage,
   NormalizedMetaStatus,
@@ -47,7 +48,7 @@ function conversationState(value: unknown, phone: string) {
   ) {
     return createConversation(phone);
   }
-  return state as ConversationState;
+  return hydrateConversation(state, phone);
 }
 
 async function findOpenConversation(
@@ -59,7 +60,7 @@ async function findOpenConversation(
     .select("id,external_contact_id,status,stage,state")
     .eq("provider", "meta")
     .eq("external_contact_id", phone)
-    .in("status", ["active", "handoff"])
+    .in("status", ["active", "handoff", "confirmed"])
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -83,6 +84,21 @@ async function ensureConversation(
   }
 
   const initialState = createConversation(phone);
+  const saved = await admin
+    .from("customer_addresses")
+    .select("id,address_text,formatted_address,reference")
+    .eq("customer_id", customer.id)
+    .order("last_used_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (saved.error) throw saved.error;
+  if (saved.data) {
+    initialState.savedAddress = {
+      id: saved.data.id,
+      address: saved.data.formatted_address || saved.data.address_text,
+      reference: saved.data.reference ?? "",
+    };
+  }
   const inserted = await admin
     .from("channel_conversations")
     .insert({
@@ -233,6 +249,14 @@ export async function applyOutboundStatuses(statuses: NormalizedMetaStatus[]) {
       .eq("external_message_id", status.messageId)
       .eq("direction", "outbound");
     if (error) throw error;
+
+    const { error: notificationError } = await admin
+      .from("whatsapp_notification_events")
+      .update({ status: status.status })
+      .eq("external_message_id", status.messageId);
+    if (notificationError && !isMissingWhatsappSchema(notificationError)) {
+      throw notificationError;
+    }
   }
 }
 
@@ -261,14 +285,42 @@ export async function createExternalOrder(input: {
     p_customer_phone: state.phone,
     p_customer_name: "",
     p_delivery_address: state.address ?? "",
-    p_delivery_reference: "",
+    p_delivery_reference: state.addressReference,
     p_notes: "Pedido recibido por WhatsApp",
-    p_delivery_fee: 0,
+    p_delivery_fee: state.deliveryQuote?.totalFee ?? 0,
     p_payment_method: state.payment?.method ?? null,
     p_cash_tendered: state.payment?.cashTendered ?? null,
   });
   if (error || !data) {
     throw error ?? new Error("No se pudo crear el pedido externo");
   }
-  return data as Order;
+  const order = data as Order;
+  if (state.deliveryQuote?.id) {
+    const now = new Date().toISOString();
+    await admin
+      .from("whatsapp_delivery_quotes")
+      .update({ used_at: now })
+      .eq("id", state.deliveryQuote.id)
+      .eq("conversation_id", input.conversationId);
+  }
+  return order;
+}
+
+export async function markConversationCustomerReceived(conversationId: string) {
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const [orders, conversation] = await Promise.all([
+    admin
+      .from("orders")
+      .update({ delivery_status: "customer_received", updated_at: now })
+      .eq("channel_conversation_id", conversationId)
+      .eq("source_channel", "whatsapp")
+      .eq("type", "domicilio"),
+    admin
+      .from("channel_conversations")
+      .update({ status: "closed", closed_at: now, bot_enabled: false })
+      .eq("id", conversationId),
+  ]);
+  if (orders.error) throw orders.error;
+  if (conversation.error) throw conversation.error;
 }

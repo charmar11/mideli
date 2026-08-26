@@ -7,18 +7,83 @@ import type {
   ConversationModifier,
 } from "./types";
 
-export function buildConversationCatalog(menuItems: MenuItem[]): ConversationCatalog {
+type MenuItemWithCategory = MenuItem & {
+  categories?:
+    | { id?: string; name?: string; sort_order?: number; is_active?: boolean }
+    | Array<{ id?: string; name?: string; sort_order?: number; is_active?: boolean }>
+    | null;
+};
+
+function categoryFor(item: MenuItemWithCategory) {
+  const relation = Array.isArray(item.categories) ? item.categories[0] : item.categories;
   return {
-    items: menuItems
-      .filter((item) => item.is_active)
-      .map((item) => ({
+    id: relation?.id ?? item.category_id,
+    name: relation?.name ?? "Otros",
+    sortOrder: Number(relation?.sort_order ?? 0),
+  };
+}
+
+function isBeverageCategory(value: string) {
+  const text = normalizeText(value);
+  return ["bebida", "refresco", "limonada", "te", "agua", "cheve", "cerveza"].some(
+    (word) => includesPhrase(text, word)
+  );
+}
+
+function isAlcoholicProduct(name: string, categoryName: string) {
+  const text = normalizeText(`${categoryName} ${name}`);
+  return ["cerveza", "cheve", "caguama", "modelo", "corona", "pacifico", "stella"].some(
+    (word) => includesPhrase(text, word)
+  );
+}
+
+export function buildConversationCatalog(menuItems: MenuItemWithCategory[]): ConversationCatalog {
+  const items = menuItems
+    .filter((item) => item.is_active && item.whatsapp_enabled !== false)
+    .map((item) => {
+      const category = categoryFor(item);
+      return {
         id: item.id,
         name: item.name,
+        description: item.description ?? "",
         normalizedName: normalizeText(item.name),
         price: Number(item.price),
+        categoryId: category.id,
+        categoryName: category.name,
+        categorySortOrder: category.sortOrder,
+        sortOrder: Number(item.sort_order ?? 0),
+        isBeverage: isBeverageCategory(category.name),
+        isAlcoholic: isAlcoholicProduct(item.name, category.name),
         modifiers: item.modifiers ?? [],
-      }))
-      .sort((left, right) => right.normalizedName.length - left.normalizedName.length),
+      };
+    })
+    .sort(
+      (left, right) =>
+        left.categorySortOrder - right.categorySortOrder ||
+        left.sortOrder - right.sortOrder ||
+        left.name.localeCompare(right.name, "es")
+    );
+
+  const categoryMap = new Map<
+    string,
+    { id: string; name: string; normalizedName: string; sortOrder: number }
+  >();
+  for (const item of items) {
+    if (!categoryMap.has(item.categoryId)) {
+      categoryMap.set(item.categoryId, {
+        id: item.categoryId,
+        name: item.categoryName,
+        normalizedName: normalizeText(item.categoryName),
+        sortOrder: item.categorySortOrder,
+      });
+    }
+  }
+
+  return {
+    items,
+    categories: [...categoryMap.values()].sort(
+      (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "es")
+    ),
   };
 }
 

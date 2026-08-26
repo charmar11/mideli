@@ -40,4 +40,29 @@
 
 ## Próximo paso
 
-Completar la prueba real de mensajes Meta en `dry-run`, validar la migración en PostgreSQL y solicitar aprobación independiente antes de aplicarla al proyecto remoto.
+La implementación local aprobada quedó completa:
+
+- Motor textual con catálogo por categorías, páginas de cinco productos, descripciones, variaciones, bebida, carrito, domicilio, referencia, pago y confirmación.
+- Cotización en servidor con Google Geocoding y Routes, rangos por kilómetros, recargos por colonia y transferencia humana fuera de cobertura.
+- Centro de control responsivo con resumen, conversaciones, catálogo de WhatsApp, entregas, horarios, bot y simulador.
+- Atención humana con toma de conversación, respuesta directa, devolución al bot y cierre.
+- Avisos idempotentes desde Cocina y Estado para preparación, listo, búsqueda de repartidor y repartidor en camino.
+- Retención configurable de contenido y endpoint de limpieza protegido por `CRON_SECRET`.
+- Compatibilidad segura mientras las dos migraciones continúan pendientes en Supabase remoto.
+- 60 pruebas enfocadas pasan en escritorio, tableta y móvil.
+- `npm run lint`, `npm run build`, `git diff --check` y `npx supabase db push --linked --dry-run` pasan.
+- La página pública se verificó con navegador local sin overlay ni contenido vacío; la ruta protegida redirige correctamente a login.
+
+## Próximo paso
+
+Revisar y aprobar por separado la aplicación de las migraciones remotas. Después configurar la clave restringida de Google Maps, activar las opciones de forma gradual y ejecutar un pedido integral con el número de prueba antes de cualquier despliegue.
+# Cierre operativo del piloto, 2026-08-26
+
+- El webhook de Meta confirma recepción antes de ejecutar catálogo, Google Maps o Supabase mediante `after()` de Next.js.
+- Los archivos no compatibles pasan a atención humana y el reclamo de conversaciones es exclusivo para evitar respuestas simultáneas.
+- El carrito se vuelve a validar al confirmar. Si un producto dejó de estar disponible, se retira, se recalcula el total y se exige una nueva confirmación.
+- La bandeja humana muestra productos, total, entrega, domicilio y pago.
+- Se añadieron diagnóstico seguro, excepciones de horario y reintento manual de notificaciones fallidas.
+- Los domicilios confirmados se conservan y se ofrecen en pedidos futuros, recalculando siempre la tarifa.
+- Verificación local: ESLint correcto, build de producción correcto y 75 pruebas WhatsApp aprobadas en escritorio, tablet y móvil.
+- Despliegue productivo listo en `https://mideli.vercel.app`, todavía con creación de pedidos y cotización automática apagadas en la base.

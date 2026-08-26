@@ -10,6 +10,7 @@ import {
   Hand,
   Pencil,
   RefreshCw,
+  Bike,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PaymentFlow, formatPaymentMoney } from "@/components/payments/payment-flow";
@@ -17,6 +18,7 @@ import { useOrderStore, type OrderWithItems } from "@/lib/stores";
 import { useCashShiftStore } from "@/lib/stores";
 import { formatOrderLocation } from "@/lib/order-location";
 import type { PaymentReceipt } from "@/types/payments";
+import { markWhatsappDriverOnWayAction } from "@/lib/actions/whatsapp-order-status";
 
 function formatTimeElapsed(dateString: string): string {
   const minutes = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
@@ -91,6 +93,16 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
     await handleDeliver(order.id, order.number);
   }
 
+  async function handleDriverOnWay(order: OrderWithItems) {
+    const result = await markWhatsappDriverOnWayAction(order.id);
+    if (!result.success) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(`El cliente del pedido #${order.number} fue notificado`);
+    await fetchActiveOrders();
+  }
+
   return (
     <div className="pos-scroll h-full overflow-y-auto p-3 sm:p-4">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 pb-8">
@@ -119,6 +131,7 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           onEditOrder={onEditOrder}
           onDeliver={handleDeliver}
           onPay={openPayment}
+          onDriverOnWay={handleDriverOnWay}
           ready
         />
 
@@ -157,6 +170,7 @@ function StatusSection({
   onEditOrder,
   onDeliver,
   onPay,
+  onDriverOnWay,
   ready = false,
 }: {
   title: string;
@@ -169,6 +183,7 @@ function StatusSection({
   onEditOrder?: (order: OrderWithItems) => void;
   onDeliver?: (orderId: string, number: number) => void;
   onPay?: (order: OrderWithItems) => void;
+  onDriverOnWay?: (order: OrderWithItems) => void;
   ready?: boolean;
 }) {
   return (
@@ -213,12 +228,23 @@ function StatusSection({
                 </ul>
 
                 {ready ? (
-                  <div className={`mt-3 grid gap-2 ${isPaid ? "grid-cols-1" : "grid-cols-2"}`}>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {order.source_channel === "whatsapp" && order.type === "domicilio" ? (
+                      order.delivery_status === "driver_on_way" ? (
+                        <div className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-success/15 font-heading text-xs font-bold text-success">
+                          <Bike size={15} /> Repartidor en camino
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => onDriverOnWay?.(order)} className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors hover:bg-warning/25">
+                          <Bike size={15} /> Marcar repartidor en camino
+                        </button>
+                      )
+                    ) : null}
                     <button type="button" onClick={() => onDeliver?.(order.id, order.number)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${takeaway && !isPaid ? "order-2 bg-surface-raised text-muted-foreground transition-colors hover:text-foreground" : "action-success"}`}>
                       <Hand size={14} />
                       Entregar
                     </button>
-                    {!isPaid ? <button type="button" onClick={() => onPay?.(order)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${takeaway ? "action-success order-1" : "bg-ink text-white transition-colors hover:bg-ink/85"}`}><CreditCard size={14} />{takeaway ? "Cobrar y entregar" : `Cobrar ${formatPaymentMoney(balance)}`}</button> : null}
+                    {!isPaid ? <button type="button" onClick={() => onPay?.(order)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${takeaway ? "action-success order-1" : "bg-ink text-white transition-colors hover:bg-ink/85"}`}><CreditCard size={14} />{takeaway ? "Cobrar y entregar" : `Cobrar ${formatPaymentMoney(balance)}`}</button> : <span />}
                   </div>
                 ) : null}
               </article>

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { normalizePhone } from "./normalize";
+import { phoneAliases } from "./normalize";
 
 function enabled(value: string | undefined) {
   return value === "true";
@@ -11,7 +11,7 @@ export function readWhatsappServerConfig() {
   const allowedPhones = new Set(
     (process.env.WHATSAPP_TEST_ALLOWLIST ?? "")
       .split(",")
-      .map(normalizePhone)
+      .flatMap(phoneAliases)
       .filter(Boolean)
   );
 
