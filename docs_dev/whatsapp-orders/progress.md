@@ -24,6 +24,8 @@
 - El webhook solo acepta teléfonos de prueba permitidos y no responde automáticamente todavía.
 - Una prueba HTTP local confirmó GET 200, POST firmado 200 y `dryRun: true`.
 - Doce pruebas enfocadas y el build completo pasan con las rutas nuevas.
+- Se instaló `cloudflared` 2026.8.2 desde el paquete oficial de Windows.
+- Se creó un asistente local que genera el token en el dispositivo, inicia Mideli, abre el túnel y muestra la URL sin exponer secretos al agente.
 - No se aplicaron migraciones ni se desplegó.
 
 ## Próximo paso

@@ -38,6 +38,7 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 | Aserción de mensaje distinguía mayúscula inicial | 1 | Comparar el texto visible sin distinguir mayúsculas |
 | ESLint detectó una variable de prueba que nunca se reasigna | 1 | Cambiar `let` por `const` |
 | Primera prueba de webhook no encontró los módulos Meta | 1 | Fallo esperado de TDD; implementar firma, normalizador y proveedor |
+| Codex bloqueó generar y copiar un secreto al portapapeles | 1 | Crear un asistente local que el usuario ejecuta sin exponer el token al agente |
 
 ## Puertas de seguridad
 
