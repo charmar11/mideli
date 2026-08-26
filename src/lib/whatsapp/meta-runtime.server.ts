@@ -342,8 +342,10 @@ export async function processMetaWebhook(
       } else {
         await processPersistentMessage(message, catalog, config, operations, summary);
       }
-    } catch {
+    } catch (error) {
       summary.processingFailures += 1;
+      const detail = error instanceof Error ? error.message : "Error desconocido";
+      console.error(`[WhatsApp Meta] Falló un mensaje permitido: ${detail}`);
     }
   }
   return summary;

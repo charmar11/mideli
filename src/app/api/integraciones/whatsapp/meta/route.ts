@@ -75,7 +75,7 @@ export async function POST(request: Request) {
         config
       );
       console.info(
-        `[WhatsApp Meta] Procesamiento terminado. Procesados=${processing.processed}, respuestas=${processing.repliesSent}, fallos=${processing.replyFailures}.`
+        `[WhatsApp Meta] Procesamiento terminado. Procesados=${processing.processed}, duplicados=${processing.duplicates}, respuestas=${processing.repliesSent}, fallos_envío=${processing.replyFailures}, fallos_proceso=${processing.processingFailures}.`
       );
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Error desconocido";
