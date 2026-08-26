@@ -1,53 +1,437 @@
 # Pedidos conversacionales por WhatsApp
 
 Fecha: 2026-08-25
-Estado: aprobado por el usuario el 2026-08-25
-Proveedor piloto y producción: WhatsApp Cloud API de Meta
 
-## Objetivo
+Estado: diseño funcional aprobado por el usuario
 
-Agregar a Mideli un canal de venta por WhatsApp que permita conversar de forma natural, armar un carrito con el menú real, confirmar domicilio y pago, crear el pedido una sola vez y continuar el flujo existente de Cocina, impresión, Estado y cobro.
+Proveedor: WhatsApp Cloud API de Meta
 
-El diseño prioriza conversión, velocidad y recuperación de ventas. El cliente no crea una cuenta ni completa formularios largos. Su número de WhatsApp identifica la conversación y permite reutilizar domicilios y pedidos anteriores.
+## 1. Objetivo
 
-## Alcance inicial
+Agregar a Mideli un canal de venta por WhatsApp que permita conversar de forma natural, consultar el menú real, armar un carrito, cotizar un domicilio, confirmar el pago solicitado y crear un pedido dentro del flujo vigente de Cocina, impresión, Estado, caja, inventario e Historial.
 
-- Conversación principalmente escrita, con botones solo para confirmar, corregir o solicitar atención.
-- Número de prueba de Meta durante el desarrollo.
-- Simulador local antes de conectar mensajes reales.
-- Interpretación determinista basada en catálogo, sinónimos, cantidades, contexto y coincidencia flexible.
-- Transferencia a una persona cuando exista ambigüedad repetida.
-- Pedidos para domicilio y para recoger.
-- Domicilios guardados y enlace gratuito de Google Maps.
-- Pausas temporales de productos o variaciones y propuestas de sustitución.
-- Venta adicional contextual, un solo ofrecimiento relevante por pedido.
-- Estados automáticos del pedido y bandeja operativa para el personal.
-- Métricas de conversión, recompra, abandono y venta adicional.
+El cliente no crea una cuenta ni completa formularios largos. Su número identifica la conversación y permite recuperar su carrito y domicilios confirmados. El sistema debe maximizar la conversión sin inventar productos, precios, ingredientes, promociones, disponibilidad ni tarifas.
 
-## Fuera de alcance inicial
+## 2. Principios aprobados
+
+- Mensajes cortos, amigables y fáciles de leer en un teléfono.
+- Conversación escrita sin botones ni imágenes durante la primera versión.
+- Respuestas inmediatas, con operaciones lentas ejecutadas sin bloquear el webhook.
+- Menú paginado con un máximo de cinco productos por mensaje.
+- Información real del catálogo, incluyendo descripción, ingredientes, variaciones, extras y precios.
+- Pedido para recoger o domicilio.
+- Domicilio con tarifa por distancia y recargo por colonia.
+- Pago a domicilio únicamente en efectivo o transferencia.
+- Confirmación explícita antes de crear un pedido.
+- Atención humana sin perder conversación ni carrito.
+- Mensajes automáticos vinculados a estados reales de preparación y reparto.
+- Conservación limitada de conversaciones para diagnóstico.
+- Activación gradual mediante controles independientes.
+
+## 3. Fuera de alcance inicial
 
 - Rastreo GPS del repartidor.
-- Google Maps API de pago.
-- Cobro automático con tarjeta dentro de WhatsApp.
-- Campañas masivas o mensajes de marketing sin consentimiento.
-- Reservaciones, puntos o programa de lealtad.
-- Dependencia obligatoria de un modelo de lenguaje pagado.
+- Tiempo estimado de preparación o entrega.
+- Pago mediante enlaces, tarjeta o pasarela dentro de WhatsApp.
+- Imágenes del menú.
+- Botones, listas interactivas o formularios de Meta.
+- Promociones, favoritos y campañas masivas.
+- Reservaciones, lealtad o puntos.
 - Cambios automáticos de disponibilidad basados en inventario.
+- Mensaje automático de pedido entregado.
+- Dependencia obligatoria de un modelo de lenguaje pagado.
 
-## Aislamiento y seguridad de desarrollo
+## 4. Organización administrativa
 
-La implementación vive en la rama `codex/whatsapp-orders`. Mientras se desarrolla:
+La administración incorporará un módulo llamado **WhatsApp y pedidos en línea**. Debe respetar la interfaz oscura de Mideli, funcionar en móvil y tablet y organizarse en las siguientes pestañas.
 
-- No se despliega a Vercel.
-- No se aplican migraciones a Supabase remoto.
-- No se conecta el número real del negocio.
-- El proveedor inicia como `simulator` y el modo de escritura como `dry-run`.
-- Las pruebas del motor no crean pedidos, no descuentan inventario, no afectan caja y no imprimen.
-- El webhook real se prueba contra localhost mediante un túnel HTTPS temporal.
-- Las credenciales se guardan solo en variables de entorno ignoradas por Git.
-- Ningún token, secreto o contenido sensible se registra en consola o Sentry.
+### 4.1 Resumen
 
-Variables previstas:
+- Estado de la conexión con Meta.
+- Pedidos recibidos hoy.
+- Conversaciones activas.
+- Carritos abandonados.
+- Transferencias a personal.
+- Errores que requieren atención.
+
+### 4.2 Conversaciones
+
+- Bandeja de clientes.
+- Estado de la conversación.
+- Historial de mensajes.
+- Carrito actual.
+- Domicilio y forma de pago solicitada.
+- Responsable humano.
+- Acciones para tomar, responder, devolver al bot o cerrar.
+
+### 4.3 Catálogo
+
+- Categorías visibles.
+- Control independiente **Disponible en WhatsApp** por producto.
+- Descripciones, precios, variaciones y extras consumidos desde el menú real.
+- Orden igual al configurado en Menú.
+- Vista previa textual de la respuesta.
+
+### 4.4 Entregas
+
+- Dirección y coordenadas del local.
+- Rangos de distancia editables.
+- Recargos por colonia y alias.
+- Cobertura automática máxima.
+- Prueba manual de una dirección.
+- Domicilios confirmados y cotizaciones reutilizables.
+
+### 4.5 Horarios
+
+- Horario configurable por cada día de la semana.
+- Valor inicial de 12:00 p. m. a 11:00 p. m.
+- Zona horaria **America/Hermosillo**.
+- Cierre temporal.
+- Fechas especiales y vacaciones.
+- Mensaje fuera de horario.
+
+### 4.6 Atención humana
+
+- Roles autorizados.
+- Conversaciones esperando atención.
+- Responsable actual.
+- Preferencias de notificación por usuario y dispositivo.
+- Reglas de transferencia automática.
+
+### 4.7 Configuración del bot
+
+- Saludo y tono.
+- Máximo de productos por mensaje.
+- Uso moderado de emojis.
+- Mensajes de confirmación.
+- Reglas de seguridad.
+
+### 4.8 Historial y diagnóstico
+
+- Mensajes enviados, recibidos y fallidos.
+- Pedidos relacionados.
+- Direcciones no reconocidas.
+- Frases no entendidas.
+- Reintentos y deduplicación.
+- Auditoría administrativa.
+- Ningún token o secreto visible.
+
+## 5. Arquitectura
+
+La integración se divide en servicios independientes.
+
+1. **Adaptador de Meta:** recibe y envía mensajes.
+2. **Webhook:** verifica la firma, normaliza eventos y responde rápidamente.
+3. **Deduplicación:** impide procesar dos veces el mismo mensaje o crear dos pedidos.
+4. **Motor conversacional:** mantiene el paso, contexto, intención y siguiente pregunta.
+5. **Catálogo conversacional:** consulta categorías, productos, modificadores y alias.
+6. **Carrito:** conserva cantidades, notas, variaciones y extras.
+7. **Clientes y domicilios:** reconoce el teléfono y recupera información confirmada.
+8. **Cotizador de entrega:** valida dirección, calcula ruta y aplica reglas comerciales.
+9. **Validador canónico:** vuelve a consultar catálogo, precios y configuración.
+10. **Creador externo:** registra el pedido de forma transaccional e idempotente.
+11. **Bandeja humana:** permite que una persona controle la conversación.
+12. **Notificador de estados:** envía únicamente transiciones reales.
+
+El motor conversacional no escribe directamente en pedidos, pagos, inventario ni caja. Solo prepara una intención estructurada. El backend de Mideli valida y ejecuta las operaciones.
+
+Flujo principal:
+
+Mensaje de Meta → validar firma → deduplicar → identificar cliente → recuperar conversación → interpretar → actualizar carrito → validar menú → cotizar domicilio → confirmar → crear pedido → Cocina e impresión → notificar estados.
+
+## 6. Flujo conversacional
+
+### 6.1 Inicio y exploración
+
+El bot saluda brevemente y pregunta qué desea ordenar. Si el cliente escribe un pedido completo, intenta procesarlo sin obligarlo a recorrer categorías.
+
+Si necesita orientación:
+
+- Muestra categorías de alimentos.
+- Presenta un máximo de cinco productos.
+- Cada producto incluye nombre, precio y descripción.
+- Acepta respuesta por número, nombre o lenguaje natural.
+- Entiende **más**, **volver** y cambios de categoría.
+- No promociona bebidas alcohólicas.
+- Cervezas y caguamas aparecen únicamente cuando el cliente las solicita.
+
+### 6.2 Selección y modificadores
+
+- Valida que el producto y su categoría estén activos.
+- Valida que **Disponible en WhatsApp** esté activado.
+- Pregunta únicamente variaciones requeridas.
+- Respeta grupos de una opción o selección múltiple.
+- Ofrece extras relacionados una sola vez.
+- Muestra la información completa de toppings y variaciones de sushi.
+- Confirma brevemente cada producto agregado.
+
+### 6.3 Bebidas
+
+Después de terminar los alimentos, el bot pregunta una sola vez:
+
+> 🥤 ¿Deseas agregar alguna bebida?
+
+Si la respuesta es afirmativa, muestra hasta cinco bebidas sin alcohol activas y disponibles en WhatsApp. Si la respuesta es negativa, no insiste. Las bebidas alcohólicas solo se muestran por solicitud explícita.
+
+### 6.4 Carrito
+
+El cliente puede agregar, quitar, cambiar cantidades, modificar notas o sustituir elementos antes de confirmar. El subtotal se actualiza después de cada cambio relevante.
+
+### 6.5 Tipo de pedido
+
+El bot pregunta si el pedido es para recoger o domicilio.
+
+Para recoger:
+
+- Confirma nombre y teléfono.
+- El cobro se realiza en el flujo existente del local.
+
+Para domicilio:
+
+- Recupera un domicilio anterior o solicita dirección o ubicación.
+- Confirma una referencia cuando ayude a encontrar el lugar.
+- Cotiza distancia y recargo.
+- Solicita efectivo o transferencia.
+- Si es efectivo, pregunta con cuánto pagará.
+- El pedido se crea pendiente de pago.
+- El cobro real continúa en **Cobrar y entregar**.
+
+### 6.6 Confirmación
+
+Antes de crear el pedido muestra:
+
+- Productos y cantidades.
+- Variaciones, extras y notas.
+- Subtotal.
+- Domicilio y referencia.
+- Costo de envío.
+- Total.
+- Forma de pago solicitada.
+- Cantidad con la que pagará cuando corresponda.
+
+Solo una confirmación explícita permite crear el pedido. Si el cliente modifica algo, el backend recalcula y vuelve a solicitar confirmación.
+
+## 7. Catálogo y disponibilidad
+
+El bot utiliza el menú real de Mideli.
+
+Un producto solo se ofrece cuando:
+
+- Su categoría está activa.
+- El producto está activo.
+- **Disponible en WhatsApp** está activado.
+
+Esta opción controla únicamente la visibilidad en WhatsApp. No introduce los estados Disponible, Limitado o Agotado y no afecta el POS. El inventario puede continuar en negativo y nunca ocultará automáticamente un producto.
+
+Si un producto o modificador deja de estar disponible durante una conversación:
+
+1. Se elimina de la confirmación.
+2. Se explica el cambio.
+3. Se proponen hasta tres alternativas reales de la misma categoría.
+4. Se recalcula el total.
+
+No habrá promociones, favoritos ni recomendaciones comerciales automáticas en esta fase.
+
+## 8. Domicilios y tarifa
+
+### 8.1 Servicios de Google
+
+La dirección escrita se normaliza mediante Geocoding y la distancia por carretera se obtiene mediante Routes. Una ubicación compartida puede utilizar sus coordenadas directamente.
+
+El sistema debe:
+
+- Guardar coordenadas y cotización de domicilios confirmados.
+- Evitar consultas repetidas para la misma dirección.
+- Configurar cuotas diarias.
+- Registrar errores sin exponer datos sensibles.
+- Transferir a una persona si la dirección es ambigua.
+- No inventar una tarifa cuando Google no pueda calcular la ruta.
+
+### 8.2 Rangos aprobados
+
+| Distancia por carretera | Tarifa |
+|---|---:|
+| 0 a 4 km | $30 |
+| Más de 4 a 5 km | $35 |
+| Más de 5 a 6 km | $40 |
+| Más de 6 a 7 km | $45 |
+| Más de 7 a 8 km | $50 |
+| Más de 8 a 9 km | $55 |
+| Más de 9 a 9.9 km | $60 |
+| Hasta 10 km | $65 |
+| Hasta 11 km | $70 |
+| Hasta 12 km | $75 |
+| Hasta 13 km | $80 |
+| Hasta 14 km | $85 |
+| Hasta 15 km | $90 |
+
+Las reglas se almacenan como rangos editables, no como condicionales fijas en la interfaz.
+
+### 8.3 Recargos aprobados
+
+| Colonia o alias | Recargo |
+|---|---:|
+| Beltrones | $10 |
+| Pioneros | $10 |
+| Lomas | $10 |
+| Providencia | $10 |
+| UNISON | $10 |
+| Esperanza | $15 |
+| Santa Catalina | $15 |
+| Villa Bonita | $15 |
+
+**Envío a paquetería** y **Realizar una compra** no forman parte del pedido de un cliente y no se cargan como colonias.
+
+La tarifa final es:
+
+Tarifa del rango + recargo de colonia = costo de envío.
+
+Si la ruta supera 15 km, el sistema no cotiza ni confirma automáticamente. Transfiere la conversación a atención humana.
+
+## 9. Horarios
+
+El horario se configura por día desde administración. La configuración inicial es de 12:00 p. m. a 11:00 p. m. en **America/Hermosillo**.
+
+El administrador puede:
+
+- Definir apertura y cierre por cada día.
+- Marcar un día cerrado.
+- Crear excepciones por fecha.
+- Cerrar temporalmente el canal.
+- Personalizar el mensaje fuera de horario.
+
+Fuera del horario:
+
+- Se conserva el mensaje y el carrito.
+- No se crea un pedido ni se promete preparación.
+- Se informa cuándo vuelve a abrir.
+- No se envían alertas repetitivas al personal durante la noche.
+
+## 10. Atención humana
+
+La transferencia ocurre cuando:
+
+- El cliente la solicita.
+- El bot no entiende después de dos intentos.
+- La dirección es ambigua.
+- La distancia supera 15 km.
+- Existe una solicitud especial insegura.
+- Falla la creación del pedido.
+- El mensaje contiene una queja que requiere atención.
+
+Estados de bandeja:
+
+- Esperando atención.
+- Atendida.
+- Esperando al cliente.
+- Pedido confirmado.
+- Cerrada.
+
+Owner, admin, supervisor y mesero autorizado pueden atender. Cocina no administra conversaciones.
+
+Al tomar una conversación:
+
+- Se registra el responsable.
+- El bot deja de responder.
+- Nadie más puede responder simultáneamente.
+- El responsable ve historial, carrito, domicilio y contexto.
+- Puede editar el carrito antes de confirmar.
+- Puede devolver la conversación al bot o cerrarla.
+
+Cada usuario puede activar o desactivar sus notificaciones en cada dispositivo.
+
+## 11. Estados comunicados al cliente
+
+Los estados de cocina, entrega y pago permanecen separados.
+
+### 11.1 Domicilio
+
+1. Al crear el pedido:
+   - **✅ Recibimos tu pedido #123.**
+2. Cocina pulsa **Empezar a preparar**:
+   - **👨‍🍳 Tu pedido #123 ya está en preparación.**
+3. Cocina pulsa **Marcar como listo**:
+   - El sistema cambia automáticamente a búsqueda de repartidor.
+   - Envía un solo mensaje: **✅ Tu pedido #123 está listo. 🛵 Ya estamos buscando repartidor.**
+4. El personal confirma al repartidor:
+   - **📍 Tu pedido #123 ya va en camino.**
+
+No se envía un aviso automático de entregado.
+
+Si el cliente escribe que el pedido ya llegó:
+
+- El bot agradece brevemente.
+- Cierra la conversación.
+- Registra la confirmación del cliente.
+- No marca automáticamente el pedido como pagado.
+
+### 11.2 Recoger
+
+- Pedido recibido.
+- En preparación.
+- Listo para recoger.
+
+Cada aviso se envía una sola vez. La interfaz muestra si fue enviado, entregado, leído o falló y permite reintentar manualmente un fallo.
+
+## 12. Seguridad, idempotencia y errores
+
+- Meta debe superar validación de firma.
+- Cada mensaje externo tiene un identificador único.
+- Cada creación externa tiene una clave idempotente.
+- La IA interpreta texto, pero no calcula ni persiste valores comerciales.
+- Productos y precios se consultan otra vez antes de confirmar.
+- El total lo calcula Mideli.
+- El pedido requiere un turno de caja abierto.
+- Si no hay turno, pasa a atención humana y no promete preparación.
+- Si un precio cambia, se muestra el total nuevo y se solicita otra confirmación.
+- Si Google, Meta o Supabase fallan, se conserva el carrito.
+- Antes de reintentar una creación se comprueba si el pedido ya existe.
+- Un pedido confirmado no se modifica automáticamente.
+- Mensajes de voz, imágenes y solicitudes especiales pasan a una persona cuando no puedan resolverse con seguridad.
+- Ningún secreto o contenido operativo se registra en consola o Sentry.
+
+El pedido confirmado usa el flujo canónico de Mideli para Cocina, impresión, Estado, caja, inventario e Historial.
+
+## 13. Retención y permisos
+
+Las conversaciones completas se conservan durante 90 días. Después:
+
+- Se elimina el contenido de los mensajes.
+- Se conservan métricas anónimas de conversión, abandono y errores.
+- Los pedidos permanecen en Historial conforme a las reglas del POS.
+
+Datos operativos permitidos:
+
+- Teléfono y nombre proporcionado.
+- Domicilios confirmados.
+- Carrito y pedido relacionado.
+- Responsable humano.
+- Estados de envío del mensaje.
+- Errores de interpretación o entrega.
+
+Permisos:
+
+- **Owner y admin:** configuración, conversaciones e historial.
+- **Supervisor:** conversaciones, atención y diagnóstico, sin credenciales.
+- **Mesero autorizado:** conversaciones activas y tomadas.
+- **Cocina:** solo pedidos confirmados necesarios para preparar.
+
+Toda modificación de horarios, tarifas, colonias y catálogo queda auditada. El personal puede eliminar un domicilio cuando el cliente no quiera reutilizarlo.
+
+## 14. Controles de activación
+
+Habrá controles independientes para:
+
+- Recibir mensajes.
+- Responder automáticamente.
+- Crear pedidos.
+- Calcular domicilios.
+- Enviar cambios de estado.
+- Permitir atención humana.
+
+El propietario o administrador puede suspender inmediatamente el canal sin apagar el POS.
+
+Variables de entorno previstas:
 
 - `WHATSAPP_ORDERS_ENABLED`
 - `WHATSAPP_PROVIDER=simulator|meta`
@@ -57,192 +441,111 @@ Variables previstas:
 - `META_WHATSAPP_WABA_ID`
 - `META_WHATSAPP_VERIFY_TOKEN`
 - `META_APP_SECRET`
+- Variables de Google Maps necesarias en servidor.
 
-Los valores no se documentan ni se versionan.
+Los valores nunca se documentan ni versionan.
 
-## Arquitectura
+## 15. Modelo de datos
 
-El canal se divide en unidades independientes:
+La implementación debe revisar y reutilizar las migraciones ya creadas antes de agregar estructura.
 
-1. Adaptador de proveedor: recibe y envía mensajes mediante simulador o Meta.
-2. Webhook: verifica Meta, normaliza eventos y evita duplicados.
-3. Motor conversacional: mantiene contexto, detecta intención y decide la siguiente pregunta.
-4. Catálogo conversacional: busca productos, alias y variaciones en el menú vigente.
-5. Carrito: conserva productos, cantidades, notas y modificadores.
-6. Clientes y domicilios: reconoce teléfono y recupera datos confirmados previamente.
-7. Validador comercial: recalcula precios, verifica productos activos y pausas operativas.
-8. Creador externo de pedidos: registra la orden de forma transaccional e idempotente.
-9. Bandeja del personal: permite tomar la conversación sin perder el carrito.
-10. Notificador de estados: comunica únicamente cambios útiles al cliente.
+Entidades necesarias:
 
-El motor nunca escribe directamente en `orders`. La creación pasa por una función exclusiva del servidor que vuelve a validar toda la información.
+- Clientes.
+- Domicilios confirmados con coordenadas.
+- Conversaciones y responsable.
+- Mensajes y estado de entrega.
+- Carrito conversacional.
+- Preferencia **Disponible en WhatsApp**.
+- Horarios y excepciones.
+- Rangos de entrega.
+- Colonias y alias con recargo.
+- Cotizaciones de domicilio.
+- Eventos idempotentes.
+- Enlace del pedido con conversación y origen.
+- Confirmación de recepción por el cliente.
+- Auditoría administrativa.
 
-## Flujo conversacional
+Todas las tablas nuevas tienen RLS. El webhook opera exclusivamente en servidor. La clave de servicio nunca llega al navegador.
 
-### Inicio
+## 16. Pruebas y activación
 
-El bot usa un tono cercano, breve y profesional. Si reconoce al cliente, ofrece continuar un carrito o repetir su último pedido. Si es nuevo, pregunta qué desea ordenar. No presenta un formulario ni obliga a usar comandos.
+### 16.1 Desarrollo local
 
-### Interpretación y carrito
+- Número de prueba de Meta.
+- Respuestas y carritos habilitados.
+- Creación real desactivada.
+- Sin efectos en Cocina, caja, impresión o inventario.
 
-El cliente puede escribir frases como `quiero dos California y boneless BBQ de 12 con papas`. El sistema identifica coincidencias seguras y pregunta solo lo faltante. Después de cada modificación confirma brevemente el contenido y total acumulado.
+### 16.2 Validación funcional
 
-Si hay más de una interpretación posible, muestra alternativas reales. Después de dos dudas consecutivas ofrece atención humana. El carrito permanece intacto durante la transferencia.
-
-### Venta adicional
-
-Se permite una sugerencia por pedido, elegida por contexto:
-
-- Bebida cuando el carrito no contiene una.
-- Complemento compatible con hamburguesas o boneless.
-- Topping disponible para sushi.
-- Cantidad de bebidas coherente con un pedido para varias personas.
-
-La recomendación nunca se agrega por defecto y siempre puede rechazarse escribiendo normalmente.
-
-### Entrega o recolección
-
-Para domicilio, un cliente recurrente puede reutilizar un domicilio confirmado. Un cliente nuevo comparte ubicación o escribe dirección. Referencias y etiqueta del domicilio son opcionales. El teléfono se obtiene de WhatsApp.
-
-Antes de solicitar al repartidor se completa método de pago, cambio requerido y costo de envío. Un enlace universal de Google Maps abre la ruta sin clave ni API pagada.
-
-### Confirmación
-
-El bot presenta productos, modificadores, domicilio, costo de envío, total y forma de pago. Solo una confirmación explícita, como `sí`, permite crear el pedido. `Modificar`, `cancelar` o una corrección escrita regresan al carrito.
-
-## Pedidos, caja e idempotencia
-
-La nueva función de creación externa será accesible solo desde servidor y validará:
-
-- Firma válida del proveedor.
-- Identificador de mensaje no procesado anteriormente.
-- Turno de caja abierto.
-- Productos activos existentes.
-- Variaciones compatibles con el producto.
-- Ausencia de pausas temporales aplicables.
-- Cantidades positivas.
-- Precios y extras recalculados desde la base.
-- Total calculado por Mideli, nunca por texto generado.
-
-El pedido se registra con origen `whatsapp`, `created_by` nulo y referencia a su conversación. El identificador externo y la clave de creación impiden duplicados durante reintentos.
-
-Si no existe turno abierto, el bot no promete preparación. Informa que requiere atención y entrega la conversación al personal.
-
-## Modelo de datos propuesto
-
-- `customers`: teléfono normalizado, nombre, última actividad y consentimiento de contacto.
-- `customer_addresses`: domicilio, etiqueta, referencia, coordenadas opcionales y última utilización.
-- `channel_conversations`: proveedor, teléfono, estado, paso actual, carrito y responsable humano.
-- `channel_messages`: identificador externo único, dirección, tipo, estado y contenido con retención limitada.
-- `menu_sale_pauses`: producto u opción, motivo, actor, inicio y vencimiento.
-- Extensiones de `orders`: origen, conversación, teléfono, domicilio histórico, referencia, costo de envío e identificador externo.
-
-Todas las tablas tendrán RLS. Owner y admin administran; waiter y supervisor atienden conversaciones; kitchen ve únicamente pedidos confirmados. El webhook usa un cliente de servidor y nunca expone la clave de servicio al navegador.
-
-## Pausas temporales y sustituciones
-
-No regresa el sistema `Disponible, Limitado y Agotado`. El inventario continúa permitiendo valores negativos.
-
-Cocina, supervisor, owner y admin pueden pausar un producto u opción por 30 minutos, hasta el día siguiente o hasta reactivarlo. El mesero puede reportar el problema, pero no pausa directamente.
-
-El bot excluye elementos pausados de recomendaciones y vuelve a validar antes de confirmar. Si algo se pausa durante una conversación, conserva el carrito y propone alternativas de la misma categoría y precio aproximado. Si el pedido ya fue creado, pasa a atención humana para sustitución, ajuste o cancelación auditada.
-
-## Bandeja operativa
-
-La navegación operativa incorporará `WhatsApp` para owner, admin, supervisor y waiter. Tendrá estados:
-
-- Nuevas.
-- Esperando al cliente.
-- Requieren atención.
-- Pedido confirmado.
-- Abandonadas.
-
-El personal puede tomar la conversación, responder, editar el carrito y devolverla al bot. Cocina no administra conversaciones.
-
-## Despacho
-
-Cuando un pedido a domicilio esté listo, Estado muestra domicilio, referencia, cobro y un botón `Compartir con repartidor`. La hoja de compartir del dispositivo permite elegir el grupo existente de WhatsApp. El mensaje incluye pedido, teléfono, dirección, referencia, total, método de pago, cambio y URL de Google Maps.
-
-Los estados operativos para el cliente son: recibido, en preparación, listo, enviado y entregado. El cambio a enviado y entregado es manual.
-
-## Recuperación de ventas y métricas
-
-Un carrito abandonado puede recibir un solo recordatorio dentro de la ventana permitida de atención. No se realizan campañas en la primera versión.
-
-Analíticas medirá:
-
-- Conversaciones iniciadas.
-- Carritos creados y pedidos confirmados.
-- Conversión y abandono por etapa.
-- Tiempo hasta confirmar.
-- Ticket promedio de WhatsApp.
-- Aceptación de venta adicional.
-- Clientes recurrentes y pedidos repetidos.
-- Carritos recuperados.
-- Transferencias a personal.
-- Pausas, sustituciones aceptadas y ventas afectadas.
-
-Los eventos de prueba y `dry-run` no entran en métricas comerciales.
-
-## Webhook de Meta
-
-La ruta prevista es `/api/integraciones/whatsapp/meta`. Soporta:
-
-- Verificación GET mediante un token privado acordado con Meta.
-- Validación criptográfica de POST mediante el secreto de la aplicación.
-- Suscripción al campo `messages`.
-- Dedupe por identificador de mensaje.
-- Respuesta rápida y reintentos seguros.
-- Estados enviado, entregado, leído y fallido.
-- Lista permitida de teléfonos durante el piloto.
-
-El token temporal de Meta se usa solo para la prueba inicial. Antes de producción se reemplaza por un token de usuario del sistema con permisos mínimos.
-
-## Pruebas
-
-### Automatizadas
-
-- Interpretación de cantidades, alias y errores ortográficos.
+- Productos, alias y errores ortográficos.
 - Variaciones requeridas y múltiples.
-- Modificación y cancelación del carrito.
-- Precio recalculado y rechazo de datos manipulados.
-- Duplicados y reintentos.
-- Pausas y sustituciones.
-- Domicilio nuevo y reutilizado.
+- Extras y notas.
+- Bebida ofrecida una sola vez.
+- Recoger y domicilio.
+- Rangos, colonias y límite de 15 km.
+- Horarios y días cerrados.
+- Efectivo y transferencia.
+- Atención humana.
+- Producto desactivado durante el carrito.
+- Mensajes duplicados, reconexión y reintentos.
 - Confirmación explícita.
-- Transferencia humana.
-- Verificación del webhook y permisos.
+- Cambios de precio.
 
-### Manuales locales
+### 16.3 Prueba integral supervisada
 
-1. Simulador con repositorios falsos y `dry-run`.
-2. Base Supabase local, si el entorno está disponible, con catálogo de prueba.
-3. Meta test number conectado a localhost mediante túnel HTTPS.
-4. Conversación completa sin crear pedido.
-5. Pedido controlado en entorno local y verificación de Cocina, impresión y estados.
+- Activar temporalmente la creación.
+- Crear un pedido completo.
+- Verificar Cocina, impresión, Estado, Historial, inventario y caja.
+- Verificar avisos de preparación, listo, búsqueda de repartidor y en camino.
+- Suspender la integración ante cualquier error.
 
-Se ejecutan `npm run lint`, `npm run build` y `npm run test:e2e`. Las migraciones se inspeccionan con dry-run y no se aplican remotamente.
+### 16.4 Piloto
 
-## Puertas de liberación
+- Números autorizados.
+- Personal supervisando la bandeja.
+- Métricas de errores, abandono y conversión.
+- Interruptor de emergencia.
 
-Cada transición requiere aprobación explícita:
+### 16.5 Producción
 
-1. Aprobar especificación.
-2. Aprobar implementación local en dry-run.
-3. Aprobar prueba con el número de Meta.
-4. Aprobar migración remota.
-5. Aprobar variables en Vercel.
-6. Aprobar despliegue.
+- Número real.
+- Credenciales permanentes.
+- Webhook estable.
+- Cuotas de Google.
+- Procedimiento de respaldo y reversión.
+- Activación gradual.
+
+Se ejecutan `npm run lint`, `npm run build` y las pruebas relevantes. Cualquier migración requiere revisión con dry-run y aprobación explícita antes de aplicarse remotamente.
+
+## 17. Puertas de liberación
+
+Cada transición necesita aprobación explícita:
+
+1. Aprobar la especificación.
+2. Aprobar el plan de implementación.
+3. Aprobar la implementación local en dry-run.
+4. Aprobar la prueba integral.
+5. Aprobar migraciones remotas.
+6. Aprobar variables y despliegue.
 7. Aprobar activación del número real.
 
-## Criterios de aceptación
+## 18. Criterios de aceptación
 
-- El cliente completa pedidos comunes escribiendo naturalmente.
-- Ningún producto, variación o precio es inventado.
-- Un reintento no duplica pedidos.
-- Un carrito sobrevive a dudas, desconexión y transferencia humana.
-- Los elementos pausados generan alternativas antes de confirmar.
-- El pedido confirmado sigue el flujo actual de Cocina e impresión.
-- El domicilio puede compartirse al repartidor con una ruta utilizable.
-- Las pruebas locales no afectan ventas, caja, inventario ni analíticas reales.
-- Ningún secreto o dato sensible aparece en código, Git, logs o Sentry.
+- Un cliente completa un pedido común escribiendo naturalmente.
+- El menú muestra hasta cinco productos y nunca inventa información.
+- Las bebidas se ofrecen una sola vez.
+- Un domicilio válido obtiene tarifa por ruta, rango y colonia.
+- Más de 15 km y domicilios ambiguos pasan a una persona.
+- Domicilio acepta únicamente efectivo o transferencia.
+- Un reintento no duplica mensajes ni pedidos.
+- El carrito sobrevive a dudas, fallos y transferencia humana.
+- Un producto oculto de WhatsApp no se ofrece y sigue disponible en el POS.
+- El inventario negativo no oculta productos.
+- El pedido confirmado utiliza Cocina, impresión, Estado, caja, inventario e Historial existentes.
+- Los cambios de cocina generan los mensajes aprobados.
+- No se envía un aviso automático de entregado.
+- El personal puede atender sin respuestas simultáneas del bot.
+- Las pruebas locales no afectan ventas reales.
+- Ningún secreto aparece en código, Git, logs o Sentry.
