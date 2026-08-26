@@ -30,3 +30,15 @@
 - El POST debe validarse mediante la firma basada en el secreto de la aplicación.
 - Durante el piloto se usa el número de prueba y una lista permitida de destinatarios.
 - Los tokens expuestos en capturas no se usarán.
+- Meta verificó correctamente el callback HTTPS temporal el 2026-08-25.
+- La pantalla de permisos posterior a la verificación no requiere permisos adicionales durante el piloto.
+- Para procesar POST reales se necesita el App Secret; para responder se requieren el token temporal y el Phone Number ID.
+
+## Persistencia preparada
+
+- La migración local añade clientes, domicilios, conversaciones y mensajes con RLS habilitado y acceso exclusivo de `service_role`.
+- La operación externa recalcula productos, variaciones, precios y total dentro de PostgreSQL.
+- El pedido externo reutiliza caja abierta, folio, inventario, KDS e impresión mediante los disparadores vigentes.
+- La migración aparece como la única pendiente en el `dry-run` remoto.
+- Este equipo no tiene Docker o Podman, así que aún falta ejecutar la migración contra un PostgreSQL desechable antes de autorizar el proyecto remoto.
+- Tailwind v4 escaneaba los junctions externos de `.opencode/skills` en desarrollo. El escaneo ahora está limitado a `src`, sin modificar esas skills.

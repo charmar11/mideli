@@ -9,8 +9,8 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 - [x] Fase 0: Aprobar diseño, revisar contexto y capturar línea base.
 - [x] Fase 1: Implementar contratos, catálogo conversacional y motor puro con pruebas.
 - [x] Fase 2: Implementar bandeja y simulador local sin escrituras.
-- [ ] Fase 3: Implementar webhook firmado y adaptador Meta para número de prueba.
-- [ ] Fase 4: Diseñar y validar migración transaccional, RLS y repositorios.
+- [x] Fase 3: Implementar webhook firmado y adaptador Meta para número de prueba.
+- [ ] Fase 4: Diseñar y validar migración transaccional, RLS y repositorios. Migración local creada, pendiente de validación PostgreSQL y aprobación remota.
 - [ ] Fase 5: Persistir conversaciones y habilitar atención humana.
 - [ ] Fase 6: Completar domicilio, estados, despacho y recuperación.
 - [ ] Fase 7: Verificar y preparar liberación por puertas independientes.
@@ -39,13 +39,18 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 | ESLint detectó una variable de prueba que nunca se reasigna | 1 | Cambiar `let` por `const` |
 | Primera prueba de webhook no encontró los módulos Meta | 1 | Fallo esperado de TDD; implementar firma, normalizador y proveedor |
 | Codex bloqueó generar y copiar un secreto al portapapeles | 1 | Crear un asistente local que el usuario ejecuta sin exponer el token al agente |
+| La comprobación HTTP del lanzador esperaba indefinidamente la página de Next | 1 | Sustituirla por una comprobación TCP del puerto |
+| Playwright no pudo abrir otro servidor mientras el webhook estaba activo | 1 | Reutilizar el servidor local mediante `PLAYWRIGHT_BASE_URL` |
+| Supabase local no pudo iniciar porque Docker o Podman no están instalados | 1 | Conservar la migración sin aplicar y exigir validación adicional antes del remoto |
+| Turbopack siguió junctions externos dentro de `.opencode/skills` | 1 | Limitar el escaneo de Tailwind a `src` con `source(none)` y `@source` |
 
 ## Puertas de seguridad
 
 - [ ] Token nuevo de Meta guardado fuera de Git y del chat.
 - [ ] `WHATSAPP_DRY_RUN=true` confirmado.
-- [ ] Webhook firmado y lista permitida de teléfonos.
-- [ ] Migración revisada con dry-run.
+- [x] Webhook firmado y lista permitida de teléfonos.
+- [x] Migración reconocida por `supabase db push --linked --dry-run`, sin aplicarse.
+- [ ] Migración validada por PostgreSQL real.
 - [ ] Aprobación antes de aplicar Supabase remoto.
 - [ ] Aprobación antes de desplegar Vercel.
 - [ ] Aprobación antes de registrar el número real.

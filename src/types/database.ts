@@ -260,6 +260,16 @@ export interface Order {
   table_zone_id?: string | null;
   table_zone_name?: string | null;
   customer_name?: string | null;
+  source_channel?: "pos" | "whatsapp";
+  channel_conversation_id?: string | null;
+  customer_id?: string | null;
+  customer_phone?: string | null;
+  delivery_address?: string | null;
+  delivery_reference?: string | null;
+  delivery_fee?: number;
+  external_order_id?: string | null;
+  payment_method_requested?: "efectivo" | "tarjeta" | "transferencia" | null;
+  requested_cash_tendered?: number | null;
   cash_received?: number | null;
   change_given?: number | null;
   created_by: string | null;
@@ -270,6 +280,57 @@ export interface Order {
   cancelled_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Customer {
+  id: string;
+  phone: string;
+  display_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerAddress {
+  id: string;
+  customer_id: string;
+  label: string;
+  address_text: string;
+  reference: string;
+  latitude: number | null;
+  longitude: number | null;
+  is_default: boolean;
+  last_used_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChannelConversation {
+  id: string;
+  provider: "meta";
+  external_contact_id: string;
+  customer_id: string;
+  status: "active" | "handoff" | "confirmed" | "cancelled" | "closed";
+  stage: string;
+  state: Record<string, unknown>;
+  assigned_to: string | null;
+  last_inbound_at: string | null;
+  last_outbound_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChannelMessage {
+  id: string;
+  conversation_id: string;
+  provider: "meta";
+  external_message_id: string;
+  direction: "inbound" | "outbound";
+  message_type: "text" | "location" | "unsupported" | "system";
+  body: string;
+  status: "received" | "processing" | "sent" | "delivered" | "read" | "failed" | "ignored";
+  metadata: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
 }
 
 export type OnboardingStatus =

@@ -27,7 +27,17 @@
 - Se instaló `cloudflared` 2026.8.2 desde el paquete oficial de Windows.
 - Se creó un asistente local que genera el token en el dispositivo, inicia Mideli, abre el túnel y muestra la URL sin exponer secretos al agente.
 - No se aplicaron migraciones ni se desplegó.
+- Meta verificó el callback temporal de desarrollo.
+- El lanzador local se corrigió para comprobar el puerto sin bloquearse en la respuesta de Next.
+- Se creó una migración local para clientes, domicilios, conversaciones, mensajes y pedidos externos idempotentes.
+- Se implementó un repositorio de servidor y un procesador que responde en `dry-run` sin crear pedidos.
+- El motor ahora responde saludos y muestra sugerencias sin contarlas como errores.
+- Se creó un asistente local para introducir App Secret, token temporal, Phone Number ID y teléfono permitido sin escribirlos en archivos ni mostrarlos en el chat.
+- TypeScript, ESLint, el build completo y 39 pruebas enfocadas pasan.
+- `supabase db push --linked --dry-run` identifica solamente la migración nueva y no aplicó cambios.
+- La validación local de PostgreSQL está pendiente porque Docker y Podman no están instalados.
+- Se corrigió el fallo de Turbopack en desarrollo causado por el escaneo de junctions externos.
 
 ## Próximo paso
 
-Implementar Fase 3: firma, adaptador Meta y webhook local sin escrituras.
+Completar la prueba real de mensajes Meta en `dry-run`, validar la migración en PostgreSQL y solicitar aprobación independiente antes de aplicarla al proyecto remoto.

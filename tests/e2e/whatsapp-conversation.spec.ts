@@ -99,6 +99,19 @@ test("normaliza texto y teléfonos mexicanos sin alterar el contenido útil", ()
   expect(normalizePhone("+52 (644) 279-3641")).toBe("526442793641");
 });
 
+test("recibe un saludo sin contarlo como producto desconocido", () => {
+  const result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Hola, buenas tardes",
+    catalog
+  );
+
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.ambiguityCount).toBe(0);
+  expect(result.reply).toContain("asistente de Mideli");
+  expect(result.reply).toContain("California");
+});
+
 test("agrega varios productos, cantidades y variaciones reales", () => {
   const result = handleConversationMessage(
     createConversation("5216440000000"),

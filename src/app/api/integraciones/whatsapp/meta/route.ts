@@ -1,4 +1,5 @@
 import { readWhatsappServerConfig } from "@/lib/whatsapp/config.server";
+import { processMetaWebhook } from "@/lib/whatsapp/meta-runtime.server";
 import { normalizeMetaWebhook } from "@/lib/whatsapp/meta-webhook";
 import { safeEqualSecret, verifyMetaSignature } from "@/lib/whatsapp/meta-signature";
 
@@ -57,11 +58,16 @@ export async function POST(request: Request) {
   const acceptedMessages = normalized.messages.filter((message) =>
     config.allowedPhones.has(message.phone)
   );
+  const processing = await processMetaWebhook(
+    { messages: acceptedMessages, statuses: normalized.statuses },
+    config
+  );
 
   return Response.json({
     ok: true,
     dryRun: config.dryRun,
     acceptedMessages: acceptedMessages.length,
     receivedStatuses: normalized.statuses.length,
+    processing,
   });
 }

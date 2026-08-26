@@ -171,6 +171,33 @@ function handleOrdering(
   catalog: ConversationCatalog
 ) {
   const text = normalizeText(message);
+  if (
+    state.cart.length === 0 &&
+    ["hola", "buenas", "buen dia", "buenas tardes", "buenas noches"].some(
+      (phrase) => text === phrase || includesPhrase(text, phrase)
+    )
+  ) {
+    const suggestions = catalog.items
+      .slice(0, 6)
+      .map((item) => item.name)
+      .join(", ");
+    return result(
+      { ...state, ambiguityCount: 0 },
+      `Hola, soy el asistente de Mideli. Puedes escribir tu pedido como normalmente lo dirías. Algunas opciones son: ${suggestions}.`
+    );
+  }
+
+  if (state.cart.length === 0 && includesPhrase(text, "menu")) {
+    const suggestions = catalog.items
+      .slice(0, 10)
+      .map((item) => item.name)
+      .join(", ");
+    return result(
+      { ...state, ambiguityCount: 0 },
+      `Estas son algunas opciones disponibles: ${suggestions}. Escribe cuáles deseas y cuántas.`
+    );
+  }
+
   if (isDoneIntent(text)) {
     if (state.cart.length === 0) {
       return result(state, "Tu pedido está vacío. Dime qué platillo deseas agregar.");
