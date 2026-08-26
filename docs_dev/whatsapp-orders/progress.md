@@ -79,3 +79,13 @@ Revisar y aprobar por separado la aplicación de las migraciones remotas. Despu�
 - La bandeja carga el historial automáticamente, se actualiza cada diez segundos y refresca el mensaje enviado desde Mideli.
 - `WHATSAPP_ORDER_CREATION_ENABLED` añade un bloqueo técnico independiente y desactivado por defecto.
 - Verificación completada: 90 pruebas de WhatsApp, ESLint, build de producción, detector Impeccable sin hallazgos y Supabase remoto sin migraciones pendientes.
+# Optimización de bandeja (2026-08-26)
+
+- Diseño aprobado para sustituir el refresco completo por sincronización ligera.
+- Se conservarán las tablas privadas y el control de acceso en servidor.
+- Se reactivará temporalmente el acceso visible a WhatsApp durante las pruebas.
+- La bandeja ahora sincroniza conversaciones y mensajes cada 2 segundos sin recargar el centro completo.
+- El sondeo se pausa cuando el documento no está visible y evita solicitudes superpuestas.
+- El historial baja automáticamente al último mensaje al abrir el chat o recibir contenido nuevo.
+- La carga inicial del control y del catálogo se ejecuta en paralelo.
+- Verificación: ESLint limpio, build correcto, detector Impeccable sin hallazgos y 90 pruebas de WhatsApp aprobadas.

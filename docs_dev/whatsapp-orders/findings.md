@@ -73,3 +73,9 @@
 - Routes `computeRoutes` requiere un POST y un `X-Goog-FieldMask`; para este caso basta `routes.distanceMeters`.
 - La clave se mantendrá exclusivamente en servidor, restringida a Geocoding y Routes y protegida con cuotas.
 - El cliente no podrá enviar llamadas arbitrarias a Google mediante Mideli.
+# Hallazgo de rendimiento de la bandeja (2026-08-26)
+
+- La pantalla recargaba todo el Server Component cada 10 segundos con `router.refresh()`.
+- Cada ciclo repetía consultas de configuración, horarios, tarifas, catálogo, diagnósticos y conversaciones; el chat seleccionado hacía una consulta adicional.
+- Las tablas del canal permanecen privadas para `service_role`, por lo que abrir Realtime al navegador ampliaría innecesariamente la superficie de datos.
+- La solución aprobada es una acción autenticada ligera con sondeo de 2 segundos solo en la bandeja visible.

@@ -9,6 +9,7 @@ import type {
   WhatsappAdminMessage,
   WhatsappAdminRole,
   WhatsappControlData,
+  WhatsappInboxSnapshot,
 } from "@/lib/whatsapp/admin-types";
 import { readWhatsappServerConfig } from "@/lib/whatsapp/config.server";
 import { geocodeDestination } from "@/lib/whatsapp/google-maps.server";
@@ -146,6 +147,90 @@ async function audit(
     });
 }
 
+async function loadWhatsappConversations(
+  admin: ReturnType<typeof createAdminClient>
+): Promise<WhatsappAdminConversation[]> {
+  const conversationResult = await admin
+    .from("channel_conversations")
+    .select(
+      "id,external_contact_id,status,stage,state,bot_enabled,assigned_to,handoff_reason,updated_at,last_inbound_at,last_outbound_at"
+    )
+    .eq("provider", "meta")
+    .order("updated_at", { ascending: false })
+    .limit(50);
+
+  let conversationRows = conversationResult.data ?? [];
+  if (conversationResult.error) {
+    const fallback = await admin
+      .from("channel_conversations")
+      .select(
+        "id,external_contact_id,status,stage,state,assigned_to,updated_at,last_inbound_at,last_outbound_at"
+      )
+      .eq("provider", "meta")
+      .order("updated_at", { ascending: false })
+      .limit(50);
+    if (fallback.error && !isMissingWhatsappSchema(fallback.error)) throw fallback.error;
+    conversationRows = (fallback.data ?? []).map((row) => ({
+      ...row,
+      bot_enabled: row.status !== "handoff",
+      handoff_reason: "",
+    }));
+  }
+
+  const conversationIds = conversationRows.map((row) => row.id);
+  const lastMessages = new Map<string, string>();
+  if (conversationIds.length > 0) {
+    const recent = await admin
+      .from("channel_messages")
+      .select("conversation_id,body,occurred_at")
+      .in("conversation_id", conversationIds)
+      .order("occurred_at", { ascending: false })
+      .limit(200);
+    if (recent.error) throw recent.error;
+    for (const item of recent.data ?? []) {
+      if (!lastMessages.has(item.conversation_id)) {
+        lastMessages.set(item.conversation_id, item.body ?? "");
+      }
+    }
+  }
+
+  return conversationRows.map((row) => ({
+    id: row.id,
+    phone: row.external_contact_id,
+    status: row.status,
+    stage: row.stage,
+    botEnabled: row.bot_enabled ?? row.status !== "handoff",
+    assignedTo: row.assigned_to,
+    handoffReason: row.handoff_reason ?? "",
+    updatedAt: row.updated_at,
+    lastInboundAt: row.last_inbound_at,
+    lastOutboundAt: row.last_outbound_at,
+    lastMessage: lastMessages.get(row.id) ?? "Sin mensajes visibles",
+    context: conversationContext(row.state),
+  }));
+}
+
+async function loadWhatsappMessages(
+  admin: ReturnType<typeof createAdminClient>,
+  conversationId: string | null
+): Promise<WhatsappAdminMessage[]> {
+  if (!conversationId) return [];
+  const { data, error } = await admin
+    .from("channel_messages")
+    .select("id,direction,body,status,occurred_at")
+    .eq("conversation_id", conversationId)
+    .order("occurred_at", { ascending: true })
+    .limit(200);
+  if (error) throw error;
+  return (data ?? []).map((item) => ({
+    id: item.id,
+    direction: item.direction as "inbound" | "outbound",
+    body: item.body,
+    status: item.status,
+    occurredAt: item.occurred_at,
+  }));
+}
+
 export async function getWhatsappControlDataAction(): Promise<
   WhatsappActionResult<WhatsappControlData>
 > {
@@ -156,15 +241,8 @@ export async function getWhatsappControlDataAction(): Promise<
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [conversationResult, menuResult, failedResult, exceptionResult, notificationFailureResult] = await Promise.all([
-      admin
-        .from("channel_conversations")
-        .select(
-          "id,external_contact_id,status,stage,state,bot_enabled,assigned_to,handoff_reason,updated_at,last_inbound_at,last_outbound_at"
-        )
-        .eq("provider", "meta")
-        .order("updated_at", { ascending: false })
-        .limit(50),
+    const [conversations, menuResult, failedResult, exceptionResult, notificationFailureResult] = await Promise.all([
+      loadWhatsappConversations(admin),
       admin
         .from("menu_items")
         .select("id,name,is_active,whatsapp_enabled,categories(name)")
@@ -188,40 +266,6 @@ export async function getWhatsappControlDataAction(): Promise<
         .limit(20),
     ]);
 
-    let conversationRows = conversationResult.data ?? [];
-    if (conversationResult.error) {
-      const fallback = await admin
-        .from("channel_conversations")
-        .select(
-          "id,external_contact_id,status,stage,state,assigned_to,updated_at,last_inbound_at,last_outbound_at"
-        )
-        .eq("provider", "meta")
-        .order("updated_at", { ascending: false })
-        .limit(50);
-      if (fallback.error && !isMissingWhatsappSchema(fallback.error)) throw fallback.error;
-      conversationRows = (fallback.data ?? []).map((row) => ({
-          ...row,
-          bot_enabled: row.status !== "handoff",
-          handoff_reason: "",
-        }));
-    }
-
-    const conversationIds = conversationRows.map((row) => row.id);
-    const lastMessages = new Map<string, string>();
-    if (conversationIds.length > 0) {
-      const recent = await admin
-        .from("channel_messages")
-        .select("conversation_id,body,occurred_at")
-        .in("conversation_id", conversationIds)
-        .order("occurred_at", { ascending: false })
-        .limit(200);
-      for (const item of recent.data ?? []) {
-        if (!lastMessages.has(item.conversation_id)) {
-          lastMessages.set(item.conversation_id, item.body ?? "");
-        }
-      }
-    }
-
     let catalogRows = menuResult.data ?? [];
     if (menuResult.error) {
       const fallback = await admin
@@ -234,21 +278,6 @@ export async function getWhatsappControlDataAction(): Promise<
         whatsapp_enabled: true,
       }));
     }
-
-    const conversations: WhatsappAdminConversation[] = conversationRows.map((row) => ({
-      id: row.id,
-      phone: row.external_contact_id,
-      status: row.status,
-      stage: row.stage,
-      botEnabled: row.bot_enabled ?? row.status !== "handoff",
-      assignedTo: row.assigned_to,
-      handoffReason: row.handoff_reason ?? "",
-      updatedAt: row.updated_at,
-      lastInboundAt: row.last_inbound_at,
-      lastOutboundAt: row.last_outbound_at,
-      lastMessage: lastMessages.get(row.id) ?? "Sin mensajes visibles",
-      context: conversationContext(row.state),
-    }));
 
     return {
       success: true,
@@ -629,22 +658,29 @@ export async function getWhatsappConversationMessagesAction(
 ): Promise<WhatsappActionResult<WhatsappAdminMessage[]>> {
   try {
     const { admin } = await requireChannelUser();
-    const { data, error } = await admin
-      .from("channel_messages")
-      .select("id,direction,body,status,occurred_at")
-      .eq("conversation_id", conversationId)
-      .order("occurred_at", { ascending: true })
-      .limit(200);
-    if (error) throw error;
+    return { success: true, data: await loadWhatsappMessages(admin, conversationId) };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
+export async function getWhatsappInboxSnapshotAction(
+  conversationId: string | null
+): Promise<WhatsappActionResult<WhatsappInboxSnapshot>> {
+  try {
+    const { admin } = await requireChannelUser();
+    const requestedConversationId = conversationId?.trim() || null;
+    const [conversations, messages] = await Promise.all([
+      loadWhatsappConversations(admin),
+      loadWhatsappMessages(admin, requestedConversationId),
+    ]);
     return {
       success: true,
-      data: (data ?? []).map((item) => ({
-        id: item.id,
-        direction: item.direction as "inbound" | "outbound",
-        body: item.body,
-        status: item.status,
-        occurredAt: item.occurred_at,
-      })),
+      data: {
+        conversations,
+        conversationId: requestedConversationId,
+        messages,
+      },
     };
   } catch (error) {
     return { success: false, error: message(error) };

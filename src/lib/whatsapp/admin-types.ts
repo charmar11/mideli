@@ -37,6 +37,12 @@ export type WhatsappAdminMessage = {
   occurredAt: string;
 };
 
+export type WhatsappInboxSnapshot = {
+  conversations: WhatsappAdminConversation[];
+  conversationId: string | null;
+  messages: WhatsappAdminMessage[];
+};
+
 export type WhatsappAdminCatalogItem = {
   id: string;
   name: string;

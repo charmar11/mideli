@@ -23,7 +23,7 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ import {
   closeWhatsappConversationAction,
   deleteWhatsappScheduleExceptionAction,
   getWhatsappConversationMessagesAction,
+  getWhatsappInboxSnapshotAction,
   locateWhatsappStoreAction,
   resumeWhatsappBotAction,
   sendWhatsappHumanReplyAction,
@@ -140,12 +141,6 @@ export function WhatsAppControlCenter({ data, menuItems, catalogError, simulator
   const [tab, setTab] = useState<ControlTab>("overview");
   const [isPending, startTransition] = useTransition();
   const admin = data.role === "owner" || data.role === "admin";
-
-  useEffect(() => {
-    if (tab !== "inbox") return;
-    const interval = window.setInterval(() => router.refresh(), 10_000);
-    return () => window.clearInterval(interval);
-  }, [router, tab]);
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -407,35 +402,119 @@ function Overview({ data, onOpen }: { data: WhatsappControlData; onOpen: (tab: C
   );
 }
 
-function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () => void }) {
+function sameConversations(
+  current: WhatsappAdminConversation[],
+  next: WhatsappAdminConversation[]
+) {
+  return current.length === next.length && current.every((item, index) => {
+    const candidate = next[index];
+    return candidate
+      && item.id === candidate.id
+      && item.updatedAt === candidate.updatedAt
+      && item.status === candidate.status
+      && item.botEnabled === candidate.botEnabled
+      && item.assignedTo === candidate.assignedTo
+      && item.lastMessage === candidate.lastMessage;
+  });
+}
+
+function sameMessages(current: WhatsappAdminMessage[], next: WhatsappAdminMessage[]) {
+  return current.length === next.length && current.every((item, index) => {
+    const candidate = next[index];
+    return candidate
+      && item.id === candidate.id
+      && item.status === candidate.status
+      && item.body === candidate.body
+      && item.occurredAt === candidate.occurredAt;
+  });
+}
+
+function Inbox({ data }: { data: WhatsappControlData; onRefresh: () => void }) {
+  const [conversations, setConversations] = useState(data.conversations);
   const [selectedId, setSelectedId] = useState<string | null>(data.conversations[0]?.id ?? null);
-  const selected = data.conversations.find((conversation) => conversation.id === selectedId)
-    ?? data.conversations[0]
+  const effectiveSelectedId = conversations.some((conversation) => conversation.id === selectedId)
+    ? selectedId
+    : conversations[0]?.id ?? null;
+  const selected = conversations.find((conversation) => conversation.id === effectiveSelectedId)
+    ?? conversations[0]
     ?? null;
   const [messages, setMessages] = useState<WhatsappAdminMessage[]>([]);
   const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(Boolean(selected));
+  const [loadedConversationId, setLoadedConversationId] = useState<string | null>(null);
+  const loading = Boolean(effectiveSelectedId && loadedConversationId !== effectiveSelectedId);
   const [pending, startTransition] = useTransition();
+  const selectedIdRef = useRef(effectiveSelectedId);
+  const syncingRef = useRef(false);
+  const messageViewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!selected) return;
+    selectedIdRef.current = effectiveSelectedId;
+  }, [effectiveSelectedId]);
+
+  useEffect(() => {
+    if (!effectiveSelectedId) return;
     let active = true;
-    void getWhatsappConversationMessagesAction(selected.id).then((result) => {
+    void getWhatsappConversationMessagesAction(effectiveSelectedId).then((result) => {
       if (!active) return;
-      setLoading(false);
       if (!result.success) {
         toast.error(result.error);
         return;
       }
-      setMessages(result.data);
+      setMessages((current) => sameMessages(current, result.data) ? current : result.data);
+      setLoadedConversationId(effectiveSelectedId);
     });
     return () => {
       active = false;
     };
-  }, [selected]);
+  }, [effectiveSelectedId]);
+
+  const syncInbox = useCallback(async () => {
+    if (syncingRef.current || document.visibilityState !== "visible") return;
+    syncingRef.current = true;
+    const requestedConversationId = selectedIdRef.current;
+    try {
+      const result = await getWhatsappInboxSnapshotAction(requestedConversationId);
+      if (!result.success) return;
+      setConversations((current) =>
+        sameConversations(current, result.data.conversations)
+          ? current
+          : result.data.conversations
+      );
+      if (result.data.conversationId === selectedIdRef.current) {
+        setMessages((current) =>
+          sameMessages(current, result.data.messages) ? current : result.data.messages
+        );
+        setLoadedConversationId(result.data.conversationId);
+      }
+    } catch {
+      // Conserva la última bandeja útil y vuelve a intentar en el siguiente ciclo.
+    } finally {
+      syncingRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void syncInbox(), 2_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void syncInbox();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [syncInbox]);
+
+  useEffect(() => {
+    const viewport = messageViewportRef.current;
+    if (!viewport || loading) return;
+    const frame = window.requestAnimationFrame(() => {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [effectiveSelectedId, loading, messages]);
 
   function openConversation(conversation: WhatsappAdminConversation) {
-    setLoading(true);
     setMessages([]);
     setSelectedId(conversation.id);
   }
@@ -448,7 +527,7 @@ function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () =
         return;
       }
       toast.success(success);
-      onRefresh();
+      void syncInbox();
     });
   }
 
@@ -465,7 +544,7 @@ function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () =
       const refreshed = await getWhatsappConversationMessagesAction(selected.id);
       if (refreshed.success) setMessages(refreshed.data);
       toast.success("Mensaje enviado");
-      onRefresh();
+      void syncInbox();
     });
   }
 
@@ -474,7 +553,7 @@ function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () =
       <Panel className="min-h-0 overflow-hidden">
         <div className="border-b border-border p-4"><h2 className="font-heading text-base font-bold">Conversaciones recientes</h2><p className="font-body text-xs text-muted-foreground">Toma el control cuando el bot necesite ayuda.</p></div>
         <div className="pos-scroll max-h-[650px] overflow-y-auto p-2">
-          {data.conversations.length === 0 ? <p className="p-8 text-center font-body text-sm text-muted-foreground">Todavía no hay conversaciones.</p> : data.conversations.map((conversation) => (
+          {conversations.length === 0 ? <p className="p-8 text-center font-body text-sm text-muted-foreground">Todavía no hay conversaciones.</p> : conversations.map((conversation) => (
             <button key={conversation.id} type="button" onClick={() => openConversation(conversation)} className={`mb-1 w-full rounded-xl p-3 text-left transition-colors ${selected?.id === conversation.id ? "bg-brand/15 ring-1 ring-brand/30" : "hover:bg-background"}`}>
               <div className="flex items-center justify-between gap-2"><strong className="font-heading text-sm">{formatPhone(conversation.phone)}</strong><span className={`rounded-full px-2 py-0.5 font-heading text-[10px] font-bold ${conversation.status === "handoff" ? "bg-warning/15 text-warning" : conversation.status === "active" ? "bg-success/15 text-success" : "bg-surface-raised text-muted-foreground"}`}>{conversation.status === "handoff" ? "ATENCIÓN" : conversation.status.toUpperCase()}</span></div>
               <p className="mt-1 line-clamp-2 font-body text-xs text-muted-foreground">{conversation.lastMessage}</p>
@@ -514,7 +593,7 @@ function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () =
                 <p className="mt-1 font-body text-xs">{selected.context.address || "Domicilio pendiente"}{selected.context.addressReference ? ` · ${selected.context.addressReference}` : ""}{selected.context.paymentMethod ? ` · ${selected.context.paymentMethod}` : ""}</p>
               </div>
             </div>
-            <div className="pos-scroll flex-1 space-y-3 overflow-y-auto bg-background/55 p-4">
+            <div ref={messageViewportRef} className="pos-scroll flex-1 space-y-3 overflow-y-auto bg-background/55 p-4">
               {loading ? <p className="text-center font-body text-sm text-muted-foreground">Cargando mensajes...</p> : messages.length === 0 ? <p className="text-center font-body text-sm text-muted-foreground">Esta conversación todavía no tiene mensajes visibles.</p> : messages.map((item) => (
                 <div key={item.id} className={`flex ${item.direction === "outbound" ? "justify-end" : "justify-start"}`}><div className={`max-w-[84%] rounded-2xl px-4 py-3 ${item.direction === "outbound" ? "rounded-br-md bg-brand text-white" : "rounded-bl-md bg-surface text-foreground ring-1 ring-border"}`}><p className="whitespace-pre-wrap font-body text-sm">{item.body || "Contenido eliminado por retención"}</p><p className={`mt-1 font-data text-[10px] ${item.direction === "outbound" ? "text-white/65" : "text-muted-foreground"}`}>{item.status} · {formatDate(item.occurredAt)}</p></div></div>
               ))}

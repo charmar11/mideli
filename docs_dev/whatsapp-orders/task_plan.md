@@ -17,6 +17,7 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 - [x] Fase 8: Completar pruebas, lint, build y dry-run de migraciones.
 - [x] Fase 9: Preparar la prueba integral local sin desplegar ni aplicar cambios remotos.
 - [x] Fase 10: Persistir el piloto en Supabase, mantener bloqueada la creación real de pedidos y mejorar voz, navegación e inbox humano.
+- [x] Fase 11: Optimizar la bandeja con sincronización ligera, desplazamiento automático y acceso temporal visible.
 
 ## Decisiones
 
@@ -37,6 +38,8 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 | Persistir conversaciones durante el piloto | Vercel no garantiza memoria entre mensajes y el equipo necesita historial y respuesta manual | 2026-08-26 |
 | Separar persistencia de creación de pedidos | Permite probar conversaciones reales sin afectar cocina, caja, inventario o impresión | 2026-08-26 |
 | Voz breve y cercana de Mideli con emojis moderados | Hace el flujo más natural y escaneable sin fingir capacidades humanas | 2026-08-26 |
+| Sincronización ligera cada 2 segundos | Evita recargar catálogo, horarios y diagnósticos mientras mantiene el chat actualizado | 2026-08-26 |
+| Mantener tablas del canal privadas | La bandeja seguirá usando acciones autenticadas del servidor sin ampliar RLS | 2026-08-26 |
 
 ## Errores encontrados
 
