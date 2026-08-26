@@ -232,7 +232,18 @@ export async function quoteWhatsappDelivery(input: {
     settings.store_latitude === null ||
     settings.store_longitude === null
   ) {
-    return { status: "needs_handoff", reason: "delivery_quotes_disabled" };
+    const reason = !settings.delivery_quotes_enabled
+      ? "delivery_quotes_disabled"
+      : "store_origin_not_configured";
+    if (input.conversationId && input.config.persisted) {
+      await createAdminClient().from("whatsapp_delivery_quotes").insert({
+        conversation_id: input.conversationId,
+        input_address: input.address,
+        status: "failed",
+        failure_reason: reason,
+      });
+    }
+    return { status: "needs_handoff", reason };
   }
 
   try {

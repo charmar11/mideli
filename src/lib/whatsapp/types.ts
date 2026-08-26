@@ -83,6 +83,7 @@ export type ConversationState = {
   address: string | null;
   addressReference: string;
   deliveryQuote: ConversationDeliveryQuote | null;
+  deliveryQuoteAttempts: number;
   savedAddress: ConversationSavedAddress | null;
   payment: ConversationPayment | null;
   beveragesOffered: boolean;

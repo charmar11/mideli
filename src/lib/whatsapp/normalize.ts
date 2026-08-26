@@ -36,6 +36,10 @@ export function phoneAliases(value: string) {
 }
 
 export function quantityFromText(value: string) {
+  return explicitQuantityFromText(value) ?? 1;
+}
+
+export function explicitQuantityFromText(value: string) {
   const normalized = normalizeText(value);
   const tokens = normalized.split(" ").filter(Boolean);
   for (let index = tokens.length - 1; index >= 0; index -= 1) {
@@ -43,7 +47,7 @@ export function quantityFromText(value: string) {
     if (/^\d+$/.test(token)) return Math.max(1, Number(token));
     if (QUANTITY_WORDS[token]) return QUANTITY_WORDS[token];
   }
-  return 1;
+  return null;
 }
 
 export function includesPhrase(text: string, phrase: string) {

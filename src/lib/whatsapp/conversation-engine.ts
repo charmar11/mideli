@@ -4,6 +4,7 @@ import {
   missingRequiredGroups,
 } from "./catalog";
 import {
+  explicitQuantityFromText,
   includesPhrase,
   normalizePhone,
   normalizeText,
@@ -11,11 +12,13 @@ import {
 } from "./normalize";
 import type {
   ConversationCatalog,
+  ConversationCatalogItem,
   ConversationCartReconciliation,
   ConversationCartLine,
   ConversationDeliveryQuote,
   ConversationModifier,
   ConversationResult,
+  ConversationServiceType,
   ConversationState,
 } from "./types";
 
@@ -36,6 +39,51 @@ function categoryEmoji(name: string) {
   return CATEGORY_EMOJIS.find((entry) =>
     entry.terms.some((term) => includesPhrase(text, term) || text.includes(term))
   )?.emoji ?? "🍽️";
+}
+
+function serviceTypeFromText(text: string): ConversationServiceType | null {
+  if (["domicilio", "entrega", "envio"].some((word) => includesPhrase(text, word))) {
+    return "domicilio";
+  }
+  if (["recoger", "para llevar", "paso por"].some((phrase) => includesPhrase(text, phrase))) {
+    return "para_llevar";
+  }
+  return null;
+}
+
+function withServiceType(
+  state: ConversationState,
+  serviceType: ConversationServiceType
+) {
+  if (serviceType === "domicilio") {
+    return {
+      ...state,
+      serviceType,
+      deliveryQuote: null,
+      total: itemsSubtotal(state.cart),
+    };
+  }
+  return {
+    ...state,
+    serviceType,
+    address: null,
+    addressReference: "",
+    deliveryQuote: null,
+    total: itemsSubtotal(state.cart),
+  };
+}
+
+function rememberServiceType(
+  conversationResult: ConversationResult,
+  serviceType: ConversationServiceType | null
+) {
+  if (!serviceType) return conversationResult;
+  const label = serviceType === "domicilio" ? "a domicilio" : "para recoger";
+  return {
+    ...conversationResult,
+    state: withServiceType(conversationResult.state, serviceType),
+    reply: `${conversationResult.reply}\n\n📍 Anotado: será *${label}*.`,
+  };
 }
 
 function categoryAliases(name: string) {
@@ -67,6 +115,49 @@ function orderTotal(
   quote: ConversationDeliveryQuote | null
 ) {
   return itemsSubtotal(cart) + (quote?.totalFee ?? 0);
+}
+
+function groupedCartLines(cart: ConversationCartLine[]) {
+  const grouped = new Map<string, ConversationCartLine>();
+  for (const line of cart) {
+    const modifierKey = line.selectedModifiers
+      .map((modifier) => `${modifier.groupId}:${modifier.optionId}`)
+      .sort()
+      .join("|");
+    const key = [line.menuItemId, line.unitPrice, modifierKey, line.notes].join("::");
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.quantity += line.quantity;
+    } else {
+      grouped.set(key, { ...line, selectedModifiers: [...line.selectedModifiers] });
+    }
+  }
+  return [...grouped.values()];
+}
+
+function lineDescription(line: ConversationCartLine) {
+  const options = line.selectedModifiers.map((modifier) => modifier.optionName);
+  const configuration = options.length === 0
+    ? ""
+    : options.length === 1
+      ? ` de ${options[0]}`
+      : ` (${options.join(", ")})`;
+  return `${line.quantity} ${line.name}${configuration}`;
+}
+
+function cartBreakdown(cart: ConversationCartLine[]) {
+  return groupedCartLines(cart)
+    .map((line) => `• ${lineDescription(line)}`)
+    .join("\n");
+}
+
+function cartUpdatedReply(state: ConversationState, intro = "✨ *Pedido actualizado*") {
+  const service = state.serviceType === "domicilio"
+    ? "\n📍 A domicilio"
+    : state.serviceType === "para_llevar"
+      ? "\n🛍️ Para recoger"
+      : "";
+  return `${intro}\n\n${cartBreakdown(state.cart)}\n\n🧾 Total actual: *$${state.total}*${service}\n\n¿Así está bien? 😊`;
 }
 
 export function withCart(state: ConversationState, cart: ConversationCartLine[]) {
@@ -126,9 +217,53 @@ export function withDeliveryQuote(
     ...state,
     address: deliveryQuote.formattedAddress || state.address,
     deliveryQuote,
+    deliveryQuoteAttempts: 0,
     total: orderTotal(state.cart, deliveryQuote),
     stage: "awaiting_payment",
   };
+}
+
+export function recoverDeliveryQuote(
+  state: ConversationState,
+  reason: string
+): ConversationResult {
+  const attempts = state.deliveryQuoteAttempts + 1;
+  if (reason === "outside_coverage" || reason === "rate_not_found") {
+    return result(
+      { ...state, stage: "handoff", deliveryQuoteAttempts: attempts },
+      "📍 Ese domicilio necesita una revisión especial de cobertura. Ya lo pasé al equipo para ayudarte con la mejor opción 😊",
+      "handoff"
+    );
+  }
+  if (
+    reason === "delivery_quotes_disabled" ||
+    reason === "store_origin_not_configured" ||
+    reason === "google_maps_not_configured"
+  ) {
+    return result(
+      { ...state, stage: "handoff", deliveryQuoteAttempts: attempts },
+      "📍 El equipo confirmará personalmente el costo de entrega para este domicilio. Ya les dejé todos tus datos 😊",
+      "handoff"
+    );
+  }
+  if (attempts >= 2) {
+    return result(
+      { ...state, stage: "handoff", deliveryQuoteAttempts: attempts },
+      "No quiero hacerte perder tiempo 😊 Ya compartí tu dirección con el equipo para que continúe contigo.",
+      "handoff"
+    );
+  }
+  return result(
+    {
+      ...state,
+      stage: "awaiting_address",
+      address: null,
+      addressReference: "",
+      deliveryQuote: null,
+      deliveryQuoteAttempts: attempts,
+    },
+    "📍 No pude ubicar esa dirección con suficiente precisión. Envíamela con calle, número y colonia, o comparte tu ubicación desde WhatsApp 😊"
+  );
 }
 
 function result(
@@ -201,7 +336,7 @@ function modifierQuestion(line: ConversationCartLine, catalog: ConversationCatal
     })
     .join("\n");
   const multiple = group.selection_mode === "multiple" ? " Puedes elegir varias." : "";
-  return `${categoryEmoji(item?.categoryName ?? "")} *${line.name}*\nElige *${group.name}*.${multiple}\n\n${options}`;
+  return `${categoryEmoji(item?.categoryName ?? "")} *Vamos a personalizar tu ${line.name}*\n\nElige *${group.name}*.${multiple}\n\n${options}`;
 }
 
 function mergeModifiers(
@@ -231,20 +366,192 @@ function mergeModifiers(
   return next;
 }
 
+type CatalogModifierGroup = ConversationCatalogItem["modifiers"][number];
+
+function phraseIndex(text: string, phrase: string) {
+  const wrapped = ` ${text} `;
+  const index = wrapped.indexOf(` ${phrase} `);
+  return index < 0 ? -1 : Math.max(0, index - 1);
+}
+
+function modifierFromOption(
+  group: CatalogModifierGroup,
+  groupIndex: number,
+  option: CatalogModifierGroup["options"][number],
+  optionIndex: number
+): ConversationModifier {
+  return {
+    groupId: group.id ?? `group-${groupIndex}`,
+    groupName: group.name,
+    optionId: option.id ?? `option-${groupIndex}-${optionIndex}`,
+    optionName: option.name,
+    price: Number(option.price),
+  };
+}
+
+function distributePendingModifiers(
+  state: ConversationState,
+  line: ConversationCartLine,
+  catalogItem: ConversationCatalogItem,
+  message: string,
+  catalog: ConversationCatalog
+) {
+  const missing = missingRequiredGroups(catalogItem, line.selectedModifiers)[0];
+  if (!missing || (missing.selection_mode ?? "single") !== "single") return null;
+  const groupIndex = catalogItem.modifiers.indexOf(missing);
+  const groupId = missing.id ?? `group-${groupIndex}`;
+  const text = normalizeText(message);
+  const matches = missing.options
+    .map((option, optionIndex) => ({
+      option,
+      optionIndex,
+      normalizedName: normalizeText(option.name),
+      index: phraseIndex(text, normalizeText(option.name)),
+    }))
+    .filter((match) => match.index >= 0)
+    .sort((left, right) => left.index - right.index);
+  if (matches.length === 0) return null;
+
+  const eligible = state.cart.filter((candidate) => {
+    if (candidate.menuItemId !== line.menuItemId) return false;
+    const item = itemForLine(candidate, catalog);
+    return Boolean(
+      item && missingRequiredGroups(item, candidate.selectedModifiers).some((group) =>
+        (group.id ?? `group-${item.modifiers.indexOf(group)}`) === groupId
+      )
+    );
+  });
+  if (eligible.length < 2) return null;
+
+  if (
+    matches.length === 1 &&
+    /\b(ambos|ambas|todas|todos)\b/.test(text)
+  ) {
+    const match = matches[0];
+    const modifier = modifierFromOption(
+      missing,
+      groupIndex,
+      match.option,
+      match.optionIndex
+    );
+    return state.cart.map((candidate) =>
+      eligible.some((target) => target.id === candidate.id)
+        ? {
+            ...candidate,
+            selectedModifiers: mergeModifiers(
+              candidate.selectedModifiers,
+              [modifier],
+              catalog,
+              candidate.menuItemId
+            ),
+          }
+        : candidate
+    );
+  }
+
+  if (matches.length < 2) return null;
+
+  let cursor = 0;
+  let remaining = eligible.length;
+  let previousEnd = 0;
+  const assignments: Array<{ modifier: ConversationModifier; quantity: number }> = [];
+
+  for (const [matchIndex, match] of matches.entries()) {
+    const context = text.slice(previousEnd, match.index);
+    const remainingIntent = /\b(otro|otros|otra|otras|restante|restantes)\b/.test(context);
+    const allIntent = /\b(ambos|todas|todos)\b/.test(context);
+    const explicit = explicitQuantityFromText(context);
+    const quantity = remainingIntent || allIntent
+      ? remaining
+      : Math.min(remaining, explicit ?? (matchIndex === matches.length - 1 ? remaining : 1));
+    if (quantity > 0) {
+      assignments.push({
+        modifier: modifierFromOption(missing, groupIndex, match.option, match.optionIndex),
+        quantity,
+      });
+      remaining -= quantity;
+    }
+    previousEnd = match.index + match.normalizedName.length;
+  }
+
+  if (assignments.length < 2 || remaining > 0) return null;
+  const updated = new Map<string, ConversationModifier>();
+  for (const assignment of assignments) {
+    for (let count = 0; count < assignment.quantity; count += 1) {
+      const target = eligible[cursor];
+      if (!target) break;
+      updated.set(target.id, assignment.modifier);
+      cursor += 1;
+    }
+  }
+  if (updated.size !== eligible.length) return null;
+
+  return state.cart.map((candidate) => {
+    const modifier = updated.get(candidate.id);
+    return modifier
+      ? {
+          ...candidate,
+          selectedModifiers: mergeModifiers(
+            candidate.selectedModifiers,
+            [modifier],
+            catalog,
+            candidate.menuItemId
+          ),
+        }
+      : candidate;
+  });
+}
+
+function finishModifierSelection(
+  state: ConversationState,
+  cart: ConversationCartLine[],
+  line: ConversationCartLine,
+  catalog: ConversationCatalog
+) {
+  const nextState = withCart(state, cart);
+  const incomplete = firstIncompleteLine(cart, catalog);
+  if (incomplete) {
+    return result(
+      { ...nextState, pendingLineId: incomplete.id },
+      modifierQuestion(incomplete, catalog)
+    );
+  }
+
+  if (nextState.pendingBrowseCategoryId) {
+    const browsingState: ConversationState = {
+      ...nextState,
+      stage: "browsing_catalog",
+      pendingLineId: null,
+      selectedCategoryId: nextState.pendingBrowseCategoryId,
+      pendingBrowseCategoryId: null,
+      catalogPage: 0,
+      ambiguityCount: 0,
+    };
+    return result(
+      browsingState,
+      `${cartUpdatedReply(browsingState, "✅ *Opciones guardadas*")}\n\n${productMessage(browsingState, catalog)}`
+    );
+  }
+
+  const completedState: ConversationState = {
+    ...nextState,
+    stage: "ordering",
+    pendingLineId: null,
+    pendingBrowseCategoryId: null,
+    ambiguityCount: 0,
+  };
+  return result(completedState, cartUpdatedReply(completedState, "✅ *Opciones guardadas*"));
+}
+
 function cartSummary(state: ConversationState) {
-  const lines = state.cart
-    .map((line) => {
-      const options = line.selectedModifiers.map((modifier) => modifier.optionName).join(", ");
-      return `• ${line.quantity}x ${line.name}${options ? ` (${options})` : ""}`;
-    })
-    .join("\n");
+  const lines = cartBreakdown(state.cart);
   const subtotal = itemsSubtotal(state.cart);
   const fulfillment =
     state.serviceType === "domicilio"
       ? `\n📍 ${state.address}${state.addressReference ? `, ${state.addressReference}` : ""}\nEnvío: $${state.deliveryQuote?.totalFee ?? 0}`
       : "\nPara recoger en Mideli";
   const payment = state.payment ? `\nPago: ${state.payment.method}` : "";
-  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido?`;
+  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido? 😊`;
 }
 
 export function createConversation(phone: string): ConversationState {
@@ -258,6 +565,7 @@ export function createConversation(phone: string): ConversationState {
     address: null,
     addressReference: "",
     deliveryQuote: null,
+    deliveryQuoteAttempts: 0,
     savedAddress: null,
     payment: null,
     beveragesOffered: false,
@@ -280,6 +588,7 @@ export function hydrateConversation(
     cart: Array.isArray(value.cart) ? value.cart : [],
     addressReference: value.addressReference ?? "",
     deliveryQuote: value.deliveryQuote ?? null,
+    deliveryQuoteAttempts: value.deliveryQuoteAttempts ?? 0,
     savedAddress: value.savedAddress ?? null,
     beveragesOffered: value.beveragesOffered ?? false,
     catalogPage: value.catalogPage ?? 0,
@@ -381,6 +690,17 @@ function handlePendingModifiers(
     return result({ ...state, stage: "ordering", pendingLineId: null }, "¿Qué más deseas agregar?");
   }
 
+  const distributed = distributePendingModifiers(
+    state,
+    line,
+    catalogItem,
+    message,
+    catalog
+  );
+  if (distributed) {
+    return finishModifierSelection(state, distributed, line, catalog);
+  }
+
   let additions = matchItemModifiers(catalogItem, message);
   const numeric = Number.parseInt(normalizeText(message), 10);
   if (additions.length === 0 && Number.isInteger(numeric) && numeric > 0) {
@@ -411,47 +731,7 @@ function handlePendingModifiers(
   const cart = state.cart.map((item) =>
     item.id === line.id ? { ...item, selectedModifiers } : item
   );
-  const nextState = withCart(state, cart);
-  const updatedLine = cart.find((item) => item.id === line.id)!;
-
-  if (missingRequiredGroups(catalogItem, selectedModifiers).length > 0) {
-    return result(nextState, modifierQuestion(updatedLine, catalog));
-  }
-
-  const incomplete = firstIncompleteLine(cart, catalog);
-  if (incomplete) {
-    return result(
-      { ...nextState, pendingLineId: incomplete.id },
-      modifierQuestion(incomplete, catalog)
-    );
-  }
-
-  if (nextState.pendingBrowseCategoryId) {
-    const browsingState: ConversationState = {
-      ...nextState,
-      stage: "browsing_catalog",
-      pendingLineId: null,
-      selectedCategoryId: nextState.pendingBrowseCategoryId,
-      pendingBrowseCategoryId: null,
-      catalogPage: 0,
-      ambiguityCount: 0,
-    };
-    return result(
-      browsingState,
-      `✅ Listo, agregué las opciones de *${line.name}*.\n\n${productMessage(browsingState, catalog)}`
-    );
-  }
-
-  return result(
-    {
-      ...nextState,
-      stage: "ordering",
-      pendingLineId: null,
-      pendingBrowseCategoryId: null,
-      ambiguityCount: 0,
-    },
-    `✅ Listo, agregué las opciones de *${line.name}*.\n🧾 Total actual: *$${nextState.total}*\n\n¿Deseas algo más?`
-  );
+  return finishModifierSelection(state, cart, line, catalog);
 }
 
 function addMatches(
@@ -460,21 +740,27 @@ function addMatches(
   catalog: ConversationCatalog
 ) {
   let nextLineNumber = state.nextLineNumber;
-  const additions = matches.map((match) => {
+  const additions: ConversationCartLine[] = [];
+  for (const match of matches) {
     const selectedModifiers = matchItemModifiers(match.item, match.segment);
-    const line: ConversationCartLine = {
-      id: `line-${nextLineNumber}`,
-      menuItemId: match.item.id,
-      categoryId: match.item.categoryId,
-      name: match.item.name,
-      quantity: match.quantity,
-      unitPrice: match.item.price,
-      selectedModifiers,
-      notes: "",
-    };
-    nextLineNumber += 1;
-    return line;
-  });
+    const requiresUnitSelection = match.item.modifiers.some(
+      (group) => group.required && (group.selection_mode ?? "single") === "single"
+    );
+    const lineCount = requiresUnitSelection ? match.quantity : 1;
+    for (let index = 0; index < lineCount; index += 1) {
+      additions.push({
+        id: `line-${nextLineNumber}`,
+        menuItemId: match.item.id,
+        categoryId: match.item.categoryId,
+        name: match.item.name,
+        quantity: requiresUnitSelection ? 1 : match.quantity,
+        unitPrice: match.item.price,
+        selectedModifiers: [...selectedModifiers],
+        notes: "",
+      });
+      nextLineNumber += 1;
+    }
+  }
   const nextState = withCart(state, [...state.cart, ...additions]);
   const incomplete = firstIncompleteLine(nextState.cart, catalog);
 
@@ -493,7 +779,10 @@ function addMatches(
 
   return result(
     { ...nextState, stage: "ordering", ambiguityCount: 0, nextLineNumber },
-    `✅ Agregué ${additions.map((line) => `*${line.quantity}x ${line.name}*`).join(", ")}.\n🧾 Total actual: *$${nextState.total}*\n\n¿Deseas algo más?`
+    cartUpdatedReply(
+      { ...nextState, stage: "ordering", ambiguityCount: 0, nextLineNumber },
+      "✅😋 *¡Buena elección! Ya lo agregué*"
+    )
   );
 }
 
@@ -522,12 +811,169 @@ function addMatchesAndMaybeBrowse(
   return result(browsingState, `${added.reply}\n\n${productMessage(browsingState, catalog)}`);
 }
 
+function productQuantity(cart: ConversationCartLine[], menuItemId: string) {
+  return cart
+    .filter((line) => line.menuItemId === menuItemId)
+    .reduce((total, line) => total + line.quantity, 0);
+}
+
+function removeProductQuantity(
+  cart: ConversationCartLine[],
+  menuItemId: string,
+  requestedQuantity: number | null
+) {
+  let remaining = requestedQuantity ?? Number.POSITIVE_INFINITY;
+  return cart.flatMap((line) => {
+    if (line.menuItemId !== menuItemId || remaining <= 0) return [line];
+    if (remaining >= line.quantity) {
+      remaining -= line.quantity;
+      return [];
+    }
+    const next = { ...line, quantity: line.quantity - remaining };
+    remaining = 0;
+    return [next];
+  });
+}
+
+function replacementParts(text: string) {
+  const delimiter = " por ";
+  const index = text.indexOf(delimiter);
+  if (index < 0) return null;
+  return {
+    source: text.slice(0, index).trim(),
+    target: text.slice(index + delimiter.length).trim(),
+  };
+}
+
+function handleProductReplacement(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+): ConversationResult | null {
+  const text = normalizeText(message);
+  if (!/^(cambia|cambiar|cambiame|reemplaza|reemplazar)\b/.test(text)) return null;
+  const parts = replacementParts(text);
+  if (!parts) return null;
+  const source = findCatalogProducts(parts.source, catalog)[0];
+  const target = findCatalogProducts(parts.target, catalog)[0];
+  if (!source || !target || source.item.id === target.item.id) return null;
+
+  const available = productQuantity(state.cart, source.item.id);
+  if (available === 0) {
+    return result(state, `No encontré ${source.item.name} en tu pedido actual.`);
+  }
+  const explicit = explicitQuantityFromText(parts.source);
+  if (explicit === null && available > 1) {
+    return result(
+      state,
+      `Tienes ${available} ${source.item.name}. ¿Cuántos deseas cambiar por ${target.item.name}?`
+    );
+  }
+  const quantity = Math.min(available, explicit ?? 1);
+  const withoutSource = withCart(
+    state,
+    removeProductQuantity(state.cart, source.item.id, quantity)
+  );
+  const added = addMatches(
+    withoutSource,
+    [{ ...target, quantity, segment: parts.target }],
+    catalog
+  );
+  if (added.state.stage === "awaiting_modifiers") {
+    return {
+      ...added,
+      reply: `🔄 Cambiaré ${quantity} ${source.item.name} por ${quantity} ${target.item.name}.\n\n${added.reply}`,
+    };
+  }
+  return result(
+    added.state,
+    cartUpdatedReply(added.state, "🔄 *Cambio realizado*")
+  );
+}
+
+function explodeConfiguredLines(state: ConversationState) {
+  let nextLineNumber = state.nextLineNumber;
+  const cart = state.cart.flatMap((line) => {
+    if (line.quantity <= 1 || line.selectedModifiers.length === 0) return [line];
+    return Array.from({ length: line.quantity }, (_, index) => {
+      if (index === 0) return { ...line, quantity: 1 };
+      const copy = {
+        ...line,
+        id: `line-${nextLineNumber}`,
+        quantity: 1,
+        selectedModifiers: [...line.selectedModifiers],
+      };
+      nextLineNumber += 1;
+      return copy;
+    });
+  });
+  return { ...withCart(state, cart), nextLineNumber };
+}
+
+function handleModifierReplacement(
+  rawState: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+): ConversationResult | null {
+  const text = normalizeText(message);
+  if (!/^(cambia|cambiar|cambiame|reemplaza|reemplazar)\b/.test(text)) return null;
+  const parts = replacementParts(text);
+  if (!parts) return null;
+  const state = explodeConfiguredLines(rawState);
+  const eligible = state.cart.filter((line) =>
+    line.selectedModifiers.some((modifier) =>
+      includesPhrase(parts.source, normalizeText(modifier.optionName))
+    )
+  );
+  if (eligible.length === 0) return null;
+  const sourceModifier = eligible[0].selectedModifiers.find((modifier) =>
+    includesPhrase(parts.source, normalizeText(modifier.optionName))
+  );
+  const item = itemForLine(eligible[0], catalog);
+  const group = item?.modifiers.find((candidate, groupIndex) =>
+    (candidate.id ?? `group-${groupIndex}`) === sourceModifier?.groupId
+  );
+  const targetOptionIndex = group?.options.findIndex((option) =>
+    includesPhrase(parts.target, normalizeText(option.name))
+  ) ?? -1;
+  const targetOption = targetOptionIndex >= 0 ? group?.options[targetOptionIndex] : null;
+  if (!sourceModifier || !item || !group || !targetOption) return null;
+
+  const explicit = explicitQuantityFromText(parts.source);
+  if (explicit === null && eligible.length > 1) {
+    return result(
+      rawState,
+      `Tienes ${eligible.length} con ${sourceModifier.optionName}. ¿Cuántos cambio a ${targetOption.name}?`
+    );
+  }
+  const quantity = Math.min(eligible.length, explicit ?? 1);
+  const targetIds = new Set(eligible.slice(0, quantity).map((line) => line.id));
+  const groupIndex = item.modifiers.indexOf(group);
+  const replacement = modifierFromOption(group, groupIndex, targetOption, targetOptionIndex);
+  const cart = state.cart.map((line) =>
+    targetIds.has(line.id)
+      ? {
+          ...line,
+          selectedModifiers: mergeModifiers(
+            line.selectedModifiers,
+            [replacement],
+            catalog,
+            line.menuItemId
+          ),
+        }
+      : line
+  );
+  const nextState = withCart({ ...state, ambiguityCount: 0 }, cart);
+  return result(nextState, cartUpdatedReply(nextState, "🔄 *Cambio realizado*"));
+}
+
 function handleBrowsingCatalog(
   state: ConversationState,
   message: string,
   catalog: ConversationCatalog
 ): ConversationResult {
   const text = normalizeText(message);
+  const requestedService = serviceTypeFromText(text);
   if (includesPhrase(text, "volver")) {
     const next = { ...state, selectedCategoryId: null, catalogPage: 0 };
     return result(next, categoryMessage(catalog, 0));
@@ -547,11 +993,14 @@ function handleBrowsingCatalog(
     directMatches.length > 0
   );
   if (directMatches.length > 0) {
-    return addMatchesAndMaybeBrowse(
-      state,
-      directMatches,
-      requestedCategory?.id ?? null,
-      catalog
+    return rememberServiceType(
+      addMatchesAndMaybeBrowse(
+        state,
+        directMatches,
+        requestedCategory?.id ?? null,
+        catalog
+      ),
+      requestedService
     );
   }
 
@@ -592,12 +1041,38 @@ function handleBrowsingCatalog(
   );
 }
 
+function deliveryAddressPrompt(state: ConversationState) {
+  return state.savedAddress
+    ? `📍 ¿Usamos tu domicilio anterior: ${state.savedAddress.address}? Responde sí o escribe otro domicilio.`
+    : "📍 Compárteme la dirección completa o tu ubicación desde WhatsApp para calcular el envío 😊";
+}
+
+function continueAfterBeverages(state: ConversationState) {
+  if (state.serviceType === "domicilio") {
+    return result(
+      { ...state, stage: "awaiting_address", deliveryQuote: null },
+      deliveryAddressPrompt(state)
+    );
+  }
+  if (state.serviceType === "para_llevar") {
+    return result(
+      { ...state, stage: "awaiting_payment" },
+      `🛍️ Perfecto, será para recoger. ${paymentQuestion(state)}`
+    );
+  }
+  return result(
+    { ...state, stage: "awaiting_fulfillment" },
+    "📍 ¿Tu pedido será para recoger o a domicilio?"
+  );
+}
+
 function handleOrdering(
   state: ConversationState,
   message: string,
   catalog: ConversationCatalog
 ) {
   const text = normalizeText(message);
+  const requestedService = serviceTypeFromText(text);
   if (
     state.cart.length === 0 &&
     ["hola", "buenas", "buen dia", "buenas tardes", "buenas noches"].some(
@@ -610,11 +1085,21 @@ function handleOrdering(
     );
   }
 
+  const modifierReplacement = handleModifierReplacement(state, message, catalog);
+  if (modifierReplacement) return modifierReplacement;
+  const productReplacement = handleProductReplacement(state, message, catalog);
+  if (productReplacement) return productReplacement;
+
   const matches = findCatalogProducts(message, catalog);
   const requestedCategory = requestedNavigationCategory(text, catalog, matches.length > 0);
+  const isRemoval = /^(quita|quitar|elimina|eliminar|borra|borrar)\b/.test(text);
+  const isQuantityChange = /^(cambia|cambiar|deja|ajusta)\b/.test(text);
 
-  if (matches.length > 0 && requestedCategory) {
-    return addMatchesAndMaybeBrowse(state, matches, requestedCategory.id, catalog);
+  if (matches.length > 0 && requestedCategory && !isRemoval && !isQuantityChange) {
+    return rememberServiceType(
+      addMatchesAndMaybeBrowse(state, matches, requestedCategory.id, catalog),
+      requestedService
+    );
   }
 
   if (requestedCategory) {
@@ -649,40 +1134,90 @@ function handleOrdering(
     if (!state.beveragesOffered) {
       return result(
         { ...state, stage: "awaiting_beverage", beveragesOffered: true, ambiguityCount: 0 },
-        "🥤 ¿Deseas agregar alguna bebida?"
+        "🥤 *¿Algo para tomar?*\n\n¿Deseas agregar alguna bebida a tu pedido? 😊"
       );
     }
-    return result(
-      { ...state, stage: "awaiting_fulfillment", ambiguityCount: 0 },
-      "¿Tu pedido es para recoger o a domicilio?"
-    );
+    return continueAfterBeverages({ ...state, ambiguityCount: 0 });
   }
 
   const matchedItemIds = new Set(matches.map((match) => match.item.id));
-  const isRemoval = /^(quita|quitar|elimina|eliminar|borra|borrar)\b/.test(text);
   if (isRemoval && matches.length > 0) {
-    const cart = state.cart.filter((line) => !matchedItemIds.has(line.menuItemId));
-    if (cart.length === state.cart.length) {
+    const explicit = explicitQuantityFromText(text);
+    const previousMatchedQuantity = [...matchedItemIds].reduce(
+      (total, menuItemId) => total + productQuantity(state.cart, menuItemId),
+      0
+    );
+    let cart = state.cart;
+    for (const menuItemId of matchedItemIds) {
+      cart = removeProductQuantity(cart, menuItemId, explicit);
+    }
+    const nextMatchedQuantity = [...matchedItemIds].reduce(
+      (total, menuItemId) => total + productQuantity(cart, menuItemId),
+      0
+    );
+    if (nextMatchedQuantity === previousMatchedQuantity) {
       return result(state, "Ese producto no está en tu pedido actual.");
     }
     const nextState = withCart({ ...state, ambiguityCount: 0 }, cart);
-    return result(nextState, `Quité el producto. Total actual: $${nextState.total}.`);
+    return result(nextState, cartUpdatedReply(nextState, "🗑️ *Listo, lo retiré*"));
   }
 
-  const isQuantityChange = /^(cambia|cambiar|deja|ajusta)\b/.test(text);
   if (isQuantityChange && matches.length > 0) {
     const quantity = quantityFromText(text);
     const menuItemId = matches[0].item.id;
-    const existingLine = state.cart.find((line) => line.menuItemId === menuItemId);
-    if (!existingLine) return result(state, "Ese producto no está en tu pedido actual.");
-    const cart = state.cart.map((line) =>
-      line.id === existingLine.id ? { ...line, quantity } : line
+    const requiresUnitSelection = matches[0].item.modifiers.some(
+      (group) => group.required && (group.selection_mode ?? "single") === "single"
     );
-    const nextState = withCart({ ...state, ambiguityCount: 0 }, cart);
-    return result(nextState, `Actualicé ${existingLine.name} a ${quantity}. Total: $${nextState.total}.`);
+    const existing = state.cart.filter((line) => line.menuItemId === menuItemId);
+    const currentQuantity = productQuantity(state.cart, menuItemId);
+    if (existing.length === 0) return result(state, "Ese producto no está en tu pedido actual.");
+    let cart = state.cart;
+    let nextLineNumber = state.nextLineNumber;
+    if (!requiresUnitSelection) {
+      const firstId = existing[0].id;
+      cart = cart
+        .filter((line) => line.menuItemId !== menuItemId || line.id === firstId)
+        .map((line) => line.id === firstId ? { ...line, quantity } : line);
+    } else if (quantity < currentQuantity) {
+      cart = removeProductQuantity(cart, menuItemId, currentQuantity - quantity);
+    } else if (quantity > currentQuantity) {
+      const template = existing[existing.length - 1];
+      const additional = quantity - currentQuantity;
+      if (template.quantity > 1 && existing.length === 1) {
+        cart = cart.map((line) =>
+          line.id === template.id ? { ...line, quantity } : line
+        );
+      } else {
+        for (let index = 0; index < additional; index += 1) {
+          cart.push({
+            ...template,
+            id: `line-${nextLineNumber}`,
+            quantity: 1,
+            selectedModifiers: [...template.selectedModifiers],
+          });
+          nextLineNumber += 1;
+        }
+      }
+    }
+    const nextState = withCart(
+      { ...state, ambiguityCount: 0, nextLineNumber },
+      cart
+    );
+    return result(nextState, cartUpdatedReply(nextState));
   }
 
-  if (matches.length > 0) return addMatches(state, matches, catalog);
+  if (matches.length > 0) {
+    return rememberServiceType(addMatches(state, matches, catalog), requestedService);
+  }
+
+  if (requestedService) {
+    const nextState = withServiceType(state, requestedService);
+    const label = requestedService === "domicilio" ? "a domicilio" : "para recoger";
+    return result(
+      nextState,
+      `📍 Perfecto, anoté que será *${label}*. ¿Deseas agregar algo más? 😊`
+    );
+  }
 
   if (isNegative(text)) {
     return result(
@@ -710,10 +1245,7 @@ function handleOrdering(
 function handleBeverage(state: ConversationState, message: string, catalog: ConversationCatalog) {
   const text = normalizeText(message);
   if (isNegative(text)) {
-    return result(
-      { ...state, stage: "awaiting_fulfillment" },
-      "Perfecto. ¿Tu pedido es para recoger o a domicilio?"
-    );
+    return continueAfterBeverages(state);
   }
   const matches = findCatalogProducts(message, catalog).filter(
     (match) => match.item.isBeverage && !match.item.isAlcoholic
@@ -725,28 +1257,25 @@ function handleBeverage(state: ConversationState, message: string, catalog: Conv
 
 function handleFulfillment(state: ConversationState, message: string) {
   const text = normalizeText(message);
-  if (["domicilio", "entrega", "envio"].some((word) => includesPhrase(text, word))) {
-    const savedPrompt = state.savedAddress
-      ? `¿Usamos tu domicilio anterior: ${state.savedAddress.address}? Responde sí o escribe otro domicilio.`
-      : "Escribe la dirección completa o comparte tu ubicación desde WhatsApp.";
+  const serviceType = serviceTypeFromText(text);
+  if (serviceType === "domicilio") {
+    const nextState = withServiceType(state, serviceType);
     return result(
       {
-        ...state,
-        serviceType: "domicilio",
+        ...nextState,
         stage: "awaiting_address",
-        deliveryQuote: null,
-        total: itemsSubtotal(state.cart),
       },
-      savedPrompt
+      deliveryAddressPrompt(nextState)
     );
   }
-  if (["recoger", "para llevar", "paso por"].some((phrase) => includesPhrase(text, phrase))) {
+  if (serviceType === "para_llevar") {
+    const nextState = withServiceType(state, serviceType);
     return result(
-      { ...state, serviceType: "para_llevar", stage: "awaiting_payment" },
-      "¿Pagarás en efectivo, tarjeta o transferencia?"
+      { ...nextState, stage: "awaiting_payment" },
+      `🛍️ Perfecto, será para recoger. ${paymentQuestion(nextState)}`
     );
   }
-  return result(state, "Indícame si es para recoger o a domicilio.");
+  return result(state, "📍 Solo me falta saber si será para recoger o a domicilio.");
 }
 
 function handleAddress(state: ConversationState, message: string) {
@@ -774,7 +1303,7 @@ function handleAddress(state: ConversationState, message: string) {
   }
   return result(
     { ...state, address: message.trim(), stage: "awaiting_address_reference" },
-    "¿Tienes alguna referencia para encontrar el domicilio? Si no, escribe omitir."
+    "🏠 ¿Hay alguna referencia que ayude a encontrar el domicilio? Si no, escribe *omitir*."
   );
 }
 
@@ -783,15 +1312,15 @@ function handleAddressReference(state: ConversationState, message: string) {
   const reference = includesPhrase(text, "omitir") || text === "no" ? "" : message.trim();
   return result(
     { ...state, addressReference: reference, stage: "awaiting_delivery_quote" },
-    "Estoy validando el domicilio y calculando el envío.",
+    "🛵 Estoy ubicando tu domicilio y calculando el envío. Dame un momento 😊",
     "request_delivery_quote"
   );
 }
 
 function paymentQuestion(state: ConversationState) {
   return state.serviceType === "domicilio"
-    ? "¿Pagarás en efectivo o por transferencia?"
-    : "¿Pagarás en efectivo, tarjeta o transferencia?";
+    ? "💳 ¿Pagarás en efectivo o por transferencia?"
+    : "💳 ¿Pagarás en efectivo, tarjeta o transferencia?";
 }
 
 function handlePayment(state: ConversationState, message: string) {
@@ -812,7 +1341,7 @@ function handlePayment(state: ConversationState, message: string) {
   if (method === "efectivo" && cashTendered === null) {
     return result(
       { ...state, payment: { method, cashTendered: null }, stage: "awaiting_cash_tendered" },
-      `El total es $${state.total}. ¿Con cuánto pagarás?`
+      `💵 El total es *$${state.total}*. ¿Con cuánto pagarás?`
     );
   }
   if (cashTendered !== null && cashTendered < state.total) {
@@ -830,7 +1359,7 @@ function handlePayment(state: ConversationState, message: string) {
 function handleCashTendered(state: ConversationState, message: string) {
   const amount = Number(normalizeText(message).replace(/[^0-9.]/g, ""));
   if (!Number.isFinite(amount) || amount < state.total) {
-    return result(state, `El total es $${state.total}. ¿Con cuánto pagarás?`);
+    return result(state, `💵 El total es *$${state.total}*. ¿Con cuánto pagarás?`);
   }
   const nextState: ConversationState = {
     ...state,
@@ -840,25 +1369,93 @@ function handleCashTendered(state: ConversationState, message: string) {
   return result(nextState, cartSummary(nextState));
 }
 
-function handleConfirmation(state: ConversationState, message: string) {
+function handleConfirmation(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+) {
   const text = normalizeText(message);
   if (isConfirmation(text)) {
     return result(
       { ...state, stage: "confirmed" },
-      "Pedido confirmado. Estoy registrándolo con el equipo.",
+      "✅ ¡Perfecto! Estoy confirmando tu pedido con el equipo 😊",
       "request_order_creation"
     );
   }
-  if (includesPhrase(text, "modificar") || includesPhrase(text, "cambiar")) {
-    return result(
-      { ...state, stage: "ordering", payment: null },
-      "Claro. Dime qué deseas agregar o cambiar."
+  if (
+    includesPhrase(text, "modificar") ||
+    /^(cambia|cambiar|cambiame|reemplaza|reemplazar|quita|quitar|elimina|eliminar)\b/.test(text)
+  ) {
+    return handleOrdering(
+      { ...state, stage: "ordering", payment: null, ambiguityCount: 0 },
+      message,
+      catalog
     );
   }
   if (includesPhrase(text, "cancelar")) {
     return result({ ...state, stage: "cancelled" }, "El pedido fue cancelado.");
   }
   return result(state, "Escribe confirmar para enviar el pedido o modificar para hacer cambios.");
+}
+
+function handleLateConversationChange(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+): ConversationResult | null {
+  if (state.cart.length === 0) return null;
+  const text = normalizeText(message);
+  const serviceType = serviceTypeFromText(text);
+  const editableStages: ConversationState["stage"][] = [
+    "awaiting_address",
+    "awaiting_address_reference",
+    "awaiting_delivery_quote",
+    "awaiting_payment",
+    "awaiting_cash_tendered",
+    "awaiting_confirmation",
+  ];
+  if (!editableStages.includes(state.stage)) return null;
+
+  if (
+    state.serviceType === "domicilio" &&
+    /\b(cambia|cambiar|corrige|corregir|otra|nuevo|nueva)\b.*\b(direccion|domicilio|ubicacion)\b/.test(text)
+  ) {
+    const nextState = withServiceType(state, "domicilio");
+    return result(
+      {
+        ...nextState,
+        address: null,
+        addressReference: "",
+        payment: null,
+        stage: "awaiting_address",
+      },
+      "📍 Claro, actualizamos el domicilio. Escribe la nueva dirección completa o comparte tu ubicación 😊"
+    );
+  }
+
+  const productEdit = /^(cambia|cambiar|cambiame|reemplaza|reemplazar|quita|quitar|elimina|eliminar|borra|borrar)\b/.test(text);
+  const productAddition = /^(agrega|agregar|anade|añade|sumale|pon)\b/.test(text) &&
+    findCatalogProducts(message, catalog).length > 0;
+  if (productEdit || productAddition) {
+    return handleOrdering(
+      { ...state, stage: "ordering", payment: null, ambiguityCount: 0 },
+      message,
+      catalog
+    );
+  }
+
+  if (!serviceType || serviceType === state.serviceType) return null;
+  const nextState = withServiceType(state, serviceType);
+  if (serviceType === "domicilio") {
+    return result(
+      { ...nextState, payment: null, stage: "awaiting_address" },
+      `🛵 Listo, cambié el pedido a domicilio.\n\n${deliveryAddressPrompt(nextState)}`
+    );
+  }
+  return result(
+    { ...nextState, payment: null, stage: "awaiting_payment" },
+    `🛍️ Listo, cambié el pedido para recoger.\n\n${paymentQuestion(nextState)}`
+  );
 }
 
 export function handleConversationMessage(
@@ -877,6 +1474,9 @@ export function handleConversationMessage(
     );
   }
 
+  const lateChange = handleLateConversationChange(state, message, catalog);
+  if (lateChange) return lateChange;
+
   if (state.stage === "awaiting_modifiers") return handlePendingModifiers(state, message, catalog);
   if (state.stage === "ordering") return handleOrdering(state, message, catalog);
   if (state.stage === "browsing_catalog") return handleBrowsingCatalog(state, message, catalog);
@@ -889,7 +1489,7 @@ export function handleConversationMessage(
   }
   if (state.stage === "awaiting_payment") return handlePayment(state, message);
   if (state.stage === "awaiting_cash_tendered") return handleCashTendered(state, message);
-  if (state.stage === "awaiting_confirmation") return handleConfirmation(state, message);
+  if (state.stage === "awaiting_confirmation") return handleConfirmation(state, message, catalog);
   if (state.stage === "handoff") {
     return result(state, "Una persona del equipo continuará contigo en cuanto esté disponible.", "handoff");
   }

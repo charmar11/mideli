@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   createConversation,
   handleConversationMessage,
+  recoverDeliveryQuote,
   reconcileCartWithCatalog,
   unsupportedMessageHandoff,
   withDeliveryQuote,
@@ -101,6 +102,41 @@ const navigationCatalog = buildConversationCatalog([
   {
     ...menuItems[0],
     categories: { id: "sushis", name: "Sushis", sort_order: 4, is_active: true },
+  },
+  {
+    ...menuItems[1],
+    id: "hamburguesa-sencilla",
+    category_id: "hamburguesas",
+    name: "Hamburguesa Sencilla",
+    description: "Incluye papas.",
+    price: 135,
+    modifiers: [],
+    categories: {
+      id: "hamburguesas",
+      name: "Hamburguesas",
+      sort_order: 1,
+      is_active: true,
+    },
+  },
+]);
+
+const configurableCatalog = buildConversationCatalog([
+  {
+    ...menuItems[0],
+    categories: { id: "sushis", name: "Sushis", sort_order: 4, is_active: true },
+    modifiers: [
+      {
+        id: "tipo",
+        name: "Tipo",
+        required: true,
+        selection_mode: "single",
+        options: [
+          { id: "res", name: "Res", price: 0 },
+          { id: "pollo", name: "Pollo", price: 0 },
+          { id: "camaron", name: "Camarón", price: 0 },
+        ],
+      },
+    ],
   },
   {
     ...menuItems[1],
@@ -241,6 +277,270 @@ test("agrega varios productos, cantidades y variaciones reales", () => {
   expect(result.action).toBe("none");
 });
 
+test("distribuye variaciones distintas por unidad y conserva domicilio", () => {
+  const first = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Quiero 3 Californias para domicilio",
+    configurableCatalog
+  );
+
+  expect(first.state.cart).toHaveLength(3);
+  expect(first.state.cart.every((line) => line.quantity === 1)).toBeTruthy();
+  expect(first.state.serviceType).toBe("domicilio");
+  expect(first.state.stage).toBe("awaiting_modifiers");
+
+  const second = handleConversationMessage(
+    first.state,
+    "Uno va ser de res, y los otros de camarón",
+    configurableCatalog
+  );
+
+  expect(second.state.stage).toBe("ordering");
+  expect(
+    second.state.cart.map((line) => line.selectedModifiers[0]?.optionName)
+  ).toEqual(["Res", "Camarón", "Camarón"]);
+  expect(second.reply).toContain("1 California de Res");
+  expect(second.reply).toContain("2 California de Camarón");
+  expect(second.reply).toContain("domicilio");
+});
+
+test("aplica una misma variación a todas las unidades configurables", () => {
+  let state = createConversation("5216440000000");
+  state = handleConversationMessage(
+    state,
+    "Quiero 3 Californias",
+    configurableCatalog
+  ).state;
+
+  const result = handleConversationMessage(
+    state,
+    "Todos de camarón",
+    configurableCatalog
+  );
+
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.cart).toHaveLength(3);
+  expect(
+    result.state.cart.every(
+      (line) => line.selectedModifiers[0]?.optionName === "Camarón"
+    )
+  ).toBe(true);
+  expect(result.reply).toContain("3 California de Camarón");
+});
+
+test("modifica una variación, reduce unidades y confirma el nuevo desglose", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Quiero 3 Californias",
+    configurableCatalog
+  );
+  result = handleConversationMessage(
+    result.state,
+    "Uno de res y los otros de camarón",
+    configurableCatalog
+  );
+
+  result = handleConversationMessage(
+    result.state,
+    "Cambia uno de res por camarón",
+    configurableCatalog
+  );
+  expect(result.state.cart.map((line) => line.selectedModifiers[0]?.optionName)).toEqual([
+    "Camarón",
+    "Camarón",
+    "Camarón",
+  ]);
+  expect(result.reply).toContain("3 California de Camarón");
+
+  result = handleConversationMessage(
+    result.state,
+    "Quita un California",
+    configurableCatalog
+  );
+  expect(result.state.cart).toHaveLength(2);
+  expect(result.state.total).toBe(250);
+  expect(result.reply).toContain("2 California de Camarón");
+});
+
+test("aplica una modificación escrita directamente desde la confirmación", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Quiero 2 Californias",
+    configurableCatalog
+  );
+  result = handleConversationMessage(
+    result.state,
+    "Uno de res y otro de camarón",
+    configurableCatalog
+  );
+  const awaitingConfirmation = {
+    ...result.state,
+    stage: "awaiting_confirmation" as const,
+    payment: { method: "transferencia" as const, cashTendered: null },
+  };
+
+  result = handleConversationMessage(
+    awaitingConfirmation,
+    "Cámbiame uno de res por camarón",
+    configurableCatalog
+  );
+
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.payment).toBeNull();
+  expect(result.state.cart.map((line) => line.selectedModifiers[0]?.optionName)).toEqual([
+    "Camarón",
+    "Camarón",
+  ]);
+  expect(result.reply).toContain("2 California de Camarón");
+});
+
+test("permite cambiar de domicilio a recoger después de cotizar", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_confirmation" as const,
+    serviceType: "domicilio" as const,
+    address: "Calle Uno 123",
+    addressReference: "Casa blanca",
+    deliveryQuote: {
+      destinationAddress: "Calle Uno 123",
+      formattedAddress: "Calle Uno 123",
+      distanceKm: 4,
+      baseFee: 30,
+      surcharge: 0,
+      totalFee: 30,
+      matchedNeighborhood: null,
+    },
+    cart: [
+      {
+        id: "line-1",
+        menuItemId: "hamburguesa-sencilla",
+        categoryId: "hamburguesas",
+        name: "Hamburguesa Sencilla",
+        quantity: 1,
+        unitPrice: 135,
+        selectedModifiers: [],
+        notes: "",
+      },
+    ],
+    total: 165,
+  };
+
+  const result = handleConversationMessage(
+    state,
+    "Mejor será para recoger",
+    configurableCatalog
+  );
+
+  expect(result.state.stage).toBe("awaiting_payment");
+  expect(result.state.serviceType).toBe("para_llevar");
+  expect(result.state.address).toBeNull();
+  expect(result.state.deliveryQuote).toBeNull();
+  expect(result.state.total).toBe(135);
+  expect(result.reply).toContain("cambié el pedido para recoger");
+});
+
+test("permite corregir el domicilio antes de confirmar", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_payment" as const,
+    serviceType: "domicilio" as const,
+    address: "Calle equivocada 123",
+    addressReference: "Casa blanca",
+    cart: [
+      {
+        id: "line-1",
+        menuItemId: "burger",
+        categoryId: "hamburguesas",
+        name: "Hamburguesa Sencilla",
+        quantity: 1,
+        unitPrice: 135,
+        selectedModifiers: [],
+        notes: "",
+      },
+    ],
+    total: 135,
+  };
+
+  const result = handleConversationMessage(
+    state,
+    "Quiero cambiar la dirección",
+    configurableCatalog
+  );
+
+  expect(result.state.stage).toBe("awaiting_address");
+  expect(result.state.address).toBeNull();
+  expect(result.state.addressReference).toBe("");
+  expect(result.reply).toContain("nueva dirección");
+});
+
+test("permite retirar un producto aunque el bot ya esté solicitando el pago", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_payment" as const,
+    serviceType: "para_llevar" as const,
+    cart: [
+      {
+        id: "line-1",
+        menuItemId: "hamburguesa-sencilla",
+        categoryId: "hamburguesas",
+        name: "Hamburguesa Sencilla",
+        quantity: 2,
+        unitPrice: 135,
+        selectedModifiers: [],
+        notes: "",
+      },
+    ],
+    total: 270,
+  };
+
+  const result = handleConversationMessage(
+    state,
+    "Quita una Hamburguesa Sencilla",
+    configurableCatalog
+  );
+
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.payment).toBeNull();
+  expect(result.state.cart[0].quantity).toBe(1);
+  expect(result.state.total).toBe(135);
+  expect(result.reply).toContain("1 Hamburguesa Sencilla");
+});
+
+test("reemplaza un producto antes de confirmar", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Quiero una Hamburguesa Sencilla",
+    configurableCatalog
+  );
+  result = handleConversationMessage(
+    result.state,
+    "Cambia la Hamburguesa Sencilla por un California de pollo",
+    configurableCatalog
+  );
+
+  expect(result.state.cart).toHaveLength(1);
+  expect(result.state.cart[0].name).toBe("California");
+  expect(result.state.cart[0].selectedModifiers[0]?.optionName).toBe("Pollo");
+  expect(result.state.total).toBe(125);
+  expect(result.reply).toContain("California de Pollo");
+});
+
+test("recuerda domicilio y evita preguntarlo otra vez después de bebidas", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Una Hamburguesa Sencilla para domicilio",
+    configurableCatalog
+  );
+  expect(result.state.serviceType).toBe("domicilio");
+
+  result = handleConversationMessage(result.state, "Sería todo", configurableCatalog);
+  expect(result.state.stage).toBe("awaiting_beverage");
+  result = handleConversationMessage(result.state, "No gracias", configurableCatalog);
+  expect(result.state.stage).toBe("awaiting_address");
+  expect(result.reply).toContain("dirección");
+  expect(result.reply).not.toContain("recoger o a domicilio");
+});
+
 test("pregunta por variaciones requeridas y completa la misma línea", () => {
   const first = handleConversationMessage(
     createConversation("5216440000000"),
@@ -366,6 +666,28 @@ test("ofrece reutilizar el último domicilio pero vuelve a cotizarlo", () => {
   expect(reuse.action).toBe("request_delivery_quote");
   expect(reuse.state.address).toBe("Calle Kino 123, Centro");
   expect(reuse.state.addressReference).toBe("Portón negro");
+});
+
+test("pide una dirección más precisa antes de transferir una cotización fallida", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_delivery_quote" as const,
+    serviceType: "domicilio" as const,
+    address: "Dirección ambigua",
+  };
+
+  const first = recoverDeliveryQuote(state, "address_not_found");
+  expect(first.action).toBe("none");
+  expect(first.state.stage).toBe("awaiting_address");
+  expect(first.state.deliveryQuoteAttempts).toBe(1);
+  expect(first.reply).toContain("comparte tu ubicación");
+
+  const second = recoverDeliveryQuote(
+    { ...first.state, stage: "awaiting_delivery_quote" },
+    "address_not_found"
+  );
+  expect(second.action).toBe("handoff");
+  expect(second.state.stage).toBe("handoff");
 });
 
 test("un producto inactivo nunca aparece como coincidencia", () => {

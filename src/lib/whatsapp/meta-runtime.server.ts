@@ -6,6 +6,7 @@ import { buildConversationCatalog } from "./catalog";
 import {
   createConversation,
   handleConversationMessage,
+  recoverDeliveryQuote,
   reconcileCartWithCatalog,
   unsupportedMessageHandoff,
   withDeliveryQuote,
@@ -31,11 +32,24 @@ import {
 } from "./operations.server";
 import type {
   ConversationCatalog,
+  ConversationDeliveryQuote,
   ConversationResult,
   ConversationState,
 } from "./types";
 
 type WhatsappConfig = ReturnType<typeof readWhatsappServerConfig>;
+
+function deliveryQuoteReply(
+  state: ConversationState,
+  quote: ConversationDeliveryQuote
+) {
+  const distanceKm = Math.round((quote.distanceMeters / 1000) * 10) / 10;
+  const surcharge = quote.surcharge > 0
+    ? `\n🏘️ Recargo de zona: $${quote.surcharge}`
+    : "";
+  const total = state.total + quote.totalFee;
+  return `🛵 *¡Sí llegamos hasta tu domicilio!*\n\n📍 ${quote.formattedAddress}\n📏 Distancia: ${distanceKm} km\n💰 Tarifa base: $${quote.baseFee}${surcharge}\n🛵 Envío total: *$${quote.totalFee}*\n🧾 Total con envío: *$${total}*\n\n¿Pagarás en efectivo o por transferencia? 😊`;
+}
 
 export type MetaProcessingSummary = {
   processed: number;
@@ -164,13 +178,9 @@ async function processDryRunMessage(
       ? {
           state: withDeliveryQuote(result.state, quoted.quote),
           action: "none",
-          reply: `El envío es de $${quoted.quote.totalFee}. ¿Pagarás en efectivo o por transferencia?`,
+          reply: deliveryQuoteReply(result.state, quoted.quote),
         }
-      : {
-          state: { ...result.state, stage: "handoff" },
-          action: "handoff",
-          reply: "Necesitamos confirmar personalmente la cobertura y el costo de envío. Una persona continuará contigo.",
-        };
+      : recoverDeliveryQuote(result.state, quoted.reason);
   }
   dryRunConversations.set(message.phone, result.state);
   summary.processed += 1;
@@ -231,13 +241,9 @@ async function processPersistentMessage(
         ? {
             state: withDeliveryQuote(result.state, quoted.quote),
             action: "none",
-            reply: `La entrega cuesta $${quoted.quote.totalFee}. Total actualizado: $${result.state.total + quoted.quote.totalFee}. ¿Pagarás en efectivo o por transferencia?`,
+            reply: deliveryQuoteReply(result.state, quoted.quote),
           }
-        : {
-            state: { ...result.state, stage: "handoff" },
-            action: "handoff",
-            reply: "Necesitamos confirmar personalmente la cobertura y el costo de envío. Una persona continuará contigo.",
-          };
+        : recoverDeliveryQuote(result.state, quoted.reason);
     } else if (result.action === "mark_customer_received") {
       customerReceived = true;
     }
