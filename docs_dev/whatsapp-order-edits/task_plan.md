@@ -13,8 +13,8 @@ Implementar `docs/superpowers/specs/2026-08-26-whatsapp-order-edits-delivery-ton
 - [x] Phase 5: Implementar modificaciones naturales y contexto de servicio
 - [x] Phase 6: Mejorar cotización, recuperación y tono
 - [x] Phase 7: Configurar y probar origen de entrega de forma segura
-- [ ] Phase 8: Verificar pruebas, lint, build y base remota
-- [ ] Phase 9: Publicar cambios y validar flujo real
+- [x] Phase 8: Verificar pruebas, lint, build y base remota
+- [x] Phase 9: Publicar cambios y validar infraestructura de producción
 
 ## Decisions
 
@@ -33,3 +33,4 @@ Implementar `docs/superpowers/specs/2026-08-26-whatsapp-order-edits-delivery-ton
 | Una cantidad de 3 compartía una sola variación | Investigación | Confirmado en estado remoto: 3 California quedaron como Res |
 | No se cotizó el domicilio | Investigación | Cotización desactivada y origen del local sin coordenadas |
 | ESLint no encontró `test-results` | Verificación paralela | Playwright eliminó la carpeta mientras ESLint la recorría; se ejecutó lint de nuevo en serie y pasó |
+| Vercel rechazó actualizar una variable sensible | Publicación | Se reemplazó con `env add --force --sensitive` y se generó un despliegue nuevo |

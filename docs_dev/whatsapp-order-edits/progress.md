@@ -14,4 +14,9 @@
 - Se configuró el origen verificado de Mideli y se validó Google Maps sin exponer la clave.
 - Pasaron 99 pruebas integradas y 28 pruebas focalizadas después de los últimos casos agregados.
 - ESLint pasó en ejecución aislada.
-- Siguiente paso: build, verificación remota final y publicación.
+- Pasaron 111 pruebas finales en escritorio, tableta y móvil.
+- ESLint, TypeScript y el build de producción terminaron correctamente.
+- La versión `d04c11d2d8ba` quedó publicada en `mideli.vercel.app`.
+- Los dos seguros de creación de pedidos y la cotización por distancia quedaron activados.
+- La base remota confirmó origen, coordenadas y operación del canal.
+- Siguiente paso operativo: devolver la conversación de prueba al bot y realizar un pedido real controlado desde WhatsApp.
