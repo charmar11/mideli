@@ -24,6 +24,10 @@ function canUseKitchen(role: string) {
   return isAdminRole(role) || role === "kitchen" || role === "supervisor";
 }
 
+function canUseWhatsapp(role: string) {
+  return isAdminRole(role) || role === "waiter" || role === "supervisor";
+}
+
 function canUseInventory(role: string) {
   return isAdminRole(role);
 }
@@ -54,6 +58,7 @@ export async function proxy(request: NextRequest) {
   const isAnalyticsRoute = pathname === "/dashboard/analiticas";
   const isPosRoute = pathname === "/dashboard/mesero";
   const isKitchenRoute = pathname === "/dashboard/cocina";
+  const isWhatsappRoute = pathname === "/dashboard/whatsapp";
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.delete(ROLE_HEADER);
@@ -234,6 +239,10 @@ export async function proxy(request: NextRequest) {
     }
 
     if (isKitchenRoute && !canUseKitchen(profile.role)) {
+      return redirectWithAuth(getRoleHome(profile.role));
+    }
+
+    if (isWhatsappRoute && !canUseWhatsapp(profile.role)) {
       return redirectWithAuth(getRoleHome(profile.role));
     }
   }

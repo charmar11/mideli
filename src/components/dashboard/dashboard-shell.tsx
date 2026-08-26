@@ -17,6 +17,7 @@ import {
   LayoutGrid,
   LogOut,
   MoreHorizontal,
+  MessagesSquare,
   Printer,
   Settings,
   SlidersHorizontal,
@@ -56,6 +57,13 @@ const ANALYTICS_ITEM: NavItem = {
   label: "Analíticas",
   icon: BarChart3,
   match: (path) => path === "/dashboard/analiticas",
+};
+
+const WHATSAPP_ITEM: NavItem = {
+  href: "/dashboard/whatsapp",
+  label: "WhatsApp",
+  icon: MessagesSquare,
+  match: (path) => path === "/dashboard/whatsapp",
 };
 
 const ADMIN_ITEMS: NavItem[] = [
@@ -404,10 +412,13 @@ export function DashboardShell({
   const canUsePos = isAdmin || userRole === "waiter" || userRole === "supervisor";
   const canUseKitchen =
     isAdmin || userRole === "kitchen" || userRole === "supervisor";
+  const canUseWhatsapp =
+    isAdmin || userRole === "waiter" || userRole === "supervisor";
 
   const operationItems: NavItem[] = [
     ...(canUsePos ? [POS_ITEM] : []),
     ...(canUseKitchen ? [KITCHEN_ITEM] : []),
+    ...(canUseWhatsapp ? [WHATSAPP_ITEM] : []),
     ...(isAdmin ? [ANALYTICS_ITEM] : []),
   ];
 

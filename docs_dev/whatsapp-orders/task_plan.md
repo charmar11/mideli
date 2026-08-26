@@ -8,7 +8,7 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 
 - [x] Fase 0: Aprobar diseño, revisar contexto y capturar línea base.
 - [x] Fase 1: Implementar contratos, catálogo conversacional y motor puro con pruebas.
-- [ ] Fase 2: Implementar bandeja y simulador local sin escrituras.
+- [x] Fase 2: Implementar bandeja y simulador local sin escrituras.
 - [ ] Fase 3: Implementar webhook firmado y adaptador Meta para número de prueba.
 - [ ] Fase 4: Diseñar y validar migración transaccional, RLS y repositorios.
 - [ ] Fase 5: Persistir conversaciones y habilitar atención humana.

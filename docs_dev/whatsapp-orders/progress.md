@@ -12,8 +12,15 @@
 - El motor admite productos múltiples, cantidades, variaciones, cambios, eliminación, domicilio, pago y confirmación explícita.
 - Ocho pruebas enfocadas pasan en Playwright y TypeScript compila sin errores.
 - Los módulos no contienen red, persistencia, impresión ni escritura comercial.
+- Se añadió `/dashboard/whatsapp` con acceso para owner, admin, supervisor y waiter.
+- Cocina queda redirigida fuera del canal de WhatsApp.
+- Se creó un simulador responsivo con conversación, comanda viva y confirmación segura.
+- El catálogo se carga en el servidor y el cliente recibe solo los datos necesarios.
+- La navegación muestra WhatsApp según permisos en escritorio, tableta y móvil.
+- `.env.example` documenta variables sin valores sensibles.
+- `npm run lint`, las ocho pruebas enfocadas y `npm run build` pasan.
 - No se aplicaron migraciones ni se desplegó.
 
 ## Próximo paso
 
-Implementar Fase 2: bandeja protegida y simulador local en `dry-run`.
+Implementar Fase 3: firma, adaptador Meta y webhook local sin escrituras.
