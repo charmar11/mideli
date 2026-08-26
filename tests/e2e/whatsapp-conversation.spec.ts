@@ -97,6 +97,28 @@ const menuItems: MenuItem[] = [
 
 const catalog = buildConversationCatalog(menuItems);
 
+const navigationCatalog = buildConversationCatalog([
+  {
+    ...menuItems[0],
+    categories: { id: "sushis", name: "Sushis", sort_order: 4, is_active: true },
+  },
+  {
+    ...menuItems[1],
+    id: "hamburguesa-sencilla",
+    category_id: "hamburguesas",
+    name: "Hamburguesa Sencilla",
+    description: "Incluye papas.",
+    price: 135,
+    modifiers: [],
+    categories: {
+      id: "hamburguesas",
+      name: "Hamburguesas",
+      sort_order: 1,
+      is_active: true,
+    },
+  },
+]);
+
 test("normaliza texto y teléfonos mexicanos sin alterar el contenido útil", () => {
   expect(normalizeText("  DÓS   Califórnia!!! ")).toBe("dos california");
   expect(normalizePhone("+52 (644) 279-3641")).toBe("526442793641");
@@ -119,9 +141,85 @@ test("recibe un saludo sin contarlo como producto desconocido", () => {
 
   expect(result.state.stage).toBe("ordering");
   expect(result.state.ambiguityCount).toBe(0);
-  expect(result.reply).toContain("asistente de Mideli");
+  expect(result.reply).toContain("Bienvenido a Mideli");
   expect(result.reply).toContain("menú");
+  expect(result.reply).toContain("👋");
   expect(result.reply).not.toContain("Caguama");
+});
+
+test("abre una categoría por nombre singular antes que el menú genérico", () => {
+  for (const message of ["sushi", "sushi menú", "menú de sushi"]) {
+    const result = handleConversationMessage(
+      createConversation("5216440000000"),
+      message,
+      navigationCatalog
+    );
+
+    expect(result.state.stage).toBe("browsing_catalog");
+    expect(result.state.selectedCategoryId).toBe("sushis");
+    expect(result.reply).toContain("🍣");
+    expect(result.reply).toContain("California");
+    expect(result.reply).not.toContain("Hamburguesas\n");
+  }
+});
+
+test("agrega un producto y abre otra categoría en el mismo mensaje", () => {
+  const result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Una hamburguesa sencilla y también quiero ver el menú de sushi",
+    navigationCatalog
+  );
+
+  expect(result.state.cart).toHaveLength(1);
+  expect(result.state.cart[0].name).toBe("Hamburguesa Sencilla");
+  expect(result.state.stage).toBe("browsing_catalog");
+  expect(result.state.selectedCategoryId).toBe("sushis");
+  expect(result.reply).toContain("✅");
+  expect(result.reply).toContain("California");
+});
+
+test("un no cordial fuera de una pregunta binaria no provoca transferencia", () => {
+  const withCart = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Una hamburguesa sencilla",
+    navigationCatalog
+  );
+  const result = handleConversationMessage(withCart.state, "No gracias", navigationCatalog);
+
+  expect(result.action).toBe("none");
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.ambiguityCount).toBe(0);
+  expect(result.reply).toMatch(/terminamos tu pedido/i);
+});
+
+test("conserva el flujo reportado entre menú, dos categorías y rechazo de bebida", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Menú",
+    navigationCatalog
+  );
+  result = handleConversationMessage(result.state, "1", navigationCatalog);
+  expect(result.state.selectedCategoryId).toBe("hamburguesas");
+
+  result = handleConversationMessage(
+    result.state,
+    "Una hamburguesa sencilla y también quiero ver el menú de sushi",
+    navigationCatalog
+  );
+  expect(result.state.cart.map((line) => line.name)).toEqual(["Hamburguesa Sencilla"]);
+  expect(result.state.selectedCategoryId).toBe("sushis");
+
+  result = handleConversationMessage(result.state, "Un California", navigationCatalog);
+  expect(result.state.cart.map((line) => line.name)).toEqual([
+    "Hamburguesa Sencilla",
+    "California",
+  ]);
+
+  result = handleConversationMessage(result.state, "Sería todo", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_beverage");
+  result = handleConversationMessage(result.state, "No gracias", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_fulfillment");
+  expect(result.action).toBe("none");
 });
 
 test("agrega varios productos, cantidades y variaciones reales", () => {

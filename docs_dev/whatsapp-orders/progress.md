@@ -66,3 +66,16 @@ Revisar y aprobar por separado la aplicación de las migraciones remotas. Despu�
 - Los domicilios confirmados se conservan y se ofrecen en pedidos futuros, recalculando siempre la tarifa.
 - Verificación local: ESLint correcto, build de producción correcto y 75 pruebas WhatsApp aprobadas en escritorio, tablet y móvil.
 - Despliegue productivo listo en `https://mideli.vercel.app`, todavía con creación de pedidos y cotización automática apagadas en la base.
+
+## 2026-08-26: persistencia y voz del piloto
+
+- Se reprodujo el problema con la conversación real compartida por el usuario.
+- Se confirmó que Meta sí entrega y recibe respuestas; el fallo principal es la memoria efímera usada por `WHATSAPP_DRY_RUN=true` en Vercel.
+- Se aprobó persistir mensajes y estado en Supabase durante el piloto, con un bloqueo independiente que impida crear pedidos operativos.
+- Se aprobó mejorar la voz de Mideli, los alias de categorías, los mensajes con varias intenciones y la bandeja de respuesta humana.
+- El diseño aprobado vive en `docs/superpowers/specs/2026-08-26-whatsapp-voice-persistence-design.md`.
+- El motor reconoce categoría singular y plural, prioriza una categoría específica sobre `menú` y procesa producto más navegación en el mismo mensaje.
+- La conversación reportada quedó cubierta de principio a fin, incluido el rechazo de bebida con `No gracias`.
+- La bandeja carga el historial automáticamente, se actualiza cada diez segundos y refresca el mensaje enviado desde Mideli.
+- `WHATSAPP_ORDER_CREATION_ENABLED` añade un bloqueo técnico independiente y desactivado por defecto.
+- Verificación completada: 90 pruebas de WhatsApp, ESLint, build de producción, detector Impeccable sin hallazgos y Supabase remoto sin migraciones pendientes.

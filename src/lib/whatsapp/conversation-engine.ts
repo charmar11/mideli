@@ -21,6 +21,37 @@ import type {
 
 const DEFAULT_PAGE_SIZE = 5;
 
+const CATEGORY_EMOJIS = [
+  { terms: ["hamburguesa", "burger"], emoji: "🍔" },
+  { terms: ["sushi", "roll"], emoji: "🍣" },
+  { terms: ["boneless", "alita"], emoji: "🍗" },
+  { terms: ["papa", "compartir"], emoji: "🍟" },
+  { terms: ["bowl"], emoji: "🥗" },
+  { terms: ["bebida", "refresco", "limonada", "agua"], emoji: "🥤" },
+  { terms: ["cerveza", "cheve", "caguama"], emoji: "🍺" },
+] as const;
+
+function categoryEmoji(name: string) {
+  const text = normalizeText(name);
+  return CATEGORY_EMOJIS.find((entry) =>
+    entry.terms.some((term) => includesPhrase(text, term) || text.includes(term))
+  )?.emoji ?? "🍽️";
+}
+
+function categoryAliases(name: string) {
+  const text = normalizeText(name);
+  const aliases = new Set([text]);
+  for (const word of text.split(" ")) {
+    if (word.length < 4 || word === "para") continue;
+    aliases.add(word);
+    if (word.endsWith("s") && !word.endsWith("ss")) aliases.add(word.slice(0, -1));
+  }
+  if (text.includes("sushi")) aliases.add("sushi");
+  if (text.includes("hamburgues")) aliases.add("hamburguesa");
+  if (text.includes("boneless")) aliases.add("boneless");
+  return [...aliases].filter(Boolean);
+}
+
 function itemsSubtotal(cart: ConversationCartLine[]) {
   return cart.reduce((total, line) => {
     const extras = line.selectedModifiers.reduce(
@@ -121,9 +152,7 @@ function isConfirmation(text: string) {
 }
 
 function isNegative(text: string) {
-  return ["no", "no gracias", "ninguna", "sin bebida"].some(
-    (phrase) => text === phrase || includesPhrase(text, phrase)
-  );
+  return ["no", "no gracias", "ninguna", "sin bebida"].includes(text);
 }
 
 function requestsHuman(text: string) {
@@ -172,7 +201,7 @@ function modifierQuestion(line: ConversationCartLine, catalog: ConversationCatal
     })
     .join("\n");
   const multiple = group.selection_mode === "multiple" ? " Puedes elegir varias." : "";
-  return `Para ${line.name}, elige ${group.name}.${multiple}\n${options}`;
+  return `${categoryEmoji(item?.categoryName ?? "")} *${line.name}*\nElige *${group.name}*.${multiple}\n\n${options}`;
 }
 
 function mergeModifiers(
@@ -215,7 +244,7 @@ function cartSummary(state: ConversationState) {
       ? `\n📍 ${state.address}${state.addressReference ? `, ${state.addressReference}` : ""}\nEnvío: $${state.deliveryQuote?.totalFee ?? 0}`
       : "\nPara recoger en Mideli";
   const payment = state.payment ? `\nPago: ${state.payment.method}` : "";
-  return `Resumen de tu pedido:\n${lines}\nSubtotal: $${subtotal}${fulfillment}${payment}\nTotal: $${state.total}\n\n¿Confirmas el pedido?`;
+  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido?`;
 }
 
 export function createConversation(phone: string): ConversationState {
@@ -234,6 +263,7 @@ export function createConversation(phone: string): ConversationState {
     beveragesOffered: false,
     catalogPage: 0,
     selectedCategoryId: null,
+    pendingBrowseCategoryId: null,
     ambiguityCount: 0,
     nextLineNumber: 1,
   };
@@ -254,6 +284,7 @@ export function hydrateConversation(
     beveragesOffered: value.beveragesOffered ?? false,
     catalogPage: value.catalogPage ?? 0,
     selectedCategoryId: value.selectedCategoryId ?? null,
+    pendingBrowseCategoryId: value.pendingBrowseCategoryId ?? null,
   };
 }
 
@@ -271,9 +302,11 @@ function categoryMessage(catalog: ConversationCatalog, page: number) {
   const start = Math.max(0, page) * DEFAULT_PAGE_SIZE;
   const visible = categories.slice(start, start + DEFAULT_PAGE_SIZE);
   if (visible.length === 0) return "No hay más categorías disponibles. Escribe volver para regresar.";
-  const lines = visible.map((category, index) => `${index + 1}. ${category.name}`).join("\n");
-  const more = start + visible.length < categories.length ? "\nEscribe más para ver otras." : "";
-  return `¿Qué se te antoja?\n${lines}${more}`;
+  const lines = visible
+    .map((category, index) => `${index + 1}. ${categoryEmoji(category.name)} *${category.name}*`)
+    .join("\n");
+  const more = start + visible.length < categories.length ? "\n\nEscribe *más* para ver otras." : "";
+  return `🍽️ *¿Qué se te antoja?*\n\n${lines}${more}`;
 }
 
 function catalogItemsForSelection(state: ConversationState, catalog: ConversationCatalog) {
@@ -291,14 +324,20 @@ function productMessage(state: ConversationState, catalog: ConversationCatalog) 
   const start = Math.max(0, state.catalogPage) * DEFAULT_PAGE_SIZE;
   const visible = items.slice(start, start + DEFAULT_PAGE_SIZE);
   if (visible.length === 0) return "No hay más productos disponibles. Escribe volver para elegir otra categoría.";
+  const selectedCategory = catalog.categories.find((item) => item.id === state.selectedCategoryId);
+  const categoryName = state.selectedCategoryId === "__beverages__"
+    ? "Bebidas"
+    : state.selectedCategoryId === "__alcohol__"
+      ? "Cervezas"
+      : selectedCategory?.name ?? visible[0]?.categoryName ?? "Menú";
   const lines = visible
     .map((item, index) => {
       const description = item.description ? `\n   ${item.description}` : "";
-      return `${index + 1}. ${item.name} · $${item.price}${description}`;
+      return `${index + 1}. *${item.name}* · $${item.price}${description}`;
     })
-    .join("\n");
-  const more = start + visible.length < items.length ? "\nEscribe más para ver otros." : "";
-  return `${lines}${more}\nResponde con el número o el nombre.`;
+    .join("\n\n");
+  const more = start + visible.length < items.length ? "\n\nEscribe *más* para ver otros." : "";
+  return `${categoryEmoji(categoryName)} *${categoryName}*\n\n${lines}${more}\n\nResponde con el número o el nombre.`;
 }
 
 function selectedPageItems(state: ConversationState, catalog: ConversationCatalog) {
@@ -308,9 +347,27 @@ function selectedPageItems(state: ConversationState, catalog: ConversationCatalo
 }
 
 function categoryFromText(text: string, catalog: ConversationCatalog) {
-  return foodCategories(catalog).find((category) =>
-    includesPhrase(text, category.normalizedName)
+  return foodCategories(catalog)
+    .flatMap((category) =>
+      categoryAliases(category.name).flatMap((alias) => {
+        const index = ` ${text} `.lastIndexOf(` ${alias} `);
+        return index >= 0 ? [{ category, index }] : [];
+      })
+    )
+    .sort((left, right) => right.index - left.index)[0]?.category;
+}
+
+function requestedNavigationCategory(
+  text: string,
+  catalog: ConversationCatalog,
+  hasProductMatches: boolean
+) {
+  const category = categoryFromText(text, catalog);
+  if (!category || !hasProductMatches) return category;
+  const explicitlyBrowsing = ["menu", "ver", "mostrar", "muestrame", "ensename"].some(
+    (phrase) => includesPhrase(text, phrase)
   );
+  return explicitlyBrowsing ? category : undefined;
 }
 
 function handlePendingModifiers(
@@ -369,9 +426,31 @@ function handlePendingModifiers(
     );
   }
 
+  if (nextState.pendingBrowseCategoryId) {
+    const browsingState: ConversationState = {
+      ...nextState,
+      stage: "browsing_catalog",
+      pendingLineId: null,
+      selectedCategoryId: nextState.pendingBrowseCategoryId,
+      pendingBrowseCategoryId: null,
+      catalogPage: 0,
+      ambiguityCount: 0,
+    };
+    return result(
+      browsingState,
+      `✅ Listo, agregué las opciones de *${line.name}*.\n\n${productMessage(browsingState, catalog)}`
+    );
+  }
+
   return result(
-    { ...nextState, stage: "ordering", pendingLineId: null, ambiguityCount: 0 },
-    `Listo, agregué las opciones de ${line.name}. Total actual: $${nextState.total}. ¿Deseas algo más?`
+    {
+      ...nextState,
+      stage: "ordering",
+      pendingLineId: null,
+      pendingBrowseCategoryId: null,
+      ambiguityCount: 0,
+    },
+    `✅ Listo, agregué las opciones de *${line.name}*.\n🧾 Total actual: *$${nextState.total}*\n\n¿Deseas algo más?`
   );
 }
 
@@ -414,8 +493,33 @@ function addMatches(
 
   return result(
     { ...nextState, stage: "ordering", ambiguityCount: 0, nextLineNumber },
-    `Agregué ${additions.map((line) => `${line.quantity}x ${line.name}`).join(", ")}. Total actual: $${nextState.total}. ¿Deseas algo más?`
+    `✅ Agregué ${additions.map((line) => `*${line.quantity}x ${line.name}*`).join(", ")}.\n🧾 Total actual: *$${nextState.total}*\n\n¿Deseas algo más?`
   );
+}
+
+function addMatchesAndMaybeBrowse(
+  state: ConversationState,
+  matches: ReturnType<typeof findCatalogProducts>,
+  categoryId: string | null,
+  catalog: ConversationCatalog
+) {
+  const added = addMatches(state, matches, catalog);
+  if (!categoryId) return added;
+  if (added.state.stage === "awaiting_modifiers") {
+    return {
+      ...added,
+      state: { ...added.state, pendingBrowseCategoryId: categoryId },
+      reply: `${added.reply}\n\nDespués te muestro esa categoría.`,
+    };
+  }
+  const browsingState: ConversationState = {
+    ...added.state,
+    stage: "browsing_catalog",
+    selectedCategoryId: categoryId,
+    pendingBrowseCategoryId: null,
+    catalogPage: 0,
+  };
+  return result(browsingState, `${added.reply}\n\n${productMessage(browsingState, catalog)}`);
 }
 
 function handleBrowsingCatalog(
@@ -437,7 +541,33 @@ function handleBrowsingCatalog(
   }
 
   const directMatches = findCatalogProducts(message, catalog);
-  if (directMatches.length > 0) return addMatches(state, directMatches, catalog);
+  const requestedCategory = requestedNavigationCategory(
+    text,
+    catalog,
+    directMatches.length > 0
+  );
+  if (directMatches.length > 0) {
+    return addMatchesAndMaybeBrowse(
+      state,
+      directMatches,
+      requestedCategory?.id ?? null,
+      catalog
+    );
+  }
+
+  if (requestedCategory) {
+    const next = {
+      ...state,
+      selectedCategoryId: requestedCategory.id,
+      catalogPage: 0,
+    };
+    return result(next, productMessage(next, catalog));
+  }
+
+  if (includesPhrase(text, "menu")) {
+    const next = { ...state, selectedCategoryId: null, catalogPage: 0 };
+    return result(next, categoryMessage(catalog, 0));
+  }
 
   const numeric = Number.parseInt(text, 10);
   if (Number.isInteger(numeric) && numeric > 0) {
@@ -452,12 +582,6 @@ function handleBrowsingCatalog(
         return result(next, productMessage(next, catalog));
       }
     }
-  }
-
-  const category = categoryFromText(text, catalog);
-  if (category) {
-    const next = { ...state, selectedCategoryId: category.id, catalogPage: 0 };
-    return result(next, productMessage(next, catalog));
   }
 
   return result(
@@ -482,8 +606,25 @@ function handleOrdering(
   ) {
     return result(
       { ...state, ambiguityCount: 0 },
-      "¡Hola! 👋 Soy el asistente de Mideli. Puedes escribir tu pedido como normalmente lo dirías o escribir menú para ver las categorías."
+      "¡Hola! 👋 Bienvenido a Mideli.\n\n¿Qué se te antoja hoy? Puedes pedir directo o escribir *menú* para ver las categorías."
     );
+  }
+
+  const matches = findCatalogProducts(message, catalog);
+  const requestedCategory = requestedNavigationCategory(text, catalog, matches.length > 0);
+
+  if (matches.length > 0 && requestedCategory) {
+    return addMatchesAndMaybeBrowse(state, matches, requestedCategory.id, catalog);
+  }
+
+  if (requestedCategory) {
+    const next = {
+      ...state,
+      stage: "browsing_catalog" as const,
+      selectedCategoryId: requestedCategory.id,
+      catalogPage: 0,
+    };
+    return result(next, productMessage(next, catalog));
   }
 
   if (includesPhrase(text, "menu")) {
@@ -517,7 +658,6 @@ function handleOrdering(
     );
   }
 
-  const matches = findCatalogProducts(message, catalog);
   const matchedItemIds = new Set(matches.map((match) => match.item.id));
   const isRemoval = /^(quita|quitar|elimina|eliminar|borra|borrar)\b/.test(text);
   if (isRemoval && matches.length > 0) {
@@ -544,17 +684,26 @@ function handleOrdering(
 
   if (matches.length > 0) return addMatches(state, matches, catalog);
 
+  if (isNegative(text)) {
+    return result(
+      { ...state, ambiguityCount: 0 },
+      state.cart.length > 0
+        ? "Sin problema 😊 ¿Quieres agregar algo más o terminamos tu pedido?"
+        : "Sin problema 😊 Cuando estés listo, dime qué se te antoja o escribe *menú*."
+    );
+  }
+
   const ambiguityCount = state.ambiguityCount + 1;
   if (ambiguityCount >= 2) {
     return result(
       { ...state, stage: "handoff", ambiguityCount },
-      "No quiero hacerte perder tiempo. Una persona del equipo continuará contigo.",
+      "Quiero ayudarte sin hacerte perder tiempo 😊 Una persona del equipo continuará contigo.",
       "handoff"
     );
   }
   return result(
     { ...state, ambiguityCount },
-    "No encontré ese producto en el menú actual. Escribe menú para ver opciones o intenta con otro nombre."
+    "No encontré ese producto en el menú actual. Puedes escribir *menú* para ver opciones o intentar con otro nombre."
   );
 }
 

@@ -23,7 +23,7 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -140,6 +140,12 @@ export function WhatsAppControlCenter({ data, menuItems, catalogError, simulator
   const [tab, setTab] = useState<ControlTab>("overview");
   const [isPending, startTransition] = useTransition();
   const admin = data.role === "owner" || data.role === "admin";
+
+  useEffect(() => {
+    if (tab !== "inbox") return;
+    const interval = window.setInterval(() => router.refresh(), 10_000);
+    return () => window.clearInterval(interval);
+  }, [router, tab]);
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -317,7 +323,7 @@ function Diagnostics({ data, admin }: { data: WhatsappControlData; admin: boolea
           <dl className="mt-3 space-y-2 font-body text-xs">
             <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Ejecución</dt><dd className="font-bold">{data.diagnostics.dryRun ? "Prueba sin persistencia" : "Persistente"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Teléfonos limitados</dt><dd className="font-data font-bold">{data.diagnostics.allowedTestPhones || "No"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Pedidos reales</dt><dd className={`font-bold ${data.settings.create_orders_enabled ? "text-success" : "text-warning"}`}>{data.settings.create_orders_enabled ? "Habilitados" : "Desactivados"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Pedidos reales</dt><dd className={`font-bold ${data.diagnostics.orderCreationEnabled ? "text-success" : "text-warning"}`}>{data.diagnostics.orderCreationEnabled ? "Habilitados" : "Bloqueados"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Cotización automática</dt><dd className={`font-bold ${data.settings.delivery_quotes_enabled ? "text-success" : "text-warning"}`}>{data.settings.delivery_quotes_enabled ? "Habilitada" : "Desactivada"}</dd></div>
           </dl>
         </Panel>
@@ -402,22 +408,36 @@ function Overview({ data, onOpen }: { data: WhatsappControlData; onOpen: (tab: C
 }
 
 function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () => void }) {
-  const [selected, setSelected] = useState<WhatsappAdminConversation | null>(data.conversations[0] ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(data.conversations[0]?.id ?? null);
+  const selected = data.conversations.find((conversation) => conversation.id === selectedId)
+    ?? data.conversations[0]
+    ?? null;
   const [messages, setMessages] = useState<WhatsappAdminMessage[]>([]);
   const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(selected));
   const [pending, startTransition] = useTransition();
 
-  async function openConversation(conversation: WhatsappAdminConversation) {
-    setSelected(conversation);
+  useEffect(() => {
+    if (!selected) return;
+    let active = true;
+    void getWhatsappConversationMessagesAction(selected.id).then((result) => {
+      if (!active) return;
+      setLoading(false);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      setMessages(result.data);
+    });
+    return () => {
+      active = false;
+    };
+  }, [selected]);
+
+  function openConversation(conversation: WhatsappAdminConversation) {
     setLoading(true);
-    const result = await getWhatsappConversationMessagesAction(conversation.id);
-    setLoading(false);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    setMessages(result.data);
+    setMessages([]);
+    setSelectedId(conversation.id);
   }
 
   function run(action: () => Promise<{ success: boolean; error?: string }>, success: string) {
@@ -435,8 +455,18 @@ function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () =
   function sendReply() {
     if (!selected || !draft.trim()) return;
     const body = draft.trim();
-    run(() => sendWhatsappHumanReplyAction(selected.id, body), "Mensaje enviado");
-    setDraft("");
+    startTransition(async () => {
+      const result = await sendWhatsappHumanReplyAction(selected.id, body);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      setDraft("");
+      const refreshed = await getWhatsappConversationMessagesAction(selected.id);
+      if (refreshed.success) setMessages(refreshed.data);
+      toast.success("Mensaje enviado");
+      onRefresh();
+    });
   }
 
   return (
@@ -445,8 +475,8 @@ function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () =
         <div className="border-b border-border p-4"><h2 className="font-heading text-base font-bold">Conversaciones recientes</h2><p className="font-body text-xs text-muted-foreground">Toma el control cuando el bot necesite ayuda.</p></div>
         <div className="pos-scroll max-h-[650px] overflow-y-auto p-2">
           {data.conversations.length === 0 ? <p className="p-8 text-center font-body text-sm text-muted-foreground">Todavía no hay conversaciones.</p> : data.conversations.map((conversation) => (
-            <button key={conversation.id} type="button" onClick={() => void openConversation(conversation)} className={`mb-1 w-full rounded-xl p-3 text-left transition-colors ${selected?.id === conversation.id ? "bg-brand/15 ring-1 ring-brand/30" : "hover:bg-background"}`}>
-              <div className="flex items-center justify-between gap-2"><strong className="font-heading text-sm">{formatPhone(conversation.phone)}</strong><span className={`rounded-full px-2 py-0.5 font-heading text-[9px] font-bold ${conversation.status === "handoff" ? "bg-warning/15 text-warning" : conversation.status === "active" ? "bg-success/15 text-success" : "bg-surface-raised text-muted-foreground"}`}>{conversation.status === "handoff" ? "ATENCIÓN" : conversation.status.toUpperCase()}</span></div>
+            <button key={conversation.id} type="button" onClick={() => openConversation(conversation)} className={`mb-1 w-full rounded-xl p-3 text-left transition-colors ${selected?.id === conversation.id ? "bg-brand/15 ring-1 ring-brand/30" : "hover:bg-background"}`}>
+              <div className="flex items-center justify-between gap-2"><strong className="font-heading text-sm">{formatPhone(conversation.phone)}</strong><span className={`rounded-full px-2 py-0.5 font-heading text-[10px] font-bold ${conversation.status === "handoff" ? "bg-warning/15 text-warning" : conversation.status === "active" ? "bg-success/15 text-success" : "bg-surface-raised text-muted-foreground"}`}>{conversation.status === "handoff" ? "ATENCIÓN" : conversation.status.toUpperCase()}</span></div>
               <p className="mt-1 line-clamp-2 font-body text-xs text-muted-foreground">{conversation.lastMessage}</p>
               <p className="mt-2 font-data text-[10px] text-muted-foreground">{formatDate(conversation.updatedAt)}</p>
             </button>
@@ -485,8 +515,8 @@ function Inbox({ data, onRefresh }: { data: WhatsappControlData; onRefresh: () =
               </div>
             </div>
             <div className="pos-scroll flex-1 space-y-3 overflow-y-auto bg-background/55 p-4">
-              {loading ? <p className="text-center font-body text-sm text-muted-foreground">Cargando mensajes...</p> : messages.length === 0 ? <button type="button" onClick={() => void openConversation(selected)} className="mx-auto flex items-center gap-2 rounded-xl px-4 py-3 font-heading text-sm text-brand"><RefreshCw size={15} />Cargar conversación</button> : messages.map((item) => (
-                <div key={item.id} className={`flex ${item.direction === "outbound" ? "justify-end" : "justify-start"}`}><div className={`max-w-[84%] rounded-2xl px-4 py-3 ${item.direction === "outbound" ? "rounded-br-md bg-brand text-white" : "rounded-bl-md bg-surface text-foreground ring-1 ring-border"}`}><p className="whitespace-pre-wrap font-body text-sm">{item.body || "Contenido eliminado por retención"}</p><p className={`mt-1 font-data text-[9px] ${item.direction === "outbound" ? "text-white/65" : "text-muted-foreground"}`}>{item.status} · {formatDate(item.occurredAt)}</p></div></div>
+              {loading ? <p className="text-center font-body text-sm text-muted-foreground">Cargando mensajes...</p> : messages.length === 0 ? <p className="text-center font-body text-sm text-muted-foreground">Esta conversación todavía no tiene mensajes visibles.</p> : messages.map((item) => (
+                <div key={item.id} className={`flex ${item.direction === "outbound" ? "justify-end" : "justify-start"}`}><div className={`max-w-[84%] rounded-2xl px-4 py-3 ${item.direction === "outbound" ? "rounded-br-md bg-brand text-white" : "rounded-bl-md bg-surface text-foreground ring-1 ring-border"}`}><p className="whitespace-pre-wrap font-body text-sm">{item.body || "Contenido eliminado por retención"}</p><p className={`mt-1 font-data text-[10px] ${item.direction === "outbound" ? "text-white/65" : "text-muted-foreground"}`}>{item.status} · {formatDate(item.occurredAt)}</p></div></div>
               ))}
             </div>
             <div className="flex gap-2 border-t border-border p-3"><Input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendReply(); } }} placeholder="Escribe una respuesta..." className="h-11" /><Button className="h-11 gap-2 bg-success text-white hover:bg-success/85" disabled={pending || !draft.trim()} onClick={sendReply}><Send size={15} />Enviar</Button></div>

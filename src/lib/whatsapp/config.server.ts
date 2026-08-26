@@ -17,6 +17,7 @@ export function readWhatsappServerConfig() {
 
   return {
     ordersEnabled: enabled(process.env.WHATSAPP_ORDERS_ENABLED),
+    orderCreationEnabled: enabled(process.env.WHATSAPP_ORDER_CREATION_ENABLED),
     provider,
     dryRun: process.env.WHATSAPP_DRY_RUN !== "false",
     allowedPhones,

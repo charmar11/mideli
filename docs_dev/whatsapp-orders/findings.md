@@ -33,6 +33,10 @@
 - Meta verificó correctamente el callback HTTPS temporal el 2026-08-25.
 - La pantalla de permisos posterior a la verificación no requiere permisos adicionales durante el piloto.
 - Para procesar POST reales se necesita el App Secret; para responder se requieren el token temporal y el Phone Number ID.
+- El transporte Meta está funcionando en Vercel: los mensajes permitidos se reciben, procesan y responden sin fallos del proveedor.
+- `WHATSAPP_DRY_RUN=true` usa un `Map` en memoria. En Vercel esa memoria no es durable, por lo que el bot puede olvidar la etapa entre dos mensajes y esas conversaciones no aparecen en la bandeja de Mideli.
+- Las tablas y acciones existentes ya permiten persistir mensajes, tomar una conversación y responder desde Mideli. El arreglo no requiere recuperar las conversaciones antiguas de memoria, porque nunca se escribieron en la base.
+- La creación real de pedidos debe tener un bloqueo de servidor independiente de `dry-run` y del control operativo guardado en base.
 
 ## Persistencia preparada
 

@@ -303,6 +303,8 @@ export async function getWhatsappControlDataAction(): Promise<
             operations.settings.store_latitude !== null &&
             operations.settings.store_longitude !== null,
           dryRun: serverConfig.dryRun,
+          orderCreationEnabled:
+            serverConfig.orderCreationEnabled && operations.settings.create_orders_enabled,
           allowedTestPhones: serverConfig.allowedPhones.size,
           failedNotifications: (notificationFailureResult.data ?? []).map((item) => {
             const relation = item.orders as unknown as

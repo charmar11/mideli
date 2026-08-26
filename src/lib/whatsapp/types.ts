@@ -88,6 +88,7 @@ export type ConversationState = {
   beveragesOffered: boolean;
   catalogPage: number;
   selectedCategoryId: string | null;
+  pendingBrowseCategoryId: string | null;
   ambiguityCount: number;
   nextLineNumber: number;
 };

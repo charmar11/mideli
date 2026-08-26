@@ -13,6 +13,7 @@ import {
 import type { readWhatsappServerConfig } from "./config.server";
 import type { NormalizedMetaMessage, NormalizedMetaWebhook } from "./meta-webhook";
 import { sendMetaTextMessage } from "./meta-provider";
+import { canCreateWhatsappOrder } from "./order-creation-policy";
 import {
   applyOutboundStatuses,
   claimInboundMessage,
@@ -253,11 +254,14 @@ async function processPersistentMessage(
           action: "none",
           reply: `${removedNames} dejó de estar disponible y lo quité del pedido.${alternatives} Te mostraré el total actualizado antes de confirmar de nuevo.`,
         };
-      } else if (!operations.settings.create_orders_enabled) {
+      } else if (!canCreateWhatsappOrder({
+        serverEnabled: config.orderCreationEnabled,
+        operationsEnabled: operations.settings.create_orders_enabled,
+      })) {
         result = {
           state: { ...result.state, stage: "handoff" },
           action: "handoff",
-          reply: "Una persona del equipo confirmará tu pedido antes de enviarlo a cocina.",
+          reply: "✅ Recibimos tu pedido. Una persona del equipo lo revisará contigo antes de enviarlo a cocina.",
         };
       } else try {
         createdOrder = await createExternalOrder({

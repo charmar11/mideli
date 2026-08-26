@@ -16,6 +16,7 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 - [x] Fase 7: Integrar notificaciones de estados de cocina y reparto.
 - [x] Fase 8: Completar pruebas, lint, build y dry-run de migraciones.
 - [x] Fase 9: Preparar la prueba integral local sin desplegar ni aplicar cambios remotos.
+- [x] Fase 10: Persistir el piloto en Supabase, mantener bloqueada la creación real de pedidos y mejorar voz, navegación e inbox humano.
 
 ## Decisiones
 
@@ -33,6 +34,9 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 | Tarifa por rangos más recargo por colonia | Coincide con la operación real del negocio | 2026-08-25 |
 | Más de 15 km pasa a atención humana | Evita tarifas y cobertura incorrectas | 2026-08-25 |
 | No aplicar migraciones ni desplegar en esta fase | La autorización actual cubre implementación local | 2026-08-25 |
+| Persistir conversaciones durante el piloto | Vercel no garantiza memoria entre mensajes y el equipo necesita historial y respuesta manual | 2026-08-26 |
+| Separar persistencia de creación de pedidos | Permite probar conversaciones reales sin afectar cocina, caja, inventario o impresión | 2026-08-26 |
+| Voz breve y cercana de Mideli con emojis moderados | Hace el flujo más natural y escaneable sin fingir capacidades humanas | 2026-08-26 |
 
 ## Errores encontrados
 

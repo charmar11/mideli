@@ -78,6 +78,7 @@ export type WhatsappControlData = {
     googleMapsReady: boolean;
     storeOriginReady: boolean;
     dryRun: boolean;
+    orderCreationEnabled: boolean;
     allowedTestPhones: number;
     failedNotifications: Array<{
       id: string;
