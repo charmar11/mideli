@@ -21,6 +21,19 @@ function Stop-ProcessTree([System.Diagnostics.Process]$process) {
   & taskkill.exe /PID $process.Id /T /F 2>$null | Out-Null
 }
 
+function Test-TcpPort([string]$targetHost, [int]$targetPort) {
+  $client = [System.Net.Sockets.TcpClient]::new()
+  try {
+    $connection = $client.ConnectAsync($targetHost, $targetPort)
+    if (-not $connection.Wait(1000)) { return $false }
+    return $client.Connected
+  } catch {
+    return $false
+  } finally {
+    $client.Dispose()
+  }
+}
+
 if (-not (Test-Path -LiteralPath $cloudflaredPath)) {
   throw "No se encontró cloudflared. Instálalo antes de iniciar el webhook local."
 }
@@ -56,15 +69,11 @@ try {
   $serverReady = $false
   for ($attempt = 0; $attempt -lt 30; $attempt += 1) {
     Start-Sleep -Seconds 1
-    try {
-      $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/" -TimeoutSec 2
-      if ($response.StatusCode -lt 500) {
-        $serverReady = $true
-        break
-      }
-    } catch {
-      if ($serverProcess.HasExited) { break }
+    if (Test-TcpPort "127.0.0.1" $port) {
+      $serverReady = $true
+      break
     }
+    if ($serverProcess.HasExited) { break }
   }
 
   if (-not $serverReady) {
