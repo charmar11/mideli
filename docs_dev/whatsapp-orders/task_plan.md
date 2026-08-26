@@ -7,7 +7,7 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 ## Fases
 
 - [x] Fase 0: Aprobar diseño, revisar contexto y capturar línea base.
-- [ ] Fase 1: Implementar contratos, catálogo conversacional y motor puro con pruebas.
+- [x] Fase 1: Implementar contratos, catálogo conversacional y motor puro con pruebas.
 - [ ] Fase 2: Implementar bandeja y simulador local sin escrituras.
 - [ ] Fase 3: Implementar webhook firmado y adaptador Meta para número de prueba.
 - [ ] Fase 4: Diseñar y validar migración transaccional, RLS y repositorios.
@@ -34,6 +34,9 @@ Implementar el diseño aprobado en `docs/superpowers/specs/2026-08-25-whatsapp-o
 | Herramientas del grafo requeridas por `explore-codebase` no disponibles | 1 | Inspección dirigida con PowerShell |
 | `rg.exe` devolvió acceso denegado desde el paquete de Codex | 1 | Usar `Get-ChildItem` y `Select-String` |
 | Apertura directa de documentación Markdown de Supabase devolvió tipo no soportado | 1 | Consultar resultados oficiales indexados en la web |
+| Primera ejecución del test del motor no encontró los módulos nuevos | 1 | Fallo esperado de TDD; implementar los módulos y repetir |
+| Aserción de mensaje distinguía mayúscula inicial | 1 | Comparar el texto visible sin distinguir mayúsculas |
+| ESLint detectó una variable de prueba que nunca se reasigna | 1 | Cambiar `let` por `const` |
 
 ## Puertas de seguridad
 
