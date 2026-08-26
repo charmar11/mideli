@@ -32,8 +32,10 @@ import {
   closeWhatsappConversationAction,
   deleteWhatsappScheduleExceptionAction,
   getWhatsappConversationMessagesAction,
+  locateWhatsappStoreAction,
   resumeWhatsappBotAction,
   sendWhatsappHumanReplyAction,
+  testWhatsappDeliveryAddressAction,
   saveWhatsappScheduleExceptionAction,
   updateWhatsappCatalogItemAction,
   updateWhatsappDeliveryRulesAction,
@@ -204,7 +206,7 @@ export function WhatsAppControlCenter({ data, menuItems, catalogError, simulator
         {tab === "delivery" ? <Delivery data={data} admin={admin} onRefresh={refresh} /> : null}
         {tab === "hours" ? <Hours data={data} admin={admin} onRefresh={refresh} /> : null}
         {tab === "bot" ? <BotSettings data={data} admin={admin} onRefresh={refresh} /> : null}
-        {tab === "diagnostics" ? <Diagnostics data={data} /> : null}
+        {tab === "diagnostics" ? <Diagnostics data={data} admin={admin} /> : null}
         {tab === "simulator" ? (
           <div className="min-h-[720px] overflow-hidden rounded-2xl border border-border">
             <WhatsAppSimulator menuItems={menuItems} catalogError={catalogError} simulatorEnabled={simulatorEnabled} />
@@ -215,9 +217,12 @@ export function WhatsAppControlCenter({ data, menuItems, catalogError, simulator
   );
 }
 
-function Diagnostics({ data }: { data: WhatsappControlData }) {
+function Diagnostics({ data, admin }: { data: WhatsappControlData; admin: boolean }) {
   const router = useRouter();
   const [retrying, startRetry] = useTransition();
+  const [storeAddress, setStoreAddress] = useState(data.settings.store_address);
+  const [testAddress, setTestAddress] = useState("");
+  const [deliveryResult, setDeliveryResult] = useState("");
   const checks = [
     {
       label: "Canal habilitado en el servidor",
@@ -252,6 +257,27 @@ function Diagnostics({ data }: { data: WhatsappControlData }) {
       if (!result.success) { toast.error(result.error); return; }
       toast.success("Notificación reenviada");
       router.refresh();
+    });
+  }
+  function locateStore() {
+    startRetry(async () => {
+      const result = await locateWhatsappStoreAction(storeAddress);
+      if (!result.success) { toast.error(result.error); return; }
+      setStoreAddress(result.data.formattedAddress);
+      toast.success("Origen del local ubicado y guardado");
+      router.refresh();
+    });
+  }
+  function testDelivery() {
+    startRetry(async () => {
+      setDeliveryResult("");
+      const result = await testWhatsappDeliveryAddressAction(testAddress);
+      if (!result.success) { toast.error(result.error); return; }
+      if (result.data.status === "needs_handoff") {
+        setDeliveryResult("La dirección requiere revisión manual por cobertura o configuración.");
+        return;
+      }
+      setDeliveryResult(`${result.data.distanceKm} km · Envío $${result.data.totalFee} · ${result.data.formattedAddress}`);
     });
   }
 
@@ -298,6 +324,13 @@ function Diagnostics({ data }: { data: WhatsappControlData }) {
         <Panel>
           <div className="border-b border-border p-4"><h3 className="font-heading text-sm font-bold">Notificaciones con error</h3><p className="font-body text-xs text-muted-foreground">Puedes reenviarlas sin duplicar el evento del pedido.</p></div>
           {data.diagnostics.failedNotifications.length === 0 ? <p className="p-5 font-body text-sm text-muted-foreground">No hay notificaciones pendientes.</p> : <div className="divide-y divide-border">{data.diagnostics.failedNotifications.map((item) => <div key={item.id} className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="font-heading text-sm font-bold">Pedido #{item.orderNumber || "?"}</p><p className="font-body text-xs text-muted-foreground">{item.eventKey} · {item.attempts} intentos</p>{item.lastError ? <p className="mt-1 line-clamp-2 font-body text-[11px] text-danger">{item.lastError}</p> : null}</div><Button variant="outline" className="h-9 gap-2" disabled={retrying} onClick={() => retryNotification(item.id)}><RefreshCw size={14} />Reintentar</Button></div>)}</div>}
+        </Panel>
+        <Panel className="p-5">
+          <h3 className="font-heading text-sm font-bold">Probar entregas sin crear pedidos</h3>
+          <p className="mt-1 font-body text-xs text-muted-foreground">Primero ubica el local. Después prueba un domicilio real para revisar distancia y tarifa.</p>
+          <label className="mt-4 block"><span className="mb-1.5 block font-heading text-[11px] font-bold">Dirección del local</span><div className="flex gap-2"><Input value={storeAddress} disabled={!admin} onChange={(event) => setStoreAddress(event.target.value)} placeholder="Dirección completa de Mideli" className="h-11" /><Button variant="outline" className="h-11 shrink-0" disabled={!admin || retrying || storeAddress.trim().length < 8} onClick={locateStore}><MapPinned size={15} /><span className="sr-only sm:not-sr-only sm:ml-2">Ubicar</span></Button></div></label>
+          <label className="mt-3 block"><span className="mb-1.5 block font-heading text-[11px] font-bold">Domicilio de prueba</span><div className="flex gap-2"><Input value={testAddress} disabled={!admin} onChange={(event) => setTestAddress(event.target.value)} placeholder="Calle, número y colonia" className="h-11" /><Button className="h-11 shrink-0 bg-success text-white hover:bg-success/85" disabled={!admin || retrying || testAddress.trim().length < 8} onClick={testDelivery}>Calcular</Button></div></label>
+          {deliveryResult ? <p className="mt-3 rounded-xl bg-success/10 p-3 font-body text-xs text-success">{deliveryResult}</p> : null}
         </Panel>
       </div>
     </div>
