@@ -1,7 +1,7 @@
 # Pedidos conversacionales por WhatsApp
 
 Fecha: 2026-08-25
-Estado: pendiente de revisión y aprobación del usuario
+Estado: aprobado por el usuario el 2026-08-25
 Proveedor piloto y producción: WhatsApp Cloud API de Meta
 
 ## Objetivo
