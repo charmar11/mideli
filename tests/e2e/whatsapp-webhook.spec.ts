@@ -25,6 +25,12 @@ test("normaliza mensajes entrantes y estados sin conservar el payload completo",
             field: "messages",
             value: {
               metadata: { phone_number_id: "phone-test" },
+              contacts: [
+                {
+                  wa_id: "526440000000",
+                  profile: { name: "María" },
+                },
+              ],
               messages: [
                 {
                   id: "wamid.message-1",
@@ -53,6 +59,7 @@ test("normaliza mensajes entrantes y estados sin conservar el payload completo",
     {
       id: "wamid.message-1",
       phone: "526440000000",
+      customerName: "María",
       phoneNumberId: "phone-test",
       timestamp: "1787612400",
       type: "text",

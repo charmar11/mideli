@@ -10,15 +10,33 @@ export type WhatsappAdminRole = "owner" | "admin" | "waiter" | "supervisor";
 export type WhatsappAdminConversation = {
   id: string;
   phone: string;
+  customerName: string;
   status: string;
   stage: string;
   botEnabled: boolean;
   assignedTo: string | null;
+  assignedName: string;
   handoffReason: string;
   updatedAt: string;
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
   lastMessage: string;
+  lastMessageDirection: "inbound" | "outbound" | null;
+  lastMessageStatus: string;
+  latestOrder: {
+    id: string;
+    number: number;
+    status: string;
+    type: string;
+    total: number;
+    paymentStatus: string;
+    deliveryStatus: string;
+    deliveryAddress: string;
+    deliveryReference: string;
+    paymentMethod: string;
+    requestedCashTendered: number | null;
+    createdAt: string;
+  } | null;
   context: {
     items: Array<{ name: string; quantity: number }>;
     total: number;
@@ -82,6 +100,7 @@ export type WhatsappControlData = {
     providerReady: boolean;
     webhookSecurityReady: boolean;
     googleMapsReady: boolean;
+    geminiReady: boolean;
     storeOriginReady: boolean;
     dryRun: boolean;
     orderCreationEnabled: boolean;

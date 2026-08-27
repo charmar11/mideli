@@ -1,23 +1,9 @@
 import Link from "next/link";
 import { WhatsAppControlCenter } from "@/components/whatsapp/whatsapp-control-center";
 import { getWhatsappControlDataAction } from "@/lib/actions/whatsapp";
-import { createClient } from "@/lib/supabase/server";
-import type { MenuItem } from "@/types/database";
 
 export default async function WhatsAppPage() {
-  const supabase = await createClient();
-  const controlPromise = getWhatsappControlDataAction();
-  const primaryCatalogPromise = supabase
-    .from("menu_items")
-    .select(
-      "id,category_id,name,description,price,is_active,whatsapp_enabled,sort_order,modifiers,image_url,created_at,updated_at,categories(id,name,sort_order,is_active)"
-    )
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-  const [control, primaryCatalog] = await Promise.all([
-    controlPromise,
-    primaryCatalogPromise,
-  ]);
+  const control = await getWhatsappControlDataAction();
   if (!control.success) {
     return (
       <main className="flex min-h-full items-center justify-center bg-background p-6 text-foreground">
@@ -37,26 +23,5 @@ export default async function WhatsAppPage() {
       </main>
     );
   }
-  let catalogData: unknown[] = primaryCatalog.data ?? [];
-  let catalogLoadError = primaryCatalog.error;
-  if (primaryCatalog.error) {
-    const fallbackCatalog = await supabase
-      .from("menu_items")
-      .select(
-        "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at,categories(id,name,sort_order,is_active)"
-      )
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true });
-    catalogData = fallbackCatalog.data ?? [];
-    catalogLoadError = fallbackCatalog.error;
-  }
-
-  return (
-    <WhatsAppControlCenter
-      data={control.data}
-      menuItems={catalogData as MenuItem[]}
-      catalogError={catalogLoadError ? "No se pudo cargar el menú para la simulación." : null}
-      simulatorEnabled={process.env.NODE_ENV !== "production"}
-    />
-  );
+  return <WhatsAppControlCenter data={control.data} />;
 }

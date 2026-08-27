@@ -3,6 +3,7 @@ import { normalizePhone } from "./normalize";
 export type NormalizedMetaMessage = {
   id: string;
   phone: string;
+  customerName: string;
   phoneNumberId: string;
   timestamp: string;
   type: "text" | "location" | "unsupported";
@@ -57,7 +58,8 @@ function messageText(message: Record<string, unknown>) {
 
 function normalizeMessage(
   message: Record<string, unknown>,
-  phoneNumberId: string
+  phoneNumberId: string,
+  contactNames: Map<string, string>
 ): NormalizedMetaMessage | null {
   const id = stringValue(message.id);
   const phone = normalizePhone(stringValue(message.from));
@@ -72,6 +74,7 @@ function normalizeMessage(
   return {
     id,
     phone,
+    customerName: contactNames.get(phone) ?? "",
     phoneNumberId,
     timestamp: stringValue(message.timestamp),
     type: text ? "text" : hasLocation ? "location" : "unsupported",
@@ -104,8 +107,14 @@ export function normalizeMetaWebhook(payload: unknown): NormalizedMetaWebhook {
       if (change.field !== "messages") continue;
       const value = record(change.value);
       const phoneNumberId = stringValue(record(value?.metadata)?.phone_number_id);
+      const contactNames = new Map<string, string>();
+      for (const contact of records(value?.contacts)) {
+        const phone = normalizePhone(stringValue(contact.wa_id));
+        const name = stringValue(record(contact.profile)?.name).trim();
+        if (phone && name) contactNames.set(phone, name.slice(0, 120));
+      }
       for (const message of records(value?.messages)) {
-        const normalized = normalizeMessage(message, phoneNumberId);
+        const normalized = normalizeMessage(message, phoneNumberId, contactNames);
         if (normalized) messages.push(normalized);
       }
       for (const status of records(value?.statuses)) {

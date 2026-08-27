@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-08-09
+Actualizado: 2026-08-27
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -194,6 +194,20 @@ La ruta `/settings/impresion` convierte una laptop conectada por USB en estació
 - La estación usa Realtime más sondeo de respaldo y reclama cada trabajo de forma atómica.
 - El ticket de cocina es de 48 mm, sin precios, con zona, mesa, productos, variaciones y notas.
 - En navegador normal se confirma la impresión. Para operación sin diálogo, la laptop debe abrir el navegador en modo impresión directa con la impresora predeterminada.
+
+### Central de servicio de WhatsApp
+
+La sección `/dashboard/whatsapp` funciona como una bandeja operativa para owner, admin, supervisor y mesero:
+
+- La vista inicial prioriza conversaciones en relevo humano y permite buscar por nombre, teléfono o folio.
+- En escritorio muestra cola, chat y comanda contextual. En móvil separa bandeja y conversación con regreso visible.
+- La comanda reúne cliente, responsable, pedido, total, entrega, pago, dirección, copia y acceso a Google Maps.
+- El chat baja al final al abrirlo, pero conserva la posición cuando el personal revisa mensajes anteriores y avisa si llegan mensajes nuevos.
+- Responder desde Mideli toma la conversación y pausa el bot; también se puede devolver al bot o cerrar.
+- Owner y admin pueden limpiar el contenido conversacional sin eliminar pedidos, folios ni auditoría.
+- Los nombres públicos recibidos en el webhook de Meta se guardan en `customers.display_name` para reconocer al cliente.
+- Catálogo y Resumen permanecen visibles; Entregas, Horarios, Bot y Diagnóstico viven bajo `Configurar`. El simulador fue retirado de la interfaz y del bundle.
+- La carga inicial ya no consulta el catálogo completo para un simulador. La bandeja usa una instantánea ligera cada dos segundos solo mientras la página está visible.
 
 ### Imágenes de productos
 

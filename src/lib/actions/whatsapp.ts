@@ -97,11 +97,14 @@ async function claimConversationForUser(
 ) {
   const current = await admin
     .from("channel_conversations")
-    .select("id,external_contact_id,state,assigned_to")
+    .select("id,external_contact_id,state,assigned_to,status")
     .eq("id", conversationId)
     .single();
   if (current.error || !current.data) {
     throw current.error ?? new Error("No se encontró la conversación");
+  }
+  if (!["active", "handoff", "confirmed"].includes(current.data.status)) {
+    throw new Error("Esta conversación ya está cerrada");
   }
   if (current.data.assigned_to && current.data.assigned_to !== userId) {
     throw new Error("Otra persona del equipo ya está atendiendo esta conversación");
@@ -119,6 +122,7 @@ async function claimConversationForUser(
       state: conversationStateAtStage(current.data.state, "handoff"),
     })
     .eq("id", conversationId)
+    .in("status", ["active", "handoff", "confirmed"])
     .or(`assigned_to.is.null,assigned_to.eq.${userId}`)
     .select("id,external_contact_id,state,assigned_to")
     .maybeSingle();
@@ -153,7 +157,7 @@ async function loadWhatsappConversations(
   const conversationResult = await admin
     .from("channel_conversations")
     .select(
-      "id,external_contact_id,status,stage,state,bot_enabled,assigned_to,handoff_reason,updated_at,last_inbound_at,last_outbound_at"
+      "id,external_contact_id,customer_id,status,stage,state,bot_enabled,assigned_to,handoff_reason,updated_at,last_inbound_at,last_outbound_at"
     )
     .eq("provider", "meta")
     .order("updated_at", { ascending: false })
@@ -164,7 +168,7 @@ async function loadWhatsappConversations(
     const fallback = await admin
       .from("channel_conversations")
       .select(
-        "id,external_contact_id,status,stage,state,assigned_to,updated_at,last_inbound_at,last_outbound_at"
+        "id,external_contact_id,customer_id,status,stage,state,assigned_to,updated_at,last_inbound_at,last_outbound_at"
       )
       .eq("provider", "meta")
       .order("updated_at", { ascending: false })
@@ -178,36 +182,111 @@ async function loadWhatsappConversations(
   }
 
   const conversationIds = conversationRows.map((row) => row.id);
-  const lastMessages = new Map<string, string>();
+  const customerIds = [...new Set(conversationRows.map((row) => row.customer_id))];
+  const assignedIds = [
+    ...new Set(
+      conversationRows.flatMap((row) => row.assigned_to ? [row.assigned_to] : [])
+    ),
+  ];
+  const lastMessages = new Map<string, {
+    body: string;
+    direction: "inbound" | "outbound";
+    status: string;
+  }>();
+  const customers = new Map<string, string>();
+  const assignees = new Map<string, string>();
+  const latestOrders = new Map<string, WhatsappAdminConversation["latestOrder"]>();
   if (conversationIds.length > 0) {
-    const recent = await admin
+    const recentPromise = admin
       .from("channel_messages")
-      .select("conversation_id,body,occurred_at")
+      .select("conversation_id,body,direction,status,occurred_at")
       .in("conversation_id", conversationIds)
       .order("occurred_at", { ascending: false })
-      .limit(200);
+      .limit(300);
+    const ordersPromise = admin
+      .from("orders")
+      .select(
+        "id,number,status,type,total,payment_status,payment_method,delivery_status,delivery_address,delivery_reference,payment_method_requested,requested_cash_tendered,created_at,channel_conversation_id"
+      )
+      .in("channel_conversation_id", conversationIds)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    const customersPromise = customerIds.length > 0
+      ? admin.from("customers").select("id,display_name").in("id", customerIds)
+      : Promise.resolve({ data: [], error: null });
+    const assigneesPromise = assignedIds.length > 0
+      ? admin.from("profiles").select("id,full_name").in("id", assignedIds)
+      : Promise.resolve({ data: [], error: null });
+
+    const [recent, orders, customerResult, assigneeResult] = await Promise.all([
+      recentPromise,
+      ordersPromise,
+      customersPromise,
+      assigneesPromise,
+    ]);
     if (recent.error) throw recent.error;
+    if (orders.error) throw orders.error;
+    if (customerResult.error) throw customerResult.error;
+    if (assigneeResult.error) throw assigneeResult.error;
+
     for (const item of recent.data ?? []) {
       if (!lastMessages.has(item.conversation_id)) {
-        lastMessages.set(item.conversation_id, item.body ?? "");
+        lastMessages.set(item.conversation_id, {
+          body: item.body ?? "",
+          direction: item.direction as "inbound" | "outbound",
+          status: item.status,
+        });
       }
+    }
+    for (const customer of customerResult.data ?? []) {
+      customers.set(customer.id, customer.display_name ?? "");
+    }
+    for (const profile of assigneeResult.data ?? []) {
+      assignees.set(profile.id, profile.full_name ?? "");
+    }
+    for (const order of orders.data ?? []) {
+      if (!order.channel_conversation_id || latestOrders.has(order.channel_conversation_id)) {
+        continue;
+      }
+      latestOrders.set(order.channel_conversation_id, {
+        id: order.id,
+        number: order.number,
+        status: order.status,
+        type: order.type,
+        total: Number(order.total ?? 0),
+        paymentStatus: order.payment_status,
+        deliveryStatus: order.delivery_status ?? "pending",
+        deliveryAddress: order.delivery_address ?? "",
+        deliveryReference: order.delivery_reference ?? "",
+        paymentMethod: order.payment_method_requested ?? order.payment_method ?? "",
+        requestedCashTendered: order.requested_cash_tendered,
+        createdAt: order.created_at,
+      });
     }
   }
 
-  return conversationRows.map((row) => ({
-    id: row.id,
-    phone: row.external_contact_id,
-    status: row.status,
-    stage: row.stage,
-    botEnabled: row.bot_enabled ?? row.status !== "handoff",
-    assignedTo: row.assigned_to,
-    handoffReason: row.handoff_reason ?? "",
-    updatedAt: row.updated_at,
-    lastInboundAt: row.last_inbound_at,
-    lastOutboundAt: row.last_outbound_at,
-    lastMessage: lastMessages.get(row.id) ?? "Sin mensajes visibles",
-    context: conversationContext(row.state),
-  }));
+  return conversationRows.map((row) => {
+    const lastMessage = lastMessages.get(row.id);
+    return {
+      id: row.id,
+      phone: row.external_contact_id,
+      customerName: customers.get(row.customer_id)?.trim() ?? "",
+      status: row.status,
+      stage: row.stage,
+      botEnabled: row.bot_enabled ?? row.status !== "handoff",
+      assignedTo: row.assigned_to,
+      assignedName: row.assigned_to ? assignees.get(row.assigned_to)?.trim() ?? "" : "",
+      handoffReason: row.handoff_reason ?? "",
+      updatedAt: row.updated_at,
+      lastInboundAt: row.last_inbound_at,
+      lastOutboundAt: row.last_outbound_at,
+      lastMessage: lastMessage ? (lastMessage.body || "Contenido limpiado") : "Sin mensajes visibles",
+      lastMessageDirection: lastMessage?.direction ?? null,
+      lastMessageStatus: lastMessage?.status ?? "",
+      latestOrder: latestOrders.get(row.id) ?? null,
+      context: conversationContext(row.state),
+    };
+  });
 }
 
 async function loadWhatsappMessages(
@@ -327,6 +406,7 @@ export async function getWhatsappControlDataAction(): Promise<
             Boolean(serverConfig.accessToken && serverConfig.phoneNumberId),
           webhookSecurityReady: Boolean(serverConfig.verifyToken && serverConfig.appSecret),
           googleMapsReady: Boolean(process.env.GOOGLE_MAPS_SERVER_API_KEY?.trim()),
+          geminiReady: Boolean(process.env.GEMINI_API_KEY?.trim()),
           storeOriginReady:
             Boolean(operations.settings.store_address) &&
             operations.settings.store_latitude !== null &&
@@ -713,6 +793,7 @@ export async function sendWhatsappHumanReplyAction(
   try {
     const cleanBody = body.trim();
     if (!cleanBody) throw new Error("Escribe un mensaje");
+    if (cleanBody.length > 1500) throw new Error("El mensaje es demasiado largo");
     const { userId, admin } = await requireChannelUser();
     const conversation = await claimConversationForUser(
       admin,
@@ -758,7 +839,7 @@ export async function resumeWhatsappBotAction(
       .eq("id", conversationId)
       .single();
     if (current.error) throw current.error;
-    const { error } = await admin
+    const updated = await admin
       .from("channel_conversations")
       .update({
         status: "active",
@@ -769,8 +850,12 @@ export async function resumeWhatsappBotAction(
         handoff_reason: "",
         state: conversationStateAtStage(current.data.state, "ordering"),
       })
-      .eq("id", conversationId);
-    if (error) throw error;
+      .eq("id", conversationId)
+      .eq("status", "handoff")
+      .select("id")
+      .maybeSingle();
+    if (updated.error) throw updated.error;
+    if (!updated.data) throw new Error("Solo una conversación en atención manual puede volver al bot");
     await audit(userId, "resume_bot", "channel_conversation", conversationId);
     revalidatePath("/dashboard/whatsapp");
     return { success: true, data: undefined };
@@ -796,6 +881,47 @@ export async function closeWhatsappConversationAction(
     await audit(userId, "close_conversation", "channel_conversation", conversationId);
     revalidatePath("/dashboard/whatsapp");
     return { success: true, data: undefined };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
+export async function clearWhatsappConversationMessagesAction(
+  conversationId: string
+): Promise<WhatsappActionResult<{ redacted: number }>> {
+  try {
+    const { userId, admin } = await requireChannelUser(true);
+    const existing = await admin
+      .from("channel_conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .eq("provider", "meta")
+      .maybeSingle();
+    if (existing.error) throw existing.error;
+    if (!existing.data) throw new Error("No se encontró la conversación");
+
+    const countResult = await admin
+      .from("channel_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("conversation_id", conversationId)
+      .is("redacted_at", null);
+    if (countResult.error) throw countResult.error;
+
+    const redactedAt = new Date().toISOString();
+    const { error } = await admin
+      .from("channel_messages")
+      .update({ body: "", metadata: {}, redacted_at: redactedAt })
+      .eq("conversation_id", conversationId)
+      .is("redacted_at", null);
+    if (error) throw error;
+
+    const redacted = countResult.count ?? 0;
+    await audit(userId, "redact_conversation_messages", "channel_conversation", conversationId, {
+      redacted,
+      ordersPreserved: true,
+    });
+    revalidatePath("/dashboard/whatsapp");
+    return { success: true, data: { redacted } };
   } catch (error) {
     return { success: false, error: message(error) };
   }

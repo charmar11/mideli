@@ -15,27 +15,19 @@ import {
   RefreshCw,
   Save,
   Search,
-  Send,
   Settings2,
   ShieldCheck,
   Store,
   Trash2,
-  UserRoundCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  claimWhatsappConversationAction,
-  closeWhatsappConversationAction,
   deleteWhatsappScheduleExceptionAction,
-  getWhatsappConversationMessagesAction,
-  getWhatsappInboxSnapshotAction,
   locateWhatsappStoreAction,
-  resumeWhatsappBotAction,
-  sendWhatsappHumanReplyAction,
   testWhatsappDeliveryAddressAction,
   saveWhatsappScheduleExceptionAction,
   updateWhatsappCatalogItemAction,
@@ -44,13 +36,9 @@ import {
   updateWhatsappSettingsAction,
 } from "@/lib/actions/whatsapp";
 import { retryWhatsappNotificationAction } from "@/lib/actions/whatsapp-order-status";
-import type {
-  WhatsappAdminConversation,
-  WhatsappAdminMessage,
-  WhatsappControlData,
-} from "@/lib/whatsapp/admin-types";
-import type { MenuItem, WhatsappChannelSettings } from "@/types/database";
-import { WhatsAppSimulator } from "./whatsapp-simulator";
+import type { WhatsappControlData } from "@/lib/whatsapp/admin-types";
+import type { WhatsappChannelSettings } from "@/types/database";
+import { WhatsappInbox } from "./whatsapp-inbox";
 
 type ControlTab =
   | "overview"
@@ -59,47 +47,26 @@ type ControlTab =
   | "delivery"
   | "hours"
   | "bot"
-  | "diagnostics"
-  | "simulator";
+  | "diagnostics";
 
-const TABS: Array<{ id: ControlTab; label: string; icon: typeof Bot }> = [
+const PRIMARY_TABS: Array<{ id: ControlTab; label: string; icon: typeof Bot }> = [
+  { id: "inbox", label: "Bandeja", icon: MessageCircleMore },
   { id: "overview", label: "Resumen", icon: ShieldCheck },
-  { id: "inbox", label: "Conversaciones", icon: MessageCircleMore },
   { id: "catalog", label: "Catálogo", icon: PackageCheck },
+];
+
+const CONFIG_TABS: Array<{ id: ControlTab; label: string; icon: typeof Bot }> = [
   { id: "delivery", label: "Entregas", icon: MapPinned },
   { id: "hours", label: "Horarios", icon: Clock3 },
   { id: "bot", label: "Bot", icon: Bot },
   { id: "diagnostics", label: "Diagnóstico", icon: ShieldCheck },
-  { id: "simulator", label: "Simulador", icon: Settings2 },
 ];
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 type Props = {
   data: WhatsappControlData;
-  menuItems: MenuItem[];
-  catalogError: string | null;
-  simulatorEnabled: boolean;
 };
-
-function formatPhone(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("52") && digits.length >= 12) {
-    const local = digits.slice(-10);
-    return `+52 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
-  }
-  return `+${digits}`;
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "Sin actividad";
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`rounded-2xl border border-border bg-surface ${className}`}>{children}</section>;
@@ -136,9 +103,9 @@ function Toggle({
   );
 }
 
-export function WhatsAppControlCenter({ data, menuItems, catalogError, simulatorEnabled }: Props) {
+export function WhatsAppControlCenter({ data }: Props) {
   const router = useRouter();
-  const [tab, setTab] = useState<ControlTab>("overview");
+  const [tab, setTab] = useState<ControlTab>("inbox");
   const [isPending, startTransition] = useTransition();
   const admin = data.role === "owner" || data.role === "admin";
 
@@ -162,8 +129,14 @@ export function WhatsAppControlCenter({ data, menuItems, catalogError, simulator
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`rounded-full px-3 py-1.5 font-heading text-[11px] font-bold ${data.persisted ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
-              {data.persisted ? "Configuración disponible" : "Migración pendiente"}
+            <span className={`rounded-full px-3 py-1.5 font-heading text-[11px] font-bold ${data.persisted && data.settings.receive_enabled ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+              {!data.persisted
+                ? "Configuración pendiente"
+                : data.settings.receive_enabled && data.settings.auto_reply_enabled
+                  ? "Canal atendiendo"
+                  : data.settings.receive_enabled
+                    ? "Atención manual"
+                    : "Canal pausado"}
             </span>
             <Button variant="outline" className="h-10 gap-2" onClick={refresh} disabled={isPending}>
               <RefreshCw aria-hidden size={15} className={isPending ? "animate-spin" : ""} />
@@ -184,35 +157,58 @@ export function WhatsAppControlCenter({ data, menuItems, catalogError, simulator
           </div>
         ) : null}
 
-        <nav className="pos-scroll mb-4 flex gap-1 overflow-x-auto rounded-2xl border border-border bg-surface p-1.5" aria-label="Secciones de WhatsApp">
-          {TABS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className={`flex h-11 shrink-0 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold transition-colors ${tab === item.id ? "bg-brand text-white shadow-md shadow-brand/20" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
-              >
-                <Icon aria-hidden size={16} />
-                {item.label}
-              </button>
-            );
-          })}
+        <nav className="pos-scroll mb-4 flex items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5" aria-label="Secciones de WhatsApp">
+          <div className="pos-scroll flex min-w-0 flex-1 gap-1 overflow-x-auto">
+            {PRIMARY_TABS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setTab(item.id)}
+                  className={`flex h-11 shrink-0 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold transition-colors ${tab === item.id ? "bg-brand text-white shadow-md shadow-brand/20" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
+                >
+                  <Icon aria-hidden size={16} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+          <details className="group relative shrink-0">
+            <summary className={`flex h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold transition-colors [&::-webkit-details-marker]:hidden ${CONFIG_TABS.some((item) => item.id === tab) ? "bg-brand text-white" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>
+              <Settings2 aria-hidden size={16} />
+              <span className="hidden sm:inline">Configurar</span>
+              <ChevronRight aria-hidden size={14} className="rotate-90 transition-transform group-open:-rotate-90" />
+            </summary>
+            <div className="absolute right-0 z-40 mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-float">
+              {CONFIG_TABS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={(event) => {
+                      setTab(item.id);
+                      event.currentTarget.closest("details")?.removeAttribute("open");
+                    }}
+                    className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left font-heading text-xs font-bold transition-colors ${tab === item.id ? "bg-brand/15 text-brand" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
+                  >
+                    <Icon aria-hidden size={16} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </details>
         </nav>
 
         {tab === "overview" ? <Overview data={data} onOpen={setTab} /> : null}
-        {tab === "inbox" ? <Inbox data={data} onRefresh={refresh} /> : null}
+        {tab === "inbox" ? <WhatsappInbox data={data} /> : null}
         {tab === "catalog" ? <Catalog data={data} admin={admin} onRefresh={refresh} /> : null}
         {tab === "delivery" ? <Delivery data={data} admin={admin} onRefresh={refresh} /> : null}
         {tab === "hours" ? <Hours data={data} admin={admin} onRefresh={refresh} /> : null}
         {tab === "bot" ? <BotSettings data={data} admin={admin} onRefresh={refresh} /> : null}
         {tab === "diagnostics" ? <Diagnostics data={data} admin={admin} /> : null}
-        {tab === "simulator" ? (
-          <div className="min-h-[720px] overflow-hidden rounded-2xl border border-border">
-            <WhatsAppSimulator menuItems={menuItems} catalogError={catalogError} simulatorEnabled={simulatorEnabled} />
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -244,6 +240,11 @@ function Diagnostics({ data, admin }: { data: WhatsappControlData; admin: boolea
       label: "Google Maps disponible",
       ready: data.diagnostics.googleMapsReady,
       detail: "Necesario para calcular cobertura y tarifa a domicilio.",
+    },
+    {
+      label: "Interpretación natural disponible",
+      ready: data.diagnostics.geminiReady,
+      detail: "Gemini apoya mensajes ambiguos sin decidir precios ni pedidos.",
     },
     {
       label: "Origen del local ubicado",
@@ -398,210 +399,6 @@ function Overview({ data, onOpen }: { data: WhatsappControlData; onOpen: (tab: C
           </button>
         </Panel>
       </div>
-    </div>
-  );
-}
-
-function sameConversations(
-  current: WhatsappAdminConversation[],
-  next: WhatsappAdminConversation[]
-) {
-  return current.length === next.length && current.every((item, index) => {
-    const candidate = next[index];
-    return candidate
-      && item.id === candidate.id
-      && item.updatedAt === candidate.updatedAt
-      && item.status === candidate.status
-      && item.botEnabled === candidate.botEnabled
-      && item.assignedTo === candidate.assignedTo
-      && item.lastMessage === candidate.lastMessage;
-  });
-}
-
-function sameMessages(current: WhatsappAdminMessage[], next: WhatsappAdminMessage[]) {
-  return current.length === next.length && current.every((item, index) => {
-    const candidate = next[index];
-    return candidate
-      && item.id === candidate.id
-      && item.status === candidate.status
-      && item.body === candidate.body
-      && item.occurredAt === candidate.occurredAt;
-  });
-}
-
-function Inbox({ data }: { data: WhatsappControlData; onRefresh: () => void }) {
-  const [conversations, setConversations] = useState(data.conversations);
-  const [selectedId, setSelectedId] = useState<string | null>(data.conversations[0]?.id ?? null);
-  const effectiveSelectedId = conversations.some((conversation) => conversation.id === selectedId)
-    ? selectedId
-    : conversations[0]?.id ?? null;
-  const selected = conversations.find((conversation) => conversation.id === effectiveSelectedId)
-    ?? conversations[0]
-    ?? null;
-  const [messages, setMessages] = useState<WhatsappAdminMessage[]>([]);
-  const [draft, setDraft] = useState("");
-  const [loadedConversationId, setLoadedConversationId] = useState<string | null>(null);
-  const loading = Boolean(effectiveSelectedId && loadedConversationId !== effectiveSelectedId);
-  const [pending, startTransition] = useTransition();
-  const selectedIdRef = useRef(effectiveSelectedId);
-  const syncingRef = useRef(false);
-  const messageViewportRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    selectedIdRef.current = effectiveSelectedId;
-  }, [effectiveSelectedId]);
-
-  useEffect(() => {
-    if (!effectiveSelectedId) return;
-    let active = true;
-    void getWhatsappConversationMessagesAction(effectiveSelectedId).then((result) => {
-      if (!active) return;
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
-      setMessages((current) => sameMessages(current, result.data) ? current : result.data);
-      setLoadedConversationId(effectiveSelectedId);
-    });
-    return () => {
-      active = false;
-    };
-  }, [effectiveSelectedId]);
-
-  const syncInbox = useCallback(async () => {
-    if (syncingRef.current || document.visibilityState !== "visible") return;
-    syncingRef.current = true;
-    const requestedConversationId = selectedIdRef.current;
-    try {
-      const result = await getWhatsappInboxSnapshotAction(requestedConversationId);
-      if (!result.success) return;
-      setConversations((current) =>
-        sameConversations(current, result.data.conversations)
-          ? current
-          : result.data.conversations
-      );
-      if (result.data.conversationId === selectedIdRef.current) {
-        setMessages((current) =>
-          sameMessages(current, result.data.messages) ? current : result.data.messages
-        );
-        setLoadedConversationId(result.data.conversationId);
-      }
-    } catch {
-      // Conserva la última bandeja útil y vuelve a intentar en el siguiente ciclo.
-    } finally {
-      syncingRef.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => void syncInbox(), 2_000);
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") void syncInbox();
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [syncInbox]);
-
-  useEffect(() => {
-    const viewport = messageViewportRef.current;
-    if (!viewport || loading) return;
-    const frame = window.requestAnimationFrame(() => {
-      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [effectiveSelectedId, loading, messages]);
-
-  function openConversation(conversation: WhatsappAdminConversation) {
-    setMessages([]);
-    setSelectedId(conversation.id);
-  }
-
-  function run(action: () => Promise<{ success: boolean; error?: string }>, success: string) {
-    startTransition(async () => {
-      const result = await action();
-      if (!result.success) {
-        toast.error(result.error ?? "No se pudo completar");
-        return;
-      }
-      toast.success(success);
-      void syncInbox();
-    });
-  }
-
-  function sendReply() {
-    if (!selected || !draft.trim()) return;
-    const body = draft.trim();
-    startTransition(async () => {
-      const result = await sendWhatsappHumanReplyAction(selected.id, body);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
-      setDraft("");
-      const refreshed = await getWhatsappConversationMessagesAction(selected.id);
-      if (refreshed.success) setMessages(refreshed.data);
-      toast.success("Mensaje enviado");
-      void syncInbox();
-    });
-  }
-
-  return (
-    <div className="grid min-h-[650px] gap-4 lg:grid-cols-[22rem_1fr]">
-      <Panel className="min-h-0 overflow-hidden">
-        <div className="border-b border-border p-4"><h2 className="font-heading text-base font-bold">Conversaciones recientes</h2><p className="font-body text-xs text-muted-foreground">Toma el control cuando el bot necesite ayuda.</p></div>
-        <div className="pos-scroll max-h-[650px] overflow-y-auto p-2">
-          {conversations.length === 0 ? <p className="p-8 text-center font-body text-sm text-muted-foreground">Todavía no hay conversaciones.</p> : conversations.map((conversation) => (
-            <button key={conversation.id} type="button" onClick={() => openConversation(conversation)} className={`mb-1 w-full rounded-xl p-3 text-left transition-colors ${selected?.id === conversation.id ? "bg-brand/15 ring-1 ring-brand/30" : "hover:bg-background"}`}>
-              <div className="flex items-center justify-between gap-2"><strong className="font-heading text-sm">{formatPhone(conversation.phone)}</strong><span className={`rounded-full px-2 py-0.5 font-heading text-[10px] font-bold ${conversation.status === "handoff" ? "bg-warning/15 text-warning" : conversation.status === "active" ? "bg-success/15 text-success" : "bg-surface-raised text-muted-foreground"}`}>{conversation.status === "handoff" ? "ATENCIÓN" : conversation.status.toUpperCase()}</span></div>
-              <p className="mt-1 line-clamp-2 font-body text-xs text-muted-foreground">{conversation.lastMessage}</p>
-              <p className="mt-2 font-data text-[10px] text-muted-foreground">{formatDate(conversation.updatedAt)}</p>
-            </button>
-          ))}
-        </div>
-      </Panel>
-
-      <Panel className="flex min-h-[650px] flex-col overflow-hidden">
-        {!selected ? <div className="flex flex-1 items-center justify-center p-8 text-center text-muted-foreground"><div><MessageCircleMore className="mx-auto mb-3" size={28} /><p className="font-heading text-sm font-bold">Selecciona una conversación</p></div></div> : (
-          <>
-            <div className="flex flex-wrap items-center gap-2 border-b border-border p-4">
-              <div className="min-w-0 flex-1"><h2 className="font-heading text-base font-bold">{formatPhone(selected.phone)}</h2><p className="font-body text-xs text-muted-foreground">{selected.botEnabled ? "El bot está respondiendo" : "Atención manual activa"}</p></div>
-              {selected.botEnabled ? <Button variant="outline" className="h-9 gap-2" disabled={pending} onClick={() => run(() => claimWhatsappConversationAction(selected.id), "Conversación asignada")}><UserRoundCheck size={14} />Tomar</Button> : <Button variant="outline" className="h-9 gap-2" disabled={pending} onClick={() => run(() => resumeWhatsappBotAction(selected.id), "Bot reactivado")}><Bot size={14} />Devolver al bot</Button>}
-              <Button variant="ghost" className="h-9" disabled={pending} onClick={() => run(() => closeWhatsappConversationAction(selected.id), "Conversación cerrada")}>Cerrar</Button>
-            </div>
-            <div className="grid gap-2 border-b border-border bg-surface-raised/35 p-3 sm:grid-cols-3">
-              <div className="rounded-xl bg-background px-3 py-2 sm:col-span-2">
-                <p className="font-heading text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Pedido actual</p>
-                <p className="mt-1 font-body text-xs text-foreground">
-                  {selected.context.items.length > 0
-                    ? selected.context.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")
-                    : "Todavía no hay productos en el carrito"}
-                </p>
-              </div>
-              <div className="rounded-xl bg-background px-3 py-2">
-                <p className="font-heading text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total</p>
-                <p className="mt-1 font-data text-base font-bold text-brand">${selected.context.total}</p>
-              </div>
-              <div className="rounded-xl bg-background px-3 py-2">
-                <p className="font-heading text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Entrega</p>
-                <p className="mt-1 font-body text-xs">{selected.context.serviceType === "domicilio" ? "A domicilio" : selected.context.serviceType === "para_llevar" ? "Para recoger" : "Por definir"}</p>
-              </div>
-              <div className="rounded-xl bg-background px-3 py-2 sm:col-span-2">
-                <p className="font-heading text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Domicilio y pago</p>
-                <p className="mt-1 font-body text-xs">{selected.context.address || "Domicilio pendiente"}{selected.context.addressReference ? ` · ${selected.context.addressReference}` : ""}{selected.context.paymentMethod ? ` · ${selected.context.paymentMethod}` : ""}</p>
-              </div>
-            </div>
-            <div ref={messageViewportRef} className="pos-scroll flex-1 space-y-3 overflow-y-auto bg-background/55 p-4">
-              {loading ? <p className="text-center font-body text-sm text-muted-foreground">Cargando mensajes...</p> : messages.length === 0 ? <p className="text-center font-body text-sm text-muted-foreground">Esta conversación todavía no tiene mensajes visibles.</p> : messages.map((item) => (
-                <div key={item.id} className={`flex ${item.direction === "outbound" ? "justify-end" : "justify-start"}`}><div className={`max-w-[84%] rounded-2xl px-4 py-3 ${item.direction === "outbound" ? "rounded-br-md bg-brand text-white" : "rounded-bl-md bg-surface text-foreground ring-1 ring-border"}`}><p className="whitespace-pre-wrap font-body text-sm">{item.body || "Contenido eliminado por retención"}</p><p className={`mt-1 font-data text-[10px] ${item.direction === "outbound" ? "text-white/65" : "text-muted-foreground"}`}>{item.status} · {formatDate(item.occurredAt)}</p></div></div>
-              ))}
-            </div>
-            <div className="flex gap-2 border-t border-border p-3"><Input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendReply(); } }} placeholder="Escribe una respuesta..." className="h-11" /><Button className="h-11 gap-2 bg-success text-white hover:bg-success/85" disabled={pending || !draft.trim()} onClick={sendReply}><Send size={15} />Enviar</Button></div>
-          </>
-        )}
-      </Panel>
     </div>
   );
 }

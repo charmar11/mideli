@@ -82,19 +82,42 @@ async function findOpenConversation(
 
 async function ensureConversation(
   admin: SupabaseClient,
-  phone: string
+  phone: string,
+  customerName: string
 ) {
   const existing = await findOpenConversation(admin, phone);
   if (existing.error) throw existing.error;
-  if (existing.data) return existing.data as ConversationRow;
+  if (existing.data) {
+    if (customerName) {
+      const customerUpdate = await admin
+        .from("customers")
+        .update({ display_name: customerName })
+        .eq("phone", phone);
+      if (customerUpdate.error) throw customerUpdate.error;
+    }
+    return existing.data as ConversationRow;
+  }
 
-  const { data: customer, error: customerError } = await admin
-    .from("customers")
-    .upsert({ phone }, { onConflict: "phone" })
-    .select("id")
-    .single();
-  if (customerError || !customer) {
-    throw customerError ?? new Error("No se pudo registrar al cliente");
+  let customer: { id: string } | null = null;
+  if (!customerName) {
+    const existingCustomer = await admin
+      .from("customers")
+      .select("id")
+      .eq("phone", phone)
+      .maybeSingle();
+    if (existingCustomer.error) throw existingCustomer.error;
+    customer = existingCustomer.data;
+  }
+  if (!customer) {
+    const savedCustomer = await admin
+      .from("customers")
+      .upsert({ phone, display_name: customerName }, { onConflict: "phone" })
+      .select("id")
+      .single();
+    if (savedCustomer.error || !savedCustomer.data) {
+      throw savedCustomer.error ?? new Error("No se pudo registrar al cliente");
+    }
+    customer = savedCustomer.data;
   }
 
   const initialState = createConversation(phone);
@@ -143,7 +166,7 @@ export async function claimInboundMessage(
   message: NormalizedMetaMessage
 ): Promise<ClaimedConversation> {
   const admin = createAdminClient();
-  const conversation = await ensureConversation(admin, message.phone);
+  const conversation = await ensureConversation(admin, message.phone, message.customerName);
   const metadata = {
     ...(message.location ? { location: message.location } : {}),
     phoneNumberId: message.phoneNumberId,
@@ -297,6 +320,7 @@ export async function loadNextPendingInboundMessage(
   return {
     id: row.external_message_id,
     phone,
+    customerName: "",
     phoneNumberId: "",
     timestamp,
     type: row.message_type,
