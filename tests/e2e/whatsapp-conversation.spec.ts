@@ -304,6 +304,36 @@ test("distribuye variaciones distintas por unidad y conserva domicilio", () => {
   expect(second.reply).toContain("domicilio");
 });
 
+test("interpreta así está bien como cierre del carrito sin transferir la conversación", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Una Hamburguesa Sencilla",
+    navigationCatalog
+  );
+  expect(result.reply).toContain("¿Deseas agregar algo más?");
+
+  result = handleConversationMessage(result.state, "Así está bien", navigationCatalog);
+
+  expect(result.state.stage).toBe("awaiting_beverage");
+  expect(result.action).toBe("none");
+  expect(result.reply).toContain("Algo para tomar");
+});
+
+test("una afirmación breve después de agregar conserva el carrito y pide el siguiente producto", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Una Hamburguesa Sencilla",
+    navigationCatalog
+  );
+
+  result = handleConversationMessage(result.state, "Sí", navigationCatalog);
+
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.cart).toHaveLength(1);
+  expect(result.state.ambiguityCount).toBe(0);
+  expect(result.reply).toContain("qué más");
+});
+
 test("aplica una misma variación a todas las unidades configurables", () => {
   let state = createConversation("5216440000000");
   state = handleConversationMessage(

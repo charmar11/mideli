@@ -157,7 +157,7 @@ function cartUpdatedReply(state: ConversationState, intro = "✨ *Pedido actuali
     : state.serviceType === "para_llevar"
       ? "\n🛍️ Para recoger"
       : "";
-  return `${intro}\n\n${cartBreakdown(state.cart)}\n\n🧾 Total actual: *$${state.total}*${service}\n\n¿Así está bien? 😊`;
+  return `${intro}\n\n${cartBreakdown(state.cart)}\n\n🧾 Total actual: *$${state.total}*${service}\n\n¿Deseas agregar algo más? Si ya terminaste, escribe *sería todo* 😊`;
 }
 
 export function withCart(state: ConversationState, cart: ConversationCartLine[]) {
@@ -280,6 +280,12 @@ function isDoneIntent(text: string) {
 
 function isConfirmation(text: string) {
   return ["si", "si confirmo", "confirmo", "correcto", "adelante"].some(
+    (phrase) => text === phrase || includesPhrase(text, phrase)
+  );
+}
+
+function acceptsCurrentCart(text: string) {
+  return ["asi esta bien", "esta bien asi", "asi esta perfecto", "pedido correcto"].some(
     (phrase) => text === phrase || includesPhrase(text, phrase)
   );
 }
@@ -1138,6 +1144,23 @@ function handleOrdering(
     return continueAfterBeverages({ ...state, ambiguityCount: 0 });
   }
 
+  if (acceptsCurrentCart(text) && state.cart.length > 0) {
+    if (!state.beveragesOffered) {
+      return result(
+        { ...state, stage: "awaiting_beverage", beveragesOffered: true, ambiguityCount: 0 },
+        "🥤 *¿Algo para tomar?*\n\n¿Deseas agregar alguna bebida a tu pedido? 😊"
+      );
+    }
+    return continueAfterBeverages({ ...state, ambiguityCount: 0 });
+  }
+
+  if (isConfirmation(text) && state.cart.length > 0) {
+    return result(
+      { ...state, ambiguityCount: 0 },
+      "¡Claro! 😊 Dime qué más deseas agregar. Si ya terminaste, escribe *sería todo*."
+    );
+  }
+
   const matchedItemIds = new Set(matches.map((match) => match.item.id));
   if (isRemoval && matches.length > 0) {
     const explicit = explicitQuantityFromText(text);
@@ -1237,6 +1260,99 @@ function handleOrdering(
   return result(
     { ...state, ambiguityCount },
     "No encontré ese producto en el menú actual. Puedes escribir *menú* para ver opciones o intentar con otro nombre."
+  );
+}
+
+export type ValidatedCartOperation = {
+  kind: "add" | "remove" | "set_quantity";
+  productId: string;
+  quantity: number;
+  optionIds: string[];
+};
+
+export function applyValidatedCartOperations(
+  state: ConversationState,
+  operations: ValidatedCartOperation[],
+  catalog: ConversationCatalog,
+  serviceType: ConversationServiceType | null = null
+): ConversationResult | null {
+  if (operations.length === 0 || operations.length > 12) return null;
+
+  const validated = operations.map((operation) => {
+    const item = catalog.items.find((candidate) => candidate.id === operation.productId);
+    if (!item || !Number.isInteger(operation.quantity) || operation.quantity < 1 || operation.quantity > 20) {
+      return null;
+    }
+    const options = operation.optionIds.map((optionId) => {
+      for (const group of item.modifiers) {
+        const option = group.options.find((candidate) => candidate.id === optionId);
+        if (option) return option;
+      }
+      return null;
+    });
+    if (options.some((option) => option === null)) return null;
+    if (new Set(operation.optionIds).size !== operation.optionIds.length) return null;
+    for (const group of item.modifiers) {
+      const selectedCount = group.options.filter((option) =>
+        operation.optionIds.includes(option.id ?? "")
+      ).length;
+      const maximum = (group.selection_mode ?? "single") === "single"
+        ? 1
+        : Math.max(0, group.max_selections ?? group.options.length);
+      if (selectedCount > maximum) return null;
+    }
+    if (operation.kind !== "add" && operation.optionIds.length > 0) return null;
+    return { operation, item, options: options.filter((option) => option !== null) };
+  });
+  if (validated.some((entry) => entry === null)) return null;
+
+  let current = serviceType ? withServiceType(state, serviceType) : state;
+  let lastResult: ConversationResult | null = null;
+  for (const entry of validated) {
+    if (!entry) return null;
+    const { operation, item, options } = entry;
+    if (operation.kind === "add") {
+      const segment = [item.name, ...options.map((option) => option.name)].join(" ");
+      lastResult = addMatches(
+        current,
+        [{ item, start: 0, end: item.normalizedName.length, quantity: operation.quantity, segment }],
+        catalog
+      );
+      current = lastResult.state;
+      continue;
+    }
+    if (operation.kind === "remove") {
+      const before = productQuantity(current.cart, item.id);
+      if (before === 0) return null;
+      current = withCart(
+        { ...current, ambiguityCount: 0 },
+        removeProductQuantity(current.cart, item.id, operation.quantity)
+      );
+      continue;
+    }
+    const existing = productQuantity(current.cart, item.id);
+    if (existing === 0) return null;
+    lastResult = handleOrdering(
+      current,
+      `cambia ${item.name} a ${operation.quantity}`,
+      catalog
+    );
+    current = lastResult.state;
+  }
+
+  if (lastResult?.state.stage === "awaiting_modifiers") return lastResult;
+  if (current.cart.length === 0) {
+    return result(
+      { ...current, stage: "ordering", ambiguityCount: 0 },
+      "🗑️ Listo, retiré esos productos. Tu pedido quedó vacío. ¿Qué deseas agregar?"
+    );
+  }
+  return result(
+    { ...current, stage: "ordering", ambiguityCount: 0 },
+    cartUpdatedReply(
+      { ...current, stage: "ordering", ambiguityCount: 0 },
+      "✅😋 *¡Listo! Actualicé tu pedido*"
+    )
   );
 }
 

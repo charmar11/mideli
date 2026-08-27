@@ -6,12 +6,13 @@ import type { MenuItem, Order } from "@/types/database";
 import { buildConversationCatalog } from "./catalog";
 import {
   createConversation,
-  handleConversationMessage,
   recoverDeliveryQuote,
   reconcileCartWithCatalog,
   unsupportedMessageHandoff,
   withDeliveryQuote,
 } from "./conversation-engine";
+import { createGeminiSemanticInterpreter } from "./gemini-interpreter.server";
+import { handleHybridConversationMessage } from "./hybrid-interpreter";
 import type { readWhatsappServerConfig } from "./config.server";
 import type { NormalizedMetaMessage, NormalizedMetaWebhook } from "./meta-webhook";
 import { sendMetaTextMessage } from "./meta-provider";
@@ -44,6 +45,21 @@ import type {
 } from "./types";
 
 type WhatsappConfig = ReturnType<typeof readWhatsappServerConfig>;
+
+async function interpretMessage(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog,
+  config: WhatsappConfig
+) {
+  const interpreter = config.geminiInterpreterEnabled
+    ? createGeminiSemanticInterpreter({
+        apiKey: config.geminiApiKey,
+        model: config.geminiModel,
+      })
+    : null;
+  return handleHybridConversationMessage({ state, message, catalog, interpreter });
+}
 
 function deliveryQuoteReply(
   state: ConversationState,
@@ -169,7 +185,7 @@ async function processDryRunMessage(
   let result = dryRunResult(
     input === null
       ? unsupportedMessageHandoff(current)
-      : handleConversationMessage(current, input, catalog)
+      : await interpretMessage(current, input, catalog, config)
   );
   if (!channelIsOpen(operations) && current.stage !== "confirmed") {
     result = {
@@ -231,7 +247,7 @@ async function processQueuedMessage(
     let result =
       input === null
         ? unsupportedMessageHandoff(state)
-        : handleConversationMessage(state, input, catalog);
+        : await interpretMessage(state, input, catalog, config);
     let createdOrder: Order | null = null;
     let customerReceived = false;
 

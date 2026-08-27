@@ -8,6 +8,7 @@ function enabled(value: string | undefined) {
 
 export function readWhatsappServerConfig() {
   const provider = process.env.WHATSAPP_PROVIDER === "meta" ? "meta" : "simulator";
+  const geminiApiKey = process.env.GEMINI_API_KEY || "";
   const allowedPhones = new Set(
     (process.env.WHATSAPP_TEST_ALLOWLIST ?? "")
       .split(",")
@@ -27,5 +28,9 @@ export function readWhatsappServerConfig() {
     wabaId: process.env.META_WHATSAPP_WABA_ID || "",
     verifyToken: process.env.META_WHATSAPP_VERIFY_TOKEN || "",
     appSecret: process.env.META_APP_SECRET || "",
+    geminiInterpreterEnabled:
+      process.env.WHATSAPP_GEMINI_INTERPRETER_ENABLED !== "false" && Boolean(geminiApiKey),
+    geminiApiKey,
+    geminiModel: process.env.WHATSAPP_GEMINI_MODEL || "gemini-2.5-flash-lite",
   } as const;
 }
