@@ -61,6 +61,71 @@ export type WhatsappInboxSnapshot = {
   messages: WhatsappAdminMessage[];
 };
 
+export type WhatsappCustomerSummary = {
+  id: string;
+  phone: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt: string;
+  orderCount: number;
+  paidOrderCount: number;
+  totalPaid: number;
+  lastOrderAt: string | null;
+  lastOrderNumber: number | null;
+  lastConversationId: string | null;
+  lastConversationStatus: string;
+};
+
+export type WhatsappCustomerAddress = {
+  id: string;
+  label: string;
+  addressText: string;
+  reference: string;
+  formattedAddress: string;
+  colony: string;
+  latitude: number | null;
+  longitude: number | null;
+  deliveryFee: number | null;
+  isDefault: boolean;
+  lastUsedAt: string;
+};
+
+export type WhatsappCustomerOrder = {
+  id: string;
+  number: number;
+  status: string;
+  type: string;
+  total: number;
+  paidAmount: number;
+  paymentStatus: string;
+  paymentMethod: string;
+  sourceChannel: string;
+  deliveryStatus: string;
+  deliveryAddress: string;
+  deliveryReference: string;
+  deliveryFee: number;
+  channelConversationId: string | null;
+  createdAt: string;
+  items: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    notes: string;
+  }>;
+};
+
+export type WhatsappCustomerDetail = {
+  customer: WhatsappCustomerSummary;
+  addresses: WhatsappCustomerAddress[];
+  orders: WhatsappCustomerOrder[];
+};
+
+export type WhatsappCustomerDirectory = {
+  query: string;
+  customers: WhatsappCustomerSummary[];
+};
+
 export type WhatsappAdminCatalogItem = {
   id: string;
   name: string;

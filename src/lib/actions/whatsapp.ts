@@ -9,9 +9,15 @@ import type {
   WhatsappAdminMessage,
   WhatsappAdminRole,
   WhatsappControlData,
+  WhatsappCustomerDetail,
+  WhatsappCustomerDirectory,
   WhatsappInboxSnapshot,
 } from "@/lib/whatsapp/admin-types";
 import { readWhatsappServerConfig } from "@/lib/whatsapp/config.server";
+import {
+  loadWhatsappCustomerDetail,
+  loadWhatsappCustomerDirectory,
+} from "@/lib/whatsapp/customers.server";
 import { geocodeDestination } from "@/lib/whatsapp/google-maps.server";
 import { sendMetaTextMessage } from "@/lib/whatsapp/meta-provider";
 import {
@@ -924,5 +930,182 @@ export async function clearWhatsappConversationMessagesAction(
     return { success: true, data: { redacted } };
   } catch (error) {
     return { success: false, error: message(error) };
+  }
+}
+
+export async function getWhatsappCustomersAction(
+  query = ""
+): Promise<WhatsappActionResult<WhatsappCustomerDirectory>> {
+  try {
+    const { admin } = await requireChannelUser(true);
+    return { success: true, data: await loadWhatsappCustomerDirectory(admin, query) };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
+export async function getWhatsappCustomerDetailAction(
+  customerId: string
+): Promise<WhatsappActionResult<WhatsappCustomerDetail>> {
+  try {
+    const { admin } = await requireChannelUser(true);
+    return { success: true, data: await loadWhatsappCustomerDetail(admin, customerId) };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
+export async function updateWhatsappCustomerAction(input: {
+  customerId: string;
+  displayName: string;
+}): Promise<WhatsappActionResult> {
+  try {
+    const displayName = input.displayName.trim().replace(/\s+/g, " ");
+    if (!displayName) throw new Error("Escribe el nombre del cliente");
+    if (displayName.length > 120) throw new Error("El nombre es demasiado largo");
+    const { userId, admin } = await requireChannelUser(true);
+    const updated = await admin
+      .from("customers")
+      .update({ display_name: displayName })
+      .eq("id", input.customerId)
+      .select("id")
+      .maybeSingle();
+    if (updated.error) throw updated.error;
+    if (!updated.data) throw new Error("No se encontró el cliente");
+    await audit(userId, "update_customer", "customer", input.customerId, {
+      changedFields: ["display_name"],
+    });
+    revalidatePath("/dashboard/whatsapp");
+    return { success: true, data: undefined };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
+export async function saveWhatsappCustomerAddressAction(input: {
+  customerId: string;
+  addressId?: string | null;
+  label: string;
+  addressText: string;
+  reference: string;
+  isDefault: boolean;
+}): Promise<WhatsappActionResult> {
+  try {
+    const label = input.label.trim().replace(/\s+/g, " ").slice(0, 80);
+    const addressText = input.addressText.trim().replace(/\s+/g, " ");
+    const reference = input.reference.trim().replace(/\s+/g, " ");
+    if (addressText.length < 8) throw new Error("Escribe un domicilio más completo");
+    if (addressText.length > 500) throw new Error("El domicilio es demasiado largo");
+    if (reference.length > 300) throw new Error("La referencia es demasiado larga");
+
+    const { userId, admin } = await requireChannelUser(true);
+    const customer = await admin
+      .from("customers")
+      .select("id")
+      .eq("id", input.customerId)
+      .maybeSingle();
+    if (customer.error) throw customer.error;
+    if (!customer.data) throw new Error("No se encontró el cliente");
+
+    let addressId = input.addressId ?? null;
+    let previousAddress = "";
+    if (addressId) {
+      const existing = await admin
+        .from("customer_addresses")
+        .select("id,address_text")
+        .eq("id", addressId)
+        .eq("customer_id", input.customerId)
+        .maybeSingle();
+      if (existing.error) throw existing.error;
+      if (!existing.data) throw new Error("No se encontró el domicilio");
+      previousAddress = existing.data.address_text;
+    }
+
+    const addressCount = await admin
+      .from("customer_addresses")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", input.customerId);
+    if (addressCount.error) throw addressCount.error;
+    const isDefault = input.isDefault || (addressCount.count ?? 0) === 0;
+    let previousDefaultId: string | null = null;
+    if (isDefault) {
+      const previousDefault = await admin
+        .from("customer_addresses")
+        .select("id")
+        .eq("customer_id", input.customerId)
+        .eq("is_default", true)
+        .maybeSingle();
+      if (previousDefault.error) throw previousDefault.error;
+      previousDefaultId = previousDefault.data?.id ?? null;
+      const unset = await admin
+        .from("customer_addresses")
+        .update({ is_default: false })
+        .eq("customer_id", input.customerId)
+        .eq("is_default", true);
+      if (unset.error) throw unset.error;
+    }
+
+    const addressChanged = Boolean(addressId && previousAddress !== addressText);
+    const payload = {
+      label,
+      address_text: addressText,
+      reference,
+      is_default: isDefault,
+      ...(addressChanged
+        ? {
+            formatted_address: null,
+            colony: null,
+            latitude: null,
+            longitude: null,
+            distance_meters: null,
+            delivery_fee: null,
+            geocoded_at: null,
+          }
+        : {}),
+    };
+    try {
+      if (addressId) {
+        const updated = await admin
+          .from("customer_addresses")
+          .update(payload)
+          .eq("id", addressId)
+          .eq("customer_id", input.customerId)
+          .select("id")
+          .maybeSingle();
+        if (updated.error) throw updated.error;
+        if (!updated.data) throw new Error("No se pudo actualizar el domicilio");
+      } else {
+        const inserted = await admin
+          .from("customer_addresses")
+          .insert({ ...payload, customer_id: input.customerId })
+          .select("id")
+          .single();
+        if (inserted.error) throw inserted.error;
+        addressId = inserted.data.id;
+      }
+    } catch (writeError) {
+      if (isDefault && previousDefaultId) {
+        await admin
+          .from("customer_addresses")
+          .update({ is_default: true })
+          .eq("id", previousDefaultId)
+          .eq("customer_id", input.customerId);
+      }
+      throw writeError;
+    }
+
+    await audit(userId, "save_customer_address", "customer_address", addressId ?? "", {
+      customerId: input.customerId,
+      isDefault,
+      addressChanged,
+    });
+    revalidatePath("/dashboard/whatsapp");
+    return { success: true, data: undefined };
+  } catch (error) {
+    const detail = message(error);
+    if (detail.toLowerCase().includes("duplicate")) {
+      return { success: false, error: "Este domicilio ya está guardado" };
+    }
+    return { success: false, error: detail };
   }
 }

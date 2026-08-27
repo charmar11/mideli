@@ -208,6 +208,7 @@ La sección `/dashboard/whatsapp` funciona como una bandeja operativa para owner
 - Los nombres públicos recibidos en el webhook de Meta se guardan en `customers.display_name` para reconocer al cliente.
 - Catálogo y Resumen permanecen visibles; Entregas, Horarios, Bot y Diagnóstico viven bajo `Configurar`. El simulador fue retirado de la interfaz y del bundle.
 - La carga inicial ya no consulta el catálogo completo para un simulador. La bandeja usa una instantánea ligera cada dos segundos solo mientras la página está visible.
+- Owner y admin tienen la pestaña `Clientes` dentro de WhatsApp. Permite buscar globalmente por nombre, teléfono o folio, revisar totales pagados, domicilios e historial de hasta 100 pedidos, editar nombre y domicilios y abrir la conversación asociada. Los datos se cargan bajo demanda y no se agrega otra opción a la navegación principal.
 
 ### Imágenes de productos
 

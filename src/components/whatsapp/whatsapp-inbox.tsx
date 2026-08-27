@@ -57,6 +57,7 @@ import {
 
 type Props = {
   data: WhatsappControlData;
+  focusConversationId?: string | null;
 };
 
 function formatPhone(phone: string) {
@@ -740,10 +741,14 @@ function ChatPanel({
   );
 }
 
-export function WhatsappInbox({ data }: Props) {
+export function WhatsappInbox({ data, focusConversationId = null }: Props) {
   const admin = data.role === "owner" || data.role === "admin";
   const [conversations, setConversations] = useState(data.conversations);
-  const [selectedId, setSelectedId] = useState<string | null>(data.conversations[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    data.conversations.some((item) => item.id === focusConversationId)
+      ? focusConversationId
+      : data.conversations[0]?.id ?? null
+  );
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [messages, setMessages] = useState<WhatsappAdminMessage[]>([]);
   const [draft, setDraft] = useState("");

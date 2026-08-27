@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Store,
   Trash2,
+  UsersRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -38,19 +39,22 @@ import {
 import { retryWhatsappNotificationAction } from "@/lib/actions/whatsapp-order-status";
 import type { WhatsappControlData } from "@/lib/whatsapp/admin-types";
 import type { WhatsappChannelSettings } from "@/types/database";
+import { WhatsappCustomers } from "./whatsapp-customers";
 import { WhatsappInbox } from "./whatsapp-inbox";
 
 type ControlTab =
   | "overview"
   | "inbox"
+  | "customers"
   | "catalog"
   | "delivery"
   | "hours"
   | "bot"
   | "diagnostics";
 
-const PRIMARY_TABS: Array<{ id: ControlTab; label: string; icon: typeof Bot }> = [
+const PRIMARY_TABS: Array<{ id: ControlTab; label: string; icon: typeof Bot; adminOnly?: boolean }> = [
   { id: "inbox", label: "Bandeja", icon: MessageCircleMore },
+  { id: "customers", label: "Clientes", icon: UsersRound, adminOnly: true },
   { id: "overview", label: "Resumen", icon: ShieldCheck },
   { id: "catalog", label: "Catálogo", icon: PackageCheck },
 ];
@@ -106,6 +110,7 @@ function Toggle({
 export function WhatsAppControlCenter({ data }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<ControlTab>("inbox");
+  const [focusedConversationId, setFocusedConversationId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const admin = data.role === "owner" || data.role === "admin";
 
@@ -159,7 +164,7 @@ export function WhatsAppControlCenter({ data }: Props) {
 
         <nav className="pos-scroll mb-4 flex items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5" aria-label="Secciones de WhatsApp">
           <div className="pos-scroll flex min-w-0 flex-1 gap-1 overflow-x-auto">
-            {PRIMARY_TABS.map((item) => {
+            {PRIMARY_TABS.filter((item) => !item.adminOnly || admin).map((item) => {
               const Icon = item.icon;
               return (
                 <button
@@ -203,7 +208,15 @@ export function WhatsAppControlCenter({ data }: Props) {
         </nav>
 
         {tab === "overview" ? <Overview data={data} onOpen={setTab} /> : null}
-        {tab === "inbox" ? <WhatsappInbox data={data} /> : null}
+        {tab === "inbox" ? <WhatsappInbox data={data} focusConversationId={focusedConversationId} /> : null}
+        {tab === "customers" && admin ? (
+          <WhatsappCustomers
+            onOpenConversation={(conversationId) => {
+              setFocusedConversationId(conversationId);
+              setTab("inbox");
+            }}
+          />
+        ) : null}
         {tab === "catalog" ? <Catalog data={data} admin={admin} onRefresh={refresh} /> : null}
         {tab === "delivery" ? <Delivery data={data} admin={admin} onRefresh={refresh} /> : null}
         {tab === "hours" ? <Hours data={data} admin={admin} onRefresh={refresh} /> : null}

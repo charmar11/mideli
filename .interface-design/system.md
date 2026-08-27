@@ -51,3 +51,11 @@ Mideli se siente como una herramienta de servicio nocturno: cálida, compacta y 
 - Fallido usa fondo danger tenue y texto explícito.
 - El compositor se mantiene al final y respeta el área segura del dispositivo.
 - El scroll automático solo actúa al abrir o cuando la persona ya estaba al final.
+
+### Directorio de clientes
+
+- Escritorio: buscador y lista de 360 px a la izquierda; ficha comercial flexible a la derecha.
+- Móvil: lista o ficha, con regreso de 44 px; nunca apilar ambas vistas.
+- La fila resume identidad, teléfono, pedidos y total pagado sin convertirse en una cuadrícula de tarjetas.
+- La ficha agrupa métricas, conversación, domicilios e historial en ese orden.
+- Los domicilios se editan dentro de la sección, y el historial usa filas desplegables por folio.
