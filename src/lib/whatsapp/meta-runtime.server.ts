@@ -311,7 +311,7 @@ async function processQueuedMessage(
         });
         result = {
           ...result,
-          reply: `Pedido #${createdOrder.number} confirmado y enviado a cocina. Total $${createdOrder.total}.`,
+          reply: `✅ Pedido #${createdOrder.number} confirmado y enviado a cocina. Total $${createdOrder.total}.`,
         };
         summary.ordersCreated += 1;
       } catch {

@@ -9,6 +9,7 @@ import type {
   ConversationState,
 } from "./types";
 import { isMissingWhatsappSchema } from "./schema-compat";
+import { finalOrderStatusForPayment } from "./delivery-lifecycle";
 import type {
   NormalizedMetaMessage,
   NormalizedMetaStatus,
@@ -484,18 +485,55 @@ export async function createExternalOrder(input: {
 export async function markConversationCustomerReceived(conversationId: string) {
   const admin = createAdminClient();
   const now = new Date().toISOString();
-  const [orders, conversation] = await Promise.all([
-    admin
+  const current = await admin
+    .from("orders")
+    .select("id,status,payment_status,delivery_status")
+    .eq("channel_conversation_id", conversationId)
+    .eq("source_channel", "whatsapp")
+    .eq("type", "domicilio")
+    .eq("status", "ready")
+    .in("delivery_status", ["searching_driver", "driver_on_way"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (current.error) throw current.error;
+
+  if (current.data) {
+    const nextOrderStatus = finalOrderStatusForPayment(current.data.payment_status);
+    const updated = await admin
       .from("orders")
-      .update({ delivery_status: "customer_received", updated_at: now })
-      .eq("channel_conversation_id", conversationId)
-      .eq("source_channel", "whatsapp")
-      .eq("type", "domicilio"),
-    admin
-      .from("channel_conversations")
-      .update({ status: "closed", closed_at: now, bot_enabled: false })
-      .eq("id", conversationId),
-  ]);
-  if (orders.error) throw orders.error;
+      .update({
+        delivery_status: "customer_received",
+        status: nextOrderStatus,
+        updated_at: now,
+      })
+      .eq("id", current.data.id)
+      .eq("status", "ready")
+      .eq("delivery_status", current.data.delivery_status)
+      .select("id")
+      .maybeSingle();
+    if (updated.error) throw updated.error;
+    if (updated.data) {
+      const audit = await admin.from("whatsapp_admin_audit").insert({
+        actor_id: null,
+        action: "delivery_completed_by_customer",
+        entity_type: "order",
+        entity_id: current.data.id,
+        metadata: {
+          previous_status: current.data.delivery_status,
+          next_status: "customer_received",
+          origin: "customer",
+        },
+      });
+      if (audit.error) {
+        console.warn("La entrega se cerró, pero no se pudo registrar la auditoría.");
+      }
+    }
+  }
+
+  const conversation = await admin
+    .from("channel_conversations")
+    .update({ status: "closed", closed_at: now, bot_enabled: false })
+    .eq("id", conversationId);
   if (conversation.error) throw conversation.error;
 }

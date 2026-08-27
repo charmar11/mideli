@@ -35,7 +35,7 @@ const catalog = buildConversationCatalog([
       },
     ],
   },
-] as MenuItem[]);
+] as unknown as MenuItem[]);
 
 test("Gemini puede desambiguar dos unidades configuradas en una sola frase", async () => {
   const diagnostics: Array<{ outcome: string; operationCount?: number }> = [];

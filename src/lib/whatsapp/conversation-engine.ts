@@ -10,6 +10,7 @@ import {
   normalizeText,
   quantityFromText,
 } from "./normalize";
+import { isExplicitDeliveryReceipt } from "./delivery-lifecycle";
 import type {
   ConversationCatalog,
   ConversationCatalogItem,
@@ -307,12 +308,6 @@ function isNegative(text: string) {
 
 function requestsHuman(text: string) {
   return ["humano", "asesor", "persona", "hablar con alguien", "atencion humana"].some(
-    (phrase) => includesPhrase(text, phrase)
-  );
-}
-
-function confirmsArrival(text: string) {
-  return ["ya llego", "ya me llego", "ya llego el pedido", "recibi el pedido", "gracias ya llego"].some(
     (phrase) => includesPhrase(text, phrase)
   );
 }
@@ -1718,7 +1713,7 @@ export function handleConversationMessage(
     return result(state, "Una persona del equipo continuará contigo en cuanto esté disponible.", "handoff");
   }
   if (state.stage === "confirmed") {
-    if (confirmsArrival(text)) {
+    if (isExplicitDeliveryReceipt(text)) {
       return result(
         state,
         "¡Gracias por avisarnos! Esperamos que disfrutes tu pedido 😊",

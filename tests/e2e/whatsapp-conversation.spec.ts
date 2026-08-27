@@ -1007,3 +1007,29 @@ test("puede comenzar otro pedido desde una conversación confirmada", () => {
   expect(result.state.cart).toHaveLength(0);
   expect(result.reply).toContain("menú");
 });
+
+test("cierra el seguimiento solo cuando el cliente confirma una entrega real", () => {
+  const confirmed = {
+    ...createConversation("5216442793641"),
+    stage: "confirmed" as const,
+  };
+
+  const ambiguous = handleConversationMessage(confirmed, "gracias", catalog);
+  expect(ambiguous.action).toBe("none");
+  expect(ambiguous.state.stage).toBe("confirmed");
+
+  const notDelivered = handleConversationMessage(
+    confirmed,
+    "todavía no llega",
+    catalog
+  );
+  expect(notDelivered.action).toBe("none");
+
+  const delivered = handleConversationMessage(
+    confirmed,
+    "gracias, ya me lo entregaron",
+    catalog
+  );
+  expect(delivered.action).toBe("mark_customer_received");
+  expect(delivered.reply).toContain("Gracias por avisarnos");
+});

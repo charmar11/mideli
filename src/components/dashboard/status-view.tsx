@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -11,6 +11,12 @@ import {
   Pencil,
   RefreshCw,
   Bike,
+  Banknote,
+  Copy,
+  ExternalLink,
+  Loader2,
+  MapPin,
+  Phone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PaymentFlow, formatPaymentMoney } from "@/components/payments/payment-flow";
@@ -18,7 +24,18 @@ import { useOrderStore, type OrderWithItems } from "@/lib/stores";
 import { useCashShiftStore } from "@/lib/stores";
 import { formatOrderLocation } from "@/lib/order-location";
 import type { PaymentReceipt } from "@/types/payments";
-import { markWhatsappDriverOnWayAction } from "@/lib/actions/whatsapp-order-status";
+import {
+  finalizeWhatsappDeliveryAction,
+  getWhatsappDeliveryOperationsAction,
+  markWhatsappDriverOnWayAction,
+  notifyWhatsappOrderStatusAction,
+  retryWhatsappNotificationAction,
+  type WhatsappDeliveryOperationDetails,
+} from "@/lib/actions/whatsapp-order-status";
+import {
+  deliveryLaneForOrder,
+  shouldCompleteOrderAfterPayment,
+} from "@/lib/whatsapp/delivery-lifecycle";
 
 function formatTimeElapsed(dateString: string): string {
   const minutes = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
@@ -42,6 +59,20 @@ function outstanding(order: OrderWithItems) {
   return Math.max(0, order.total - Number(order.paid_amount ?? 0));
 }
 
+function paymentMethodLabel(method: OrderWithItems["payment_method_requested"]) {
+  if (method === "efectivo") return "Efectivo";
+  if (method === "tarjeta") return "Tarjeta";
+  if (method === "transferencia") return "Transferencia";
+  return "Por definir";
+}
+
+function formatDistance(distanceMeters: number | null | undefined) {
+  if (distanceMeters === null || distanceMeters === undefined) return null;
+  return distanceMeters < 1000
+    ? `${distanceMeters} m`
+    : `${(distanceMeters / 1000).toFixed(1)} km`;
+}
+
 export function StatusView({ onEditOrder }: StatusViewProps) {
   const activeOrders = useOrderStore((state) => state.activeOrders);
   const lastError = useOrderStore((state) => state.lastError);
@@ -49,6 +80,10 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   const markAsServed = useOrderStore((state) => state.markAsServed);
   const [, setTick] = useState(0);
   const [paymentOrders, setPaymentOrders] = useState<OrderWithItems[] | null>(null);
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  const [deliveryDetails, setDeliveryDetails] = useState<
+    Record<string, WhatsappDeliveryOperationDetails>
+  >({});
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
 
   useEffect(() => {
@@ -56,10 +91,52 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
     return () => clearInterval(interval);
   }, []);
 
-  const ready = activeOrders.filter((order) => order.status === "ready");
+  const ready = activeOrders.filter((order) => deliveryLaneForOrder(order) === "ready");
+  const searchingDriver = activeOrders.filter(
+    (order) => deliveryLaneForOrder(order) === "searching_driver"
+  );
+  const driverOnWay = activeOrders.filter(
+    (order) => deliveryLaneForOrder(order) === "driver_on_way"
+  );
   const preparing = activeOrders.filter(
     (order) => order.status === "pending" || order.status === "in_kitchen"
   );
+
+  const deliveryOrderKey = useMemo(
+    () =>
+      activeOrders
+        .filter(
+          (order) =>
+            order.status === "ready" &&
+            order.source_channel === "whatsapp" &&
+            order.type === "domicilio"
+        )
+        .map((order) => `${order.id}:${order.delivery_status ?? "pending"}`)
+        .sort()
+        .join(","),
+    [activeOrders]
+  );
+
+  const loadDeliveryDetails = useCallback(async () => {
+    const orderIds = deliveryOrderKey
+      ? deliveryOrderKey.split(",").map((entry) => entry.split(":")[0])
+      : [];
+    if (orderIds.length === 0) return;
+    const result = await getWhatsappDeliveryOperationsAction(orderIds);
+    if (result.success) setDeliveryDetails(result.details);
+  }, [deliveryOrderKey]);
+
+  useEffect(() => {
+    if (!deliveryOrderKey) return;
+    let cancelled = false;
+    const orderIds = deliveryOrderKey.split(",").map((entry) => entry.split(":")[0]);
+    void getWhatsappDeliveryOperationsAction(orderIds).then((result) => {
+      if (!cancelled && result.success) setDeliveryDetails(result.details);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [deliveryOrderKey]);
 
   async function handleDeliver(orderId: string, number: number) {
     const { error } = await markAsServed(orderId);
@@ -88,19 +165,85 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   async function handlePaymentCompleted(receipt: PaymentReceipt) {
     if (!paymentOrders || paymentOrders.length !== 1) return;
     const order = paymentOrders[0];
-    if (order.type === "comedor" || order.status !== "ready") return;
+    await fetchActiveOrders();
+    if (!shouldCompleteOrderAfterPayment(order)) return;
     if (receipt.transaction.subtotal_amount + 0.001 < outstanding(order)) return;
     await handleDeliver(order.id, order.number);
   }
 
   async function handleDriverOnWay(order: OrderWithItems) {
-    const result = await markWhatsappDriverOnWayAction(order.id);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
+    setBusyOrderId(order.id);
+    try {
+      const result = await markWhatsappDriverOnWayAction(order.id);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      const notificationReason = "reason" in result ? result.reason : undefined;
+      if (result.sent) {
+        toast.success(`Pedido #${order.number} en camino y cliente notificado`);
+      } else if (notificationReason === "notifications_disabled") {
+        toast.warning("Pedido en camino. Los avisos de WhatsApp están desactivados");
+      } else if (notificationReason === "send_failed") {
+        toast.warning("Pedido en camino. No se pudo avisar al cliente; puedes reintentar");
+      } else {
+        toast.info(`El pedido #${order.number} ya estaba actualizado`);
+      }
+      await fetchActiveOrders();
+      await loadDeliveryDetails();
+    } finally {
+      setBusyOrderId(null);
     }
-    toast.success(`El cliente del pedido #${order.number} fue notificado`);
-    await fetchActiveOrders();
+  }
+
+  async function handleStartDriverSearch(order: OrderWithItems) {
+    setBusyOrderId(order.id);
+    try {
+      const result = await notifyWhatsappOrderStatusAction(order.id, "ready");
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      if (result.sent) toast.success("Búsqueda iniciada y cliente notificado");
+      else if ("reason" in result && result.reason === "send_failed") {
+        toast.warning("Búsqueda iniciada. No se pudo avisar al cliente");
+      } else toast.info("Búsqueda de repartidor iniciada");
+      await fetchActiveOrders();
+      await loadDeliveryDetails();
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  async function handleFinalizeDelivery(order: OrderWithItems) {
+    if (!window.confirm(`¿Finalizar la entrega del pedido #${order.number}?`)) return;
+    setBusyOrderId(order.id);
+    try {
+      const result = await finalizeWhatsappDeliveryAction(order.id);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Entrega del pedido #${order.number} finalizada`);
+      await fetchActiveOrders();
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  async function handleRetryNotification(order: OrderWithItems, eventId: string) {
+    setBusyOrderId(order.id);
+    try {
+      const result = await retryWhatsappNotificationAction(eventId);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Aviso del pedido #${order.number} reenviado`);
+      await loadDeliveryDetails();
+    } finally {
+      setBusyOrderId(null);
+    }
   }
 
   return (
@@ -132,6 +275,49 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           onDeliver={handleDeliver}
           onPay={openPayment}
           onDriverOnWay={handleDriverOnWay}
+          onStartDriverSearch={handleStartDriverSearch}
+          onFinalizeDelivery={handleFinalizeDelivery}
+          onRetryNotification={handleRetryNotification}
+          deliveryDetails={deliveryDetails}
+          busyOrderId={busyOrderId}
+          ready
+        />
+
+        <StatusSection
+          title="Buscando repartidor"
+          subtitle={`${searchingDriver.length} pedido${searchingDriver.length !== 1 ? "s" : ""} por asignar`}
+          icon={<Bike size={18} />}
+          iconClassName="bg-warning-light text-warning"
+          emptyIcon={<Bike size={28} />}
+          emptyText="No hay domicilios buscando repartidor"
+          orders={searchingDriver}
+          onEditOrder={onEditOrder}
+          onPay={openPayment}
+          onDriverOnWay={handleDriverOnWay}
+          onStartDriverSearch={handleStartDriverSearch}
+          onFinalizeDelivery={handleFinalizeDelivery}
+          onRetryNotification={handleRetryNotification}
+          deliveryDetails={deliveryDetails}
+          busyOrderId={busyOrderId}
+          ready
+        />
+
+        <StatusSection
+          title="En camino"
+          subtitle={`${driverOnWay.length} entrega${driverOnWay.length !== 1 ? "s" : ""} en trayecto`}
+          icon={<Bike size={18} />}
+          iconClassName="bg-success-light text-success"
+          emptyIcon={<Bike size={28} />}
+          emptyText="No hay pedidos en camino"
+          orders={driverOnWay}
+          onEditOrder={onEditOrder}
+          onPay={openPayment}
+          onDriverOnWay={handleDriverOnWay}
+          onStartDriverSearch={handleStartDriverSearch}
+          onFinalizeDelivery={handleFinalizeDelivery}
+          onRetryNotification={handleRetryNotification}
+          deliveryDetails={deliveryDetails}
+          busyOrderId={busyOrderId}
           ready
         />
 
@@ -144,6 +330,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyText="Sin pedidos en preparación"
           orders={preparing}
           onEditOrder={onEditOrder}
+          deliveryDetails={deliveryDetails}
+          busyOrderId={busyOrderId}
         />
       </div>
 
@@ -171,6 +359,11 @@ function StatusSection({
   onDeliver,
   onPay,
   onDriverOnWay,
+  onStartDriverSearch,
+  onFinalizeDelivery,
+  onRetryNotification,
+  deliveryDetails,
+  busyOrderId,
   ready = false,
 }: {
   title: string;
@@ -184,6 +377,11 @@ function StatusSection({
   onDeliver?: (orderId: string, number: number) => void;
   onPay?: (order: OrderWithItems) => void;
   onDriverOnWay?: (order: OrderWithItems) => void;
+  onStartDriverSearch?: (order: OrderWithItems) => void;
+  onFinalizeDelivery?: (order: OrderWithItems) => void;
+  onRetryNotification?: (order: OrderWithItems, eventId: string) => void;
+  deliveryDetails: Record<string, WhatsappDeliveryOperationDetails>;
+  busyOrderId: string | null;
   ready?: boolean;
 }) {
   return (
@@ -203,7 +401,26 @@ function StatusSection({
           {orders.map((order) => {
             const balance = outstanding(order);
             const isPaid = balance <= 0;
-            const takeaway = order.type !== "comedor";
+            const isWhatsappDelivery =
+              order.source_channel === "whatsapp" && order.type === "domicilio";
+            const isBusy = busyOrderId === order.id;
+            const details = deliveryDetails[order.id];
+            const distance = formatDistance(details?.distanceMeters);
+            const address = order.delivery_address?.trim() ?? "";
+            const reference = order.delivery_reference?.trim() ?? "";
+            const copyText = [address, reference ? `Referencia: ${reference}` : ""]
+              .filter(Boolean)
+              .join("\n");
+            const mapHref = address
+              ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+              : null;
+            const requestedCash = Number(order.requested_cash_tendered ?? 0);
+            const expectedChange = requestedCash > 0
+              ? Math.max(0, requestedCash - order.total)
+              : null;
+            const failedNotification = details?.notification?.status === "failed"
+              ? details.notification
+              : null;
             return (
               <article key={order.id} className={`rounded-2xl bg-surface p-4 shadow-card ring-1 ${ready ? "ring-success/35" : order.status === "in_kitchen" ? "ring-warning/40" : "ring-border"}`}>
                 <div className="mb-3 flex items-start justify-between gap-2">
@@ -227,24 +444,139 @@ function StatusSection({
                   {order.items.map((item, index) => <li key={item.id || index} className="flex items-baseline gap-2"><span className="font-data text-xs font-bold text-brand">{item.quantity}x</span><span className="font-body text-sm">{item.menu_item_name}</span></li>)}
                 </ul>
 
+                {ready && isWhatsappDelivery ? (
+                  <div className="mt-3 space-y-3 rounded-xl border border-border bg-ink/45 p-3">
+                    <div className="space-y-1.5 font-body text-xs">
+                      <p className="font-heading font-bold text-cream">
+                        {order.customer_name || "Cliente de WhatsApp"}
+                      </p>
+                      {order.customer_phone ? (
+                        <a href={`tel:${order.customer_phone}`} className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-cream">
+                          <Phone size={13} /> {order.customer_phone}
+                        </a>
+                      ) : null}
+                      <p className="flex items-start gap-1.5 text-muted-foreground">
+                        <MapPin size={13} className="mt-0.5 shrink-0" />
+                        <span>{address || "Domicilio no disponible"}</span>
+                      </p>
+                      {reference ? <p className="pl-[19px] text-muted-foreground">Referencia: {reference}</p> : null}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 font-body text-xs">
+                      <div className="rounded-lg bg-surface-raised p-2">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Reparto</p>
+                        <p className="mt-1 font-data font-bold">{distance ?? "Distancia no disponible"}</p>
+                        <p className="text-muted-foreground">Envío {formatPaymentMoney(Number(order.delivery_fee ?? 0))}</p>
+                      </div>
+                      <div className="rounded-lg bg-surface-raised p-2">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Cobro</p>
+                        <p className="mt-1 font-heading font-bold">{paymentMethodLabel(order.payment_method_requested)}</p>
+                        {requestedCash > 0 ? (
+                          <p className="text-muted-foreground">
+                            Recibe {formatPaymentMoney(requestedCash)}
+                            {expectedChange ? ` · cambio ${formatPaymentMoney(expectedChange)}` : ""}
+                          </p>
+                        ) : (
+                          <p className={isPaid ? "text-success" : "text-warning"}>
+                            {isPaid ? "Pagado" : `Pendiente ${formatPaymentMoney(balance)}`}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {mapHref ? (
+                        <a href={mapHref} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream hover:bg-border">
+                          <ExternalLink size={13} /> Abrir Maps
+                        </a>
+                      ) : <span />}
+                      <button
+                        type="button"
+                        disabled={!copyText}
+                        onClick={() => {
+                          void navigator.clipboard.writeText(copyText).then(
+                            () => toast.success("Domicilio copiado"),
+                            () => toast.error("No se pudo copiar el domicilio")
+                          );
+                        }}
+                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream hover:bg-border disabled:opacity-50"
+                      >
+                        <Copy size={13} /> Copiar
+                      </button>
+                    </div>
+
+                    {failedNotification ? (
+                      <p className="rounded-lg bg-destructive/10 p-2 font-body text-xs text-destructive">
+                        El pedido avanzó, pero el aviso por WhatsApp falló.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {ready ? (
                   <div className="mt-3 grid grid-cols-2 gap-2">
-                    {order.source_channel === "whatsapp" && order.type === "domicilio" ? (
-                      order.delivery_status === "driver_on_way" ? (
-                        <div className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-success/15 font-heading text-xs font-bold text-success">
-                          <Bike size={15} /> Repartidor en camino
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => onDriverOnWay?.(order)} className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors hover:bg-warning/25">
-                          <Bike size={15} /> Marcar repartidor en camino
+                    {isWhatsappDelivery ? (
+                      <>
+                        {order.delivery_status === "driver_on_way" ? (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => onFinalizeDelivery?.(order)}
+                            className="action-success col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold disabled:opacity-60"
+                          >
+                            {isBusy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                            Finalizar entrega
+                          </button>
+                        ) : order.delivery_status === "searching_driver" ? (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => onDriverOnWay?.(order)}
+                            className="col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors hover:bg-warning/25 disabled:opacity-60"
+                          >
+                            {isBusy ? <Loader2 size={15} className="animate-spin" /> : <Bike size={15} />}
+                            Repartidor en camino
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => onStartDriverSearch?.(order)}
+                            className="col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors hover:bg-warning/25 disabled:opacity-60"
+                          >
+                            {isBusy ? <Loader2 size={15} className="animate-spin" /> : <Bike size={15} />}
+                            Iniciar búsqueda de repartidor
+                          </button>
+                        )}
+                        {!isPaid ? (
+                          <button type="button" disabled={isBusy} onClick={() => onPay?.(order)} className="col-span-2 inline-flex h-12 items-center justify-center gap-1.5 rounded-xl bg-ink font-heading text-xs font-bold text-white transition-colors hover:bg-ink/85 disabled:opacity-60">
+                            <Banknote size={14} /> Cobrar {formatPaymentMoney(balance)}
+                          </button>
+                        ) : null}
+                        {failedNotification ? (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => onRetryNotification?.(order, failedNotification.id)}
+                            className="col-span-2 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-destructive/40 font-heading text-xs font-bold text-destructive hover:bg-destructive/10 disabled:opacity-60"
+                          >
+                            <RefreshCw size={13} /> Reintentar aviso al cliente
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" onClick={() => onDeliver?.(order.id, order.number)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${order.type === "para_llevar" && !isPaid ? "order-2 bg-surface-raised text-muted-foreground transition-colors hover:text-foreground" : "action-success"} ${isPaid ? "col-span-2" : ""}`}>
+                          <Hand size={14} /> Entregar
                         </button>
-                      )
-                    ) : null}
-                    <button type="button" onClick={() => onDeliver?.(order.id, order.number)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${takeaway && !isPaid ? "order-2 bg-surface-raised text-muted-foreground transition-colors hover:text-foreground" : "action-success"}`}>
-                      <Hand size={14} />
-                      Entregar
-                    </button>
-                    {!isPaid ? <button type="button" onClick={() => onPay?.(order)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${takeaway ? "action-success order-1" : "bg-ink text-white transition-colors hover:bg-ink/85"}`}><CreditCard size={14} />{takeaway ? "Cobrar y entregar" : `Cobrar ${formatPaymentMoney(balance)}`}</button> : <span />}
+                        {!isPaid ? (
+                          <button type="button" onClick={() => onPay?.(order)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${order.type === "para_llevar" ? "action-success order-1" : "bg-ink text-white transition-colors hover:bg-ink/85"}`}>
+                            <CreditCard size={14} />
+                            {order.type === "para_llevar" ? "Cobrar y entregar" : `Cobrar ${formatPaymentMoney(balance)}`}
+                          </button>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 ) : null}
               </article>
