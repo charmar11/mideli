@@ -11,7 +11,7 @@ Eliminar el desplazamiento horizontal y hacer cómodas la bandeja, el chat y la 
 - [x] Fase 3: implementar navegación y layouts responsivos
 - [x] Fase 4: verificar visualmente móvil y escritorio
 - [x] Fase 5: ejecutar lint, build y revisar el diff
-- [ ] Fase 6: crear checkpoint y desplegar a Vercel
+- [x] Fase 6: crear checkpoint y desplegar a Vercel
 
 ## Decisiones
 

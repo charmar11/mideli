@@ -17,3 +17,7 @@
 - `npm run lint` terminó sin errores.
 - `npm run build` terminó sin errores con 21 páginas generadas.
 - `git diff --check` terminó sin errores de formato.
+- Se creó el commit `22b3cf1` y el checkpoint `checkpoint-whatsapp-mobile-2026-08-27`.
+- Vercel terminó el despliegue de producción en estado `READY`.
+- `https://mideli.vercel.app` respondió HTTP 200.
+- `/api/health` respondió `status: ok` y confirmó la versión `22b3cf1c7129`.
