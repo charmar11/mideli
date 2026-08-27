@@ -126,7 +126,7 @@ function customerLabel(conversation: WhatsappAdminConversation) {
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`min-h-0 overflow-hidden rounded-2xl border border-border bg-surface ${className}`}>
+    <section className={`min-h-0 w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-border bg-surface ${className}`}>
       {children}
     </section>
   );
@@ -191,14 +191,14 @@ function ConversationList({
             aria-label="Buscar conversaciones"
           />
         </label>
-        <div className="pos-scroll mt-2 flex gap-1 overflow-x-auto" aria-label="Filtrar conversaciones">
+        <div className="mt-2 grid grid-cols-2 gap-1 sm:flex" aria-label="Filtrar conversaciones">
           {WHATSAPP_INBOX_FILTERS.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => onFilter(item.id)}
               aria-pressed={filter === item.id}
-              className={`h-9 shrink-0 rounded-lg px-3 font-heading text-[11px] font-bold transition-colors ${
+              className={`h-9 min-w-0 rounded-lg px-2 font-heading text-[11px] font-bold transition-colors sm:shrink-0 sm:px-3 ${
                 filter === item.id
                   ? "bg-cream text-ink"
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
@@ -404,7 +404,7 @@ function OrderContext({
         {reference ? (
           <p className="mt-1 font-body text-xs text-muted-foreground">Referencia: {reference}</p>
         ) : null}
-        {deliveryNotes && !reference.includes(deliveryNotes) ? (
+        {deliveryNotes && !(reference || "").includes(deliveryNotes) ? (
           <p className="mt-1 font-body text-xs text-muted-foreground">Acceso: {deliveryNotes}</p>
         ) : null}
         {address && !order ? (
@@ -976,7 +976,7 @@ export function WhatsappInbox({ data, focusConversationId = null }: Props) {
   }
 
   return (
-    <div className="grid h-[calc(100dvh-17rem)] min-h-[30rem] gap-3 lg:h-[calc(100dvh-14rem)] lg:max-h-[880px] lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[21rem_minmax(0,1fr)_19rem]">
+    <div className="grid h-[calc(100dvh-17rem)] min-h-[30rem] w-full min-w-0 max-w-full gap-3 overflow-hidden lg:h-[calc(100dvh-14rem)] lg:max-h-[880px] lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[21rem_minmax(0,1fr)_19rem]">
       <Panel className={`${mobileChatOpen ? "hidden lg:flex" : "flex"} flex-col`}>
         <ConversationList
           conversations={filteredConversations}

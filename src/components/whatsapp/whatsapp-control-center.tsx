@@ -74,7 +74,7 @@ type Props = {
 };
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-border bg-surface ${className}`}>{children}</section>;
+  return <section className={`min-w-0 max-w-full rounded-2xl border border-border bg-surface ${className}`}>{children}</section>;
 }
 
 function Toggle({
@@ -123,8 +123,8 @@ export function WhatsAppControlCenter({ data }: Props) {
   }
 
   return (
-    <div className="pos-scroll h-full overflow-y-auto bg-background">
-      <div className="mx-auto min-h-full max-w-[1500px] px-3 py-4 sm:px-5 sm:py-5">
+    <div className="pos-scroll h-full w-full max-w-full overflow-x-hidden overflow-y-auto bg-background">
+      <div className="mx-auto min-h-full w-full min-w-0 max-w-[1500px] px-3 py-3 sm:px-5 sm:py-5">
         <header className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-success/15 text-success">
@@ -137,9 +137,9 @@ export function WhatsAppControlCenter({ data }: Props) {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:flex">
             <PushNotificationControl topic="whatsapp_attention" />
-            <span className={`rounded-full px-3 py-1.5 font-heading text-[11px] font-bold ${data.persisted && data.settings.receive_enabled ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+            <span className={`min-w-0 truncate rounded-full px-2.5 py-1.5 text-center font-heading text-[10px] font-bold sm:px-3 sm:text-[11px] ${data.persisted && data.settings.receive_enabled ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
               {!data.persisted
                 ? "Configuración pendiente"
                 : data.settings.receive_enabled && data.settings.auto_reply_enabled
@@ -148,9 +148,9 @@ export function WhatsAppControlCenter({ data }: Props) {
                     ? "Atención manual"
                     : "Canal pausado"}
             </span>
-            <Button variant="outline" className="h-10 gap-2" onClick={refresh} disabled={isPending}>
+            <Button variant="outline" size="icon" className="size-10 shrink-0 sm:w-auto sm:px-4" onClick={refresh} disabled={isPending} aria-label="Actualizar WhatsApp">
               <RefreshCw aria-hidden size={15} className={isPending ? "animate-spin" : ""} />
-              Actualizar
+              <span className="hidden sm:inline">Actualizar</span>
             </Button>
           </div>
         </header>
@@ -167,8 +167,8 @@ export function WhatsAppControlCenter({ data }: Props) {
           </div>
         ) : null}
 
-        <nav className="pos-scroll mb-4 flex items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5" aria-label="Secciones de WhatsApp">
-          <div className="pos-scroll flex min-w-0 flex-1 gap-1 overflow-x-auto">
+        <nav className="mb-4 flex min-w-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5" aria-label="Secciones de WhatsApp">
+          <div className="flex min-w-0 flex-1 gap-1">
             {PRIMARY_TABS.filter((item) => !item.adminOnly || admin).map((item) => {
               const Icon = item.icon;
               return (
@@ -176,7 +176,7 @@ export function WhatsAppControlCenter({ data }: Props) {
                   key={item.id}
                   type="button"
                   onClick={() => setTab(item.id)}
-                  className={`flex h-11 shrink-0 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold transition-colors ${tab === item.id ? "bg-brand text-white shadow-md shadow-brand/20" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
+                  className={`flex h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 font-heading text-[9px] font-bold transition-colors sm:h-11 sm:flex-none sm:flex-row sm:gap-2 sm:px-3 sm:text-xs ${tab === item.id ? "bg-brand text-white shadow-md shadow-brand/20" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
                 >
                   <Icon aria-hidden size={16} />
                   {item.label}
@@ -185,10 +185,10 @@ export function WhatsAppControlCenter({ data }: Props) {
             })}
           </div>
           <details className="group relative shrink-0">
-            <summary className={`flex h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold transition-colors [&::-webkit-details-marker]:hidden ${CONFIG_TABS.some((item) => item.id === tab) ? "bg-brand text-white" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>
+            <summary className={`flex size-12 cursor-pointer list-none items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold transition-colors sm:h-11 sm:w-auto sm:px-3 [&::-webkit-details-marker]:hidden ${CONFIG_TABS.some((item) => item.id === tab) ? "bg-brand text-white" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>
               <Settings2 aria-hidden size={16} />
               <span className="hidden sm:inline">Configurar</span>
-              <ChevronRight aria-hidden size={14} className="rotate-90 transition-transform group-open:-rotate-90" />
+              <ChevronRight aria-hidden size={14} className="hidden rotate-90 transition-transform group-open:-rotate-90 sm:block" />
             </summary>
             <div className="absolute right-0 z-40 mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-float">
               {CONFIG_TABS.map((item) => {

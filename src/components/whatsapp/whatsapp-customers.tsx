@@ -103,7 +103,7 @@ function paymentLabel(status: string) {
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`min-h-0 overflow-hidden rounded-2xl border border-border bg-surface ${className}`}>
+    <section className={`min-h-0 w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-border bg-surface ${className}`}>
       {children}
     </section>
   );
@@ -113,7 +113,7 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-background p-3">
       <p className="font-body text-[11px] text-muted-foreground">{label}</p>
-      <p className="mt-1 font-mono text-base font-bold text-foreground tabular-nums">{value}</p>
+      <p className="mt-1 break-words font-mono text-sm font-bold text-foreground tabular-nums sm:text-base">{value}</p>
     </div>
   );
 }
@@ -192,7 +192,7 @@ function CustomerList({
               onClick={() => onSelect(customer)}
               className={`mb-1.5 w-full rounded-xl p-3 text-left transition-[background-color,transform] active:scale-[0.99] ${selected ? "bg-brand/15 ring-1 ring-brand/35" : "bg-background hover:bg-surface-raised"}`}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex min-w-0 items-start gap-3">
                 <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-brand text-white" : "bg-surface-raised text-muted-foreground"}`}>
                   <UserRound size={18} />
                 </span>
@@ -204,13 +204,13 @@ function CustomerList({
                     {formatPhone(customer.phone)}
                   </span>
                 </span>
-                <span className="font-mono text-xs font-bold text-gold tabular-nums">
-                  {formatMoney(customer.totalPaid)}
-                </span>
               </div>
-              <div className="mt-2 flex items-center justify-between gap-2 pl-[52px] font-body text-[11px] text-muted-foreground">
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pl-[52px] font-body text-[11px] text-muted-foreground">
+                <strong className="font-mono text-xs text-gold tabular-nums">
+                  {formatMoney(customer.totalPaid)}
+                </strong>
                 <span>{customer.orderCount} {customer.orderCount === 1 ? "pedido" : "pedidos"}</span>
-                <span className="truncate">{customer.lastOrderNumber ? `Último #${customer.lastOrderNumber}` : "Sin pedidos"}</span>
+                <span>{customer.lastOrderNumber ? `Último #${customer.lastOrderNumber}` : "Sin pedidos"}</span>
               </div>
             </button>
           );
@@ -253,9 +253,9 @@ function AddressEditor({
         <input type="checkbox" checked={draft.isDefault} onChange={(event) => onChange({ ...draft, isDefault: event.target.checked })} className="h-5 w-5 accent-brand" />
         <span className="font-heading text-xs font-bold">Usar como domicilio principal</span>
       </label>
-      <div className="mt-3 flex justify-end gap-2">
-        <Button variant="ghost" className="h-11" onClick={onCancel} disabled={pending}>Cancelar</Button>
-        <Button className="h-11 bg-success text-white hover:bg-success/85" onClick={onSave} disabled={pending || draft.addressText.trim().length < 8}>
+      <div className="mt-3 grid gap-2 sm:flex sm:justify-end">
+        <Button variant="ghost" className="h-11 w-full sm:w-auto" onClick={onCancel} disabled={pending}>Cancelar</Button>
+        <Button className="h-11 w-full bg-success text-white hover:bg-success/85 sm:w-auto" onClick={onSave} disabled={pending || draft.addressText.trim().length < 8}>
           {pending ? "Guardando…" : "Guardar domicilio"}
         </Button>
       </div>
@@ -366,11 +366,11 @@ function CustomerDetail({
         </span>
         <div className="min-w-0 flex-1">
           {editingName ? (
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} className="h-11 bg-background" autoFocus />
-              <div className="flex gap-2">
-                <Button variant="ghost" className="h-11" onClick={() => setEditingName(false)} disabled={pending}>Cancelar</Button>
-                <Button className="h-11 bg-success text-white hover:bg-success/85" onClick={saveName} disabled={pending || !nameDraft.trim()}>Guardar</Button>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+              <Input value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} className="h-11 min-w-0 bg-background" autoFocus />
+              <div className="grid gap-2 sm:flex">
+                <Button variant="ghost" className="h-11 w-full sm:w-auto" onClick={() => setEditingName(false)} disabled={pending}>Cancelar</Button>
+                <Button className="h-11 w-full bg-success text-white hover:bg-success/85 sm:w-auto" onClick={saveName} disabled={pending || !nameDraft.trim()}>Guardar</Button>
               </div>
             </div>
           ) : (
@@ -395,9 +395,9 @@ function CustomerDetail({
           <Metric label="Última compra" value={customer.lastOrderNumber ? `#${customer.lastOrderNumber}` : "Sin compras"} />
         </div>
 
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <div className="mt-3 grid gap-2 sm:flex">
           {customer.lastConversationId ? (
-            <Button className="h-11 gap-2 bg-success text-white hover:bg-success/85" onClick={() => onOpenConversation(customer.lastConversationId!)}>
+            <Button className="h-11 w-full gap-2 bg-success text-white hover:bg-success/85 sm:w-auto" onClick={() => onOpenConversation(customer.lastConversationId!)}>
               <MessageCircleMore size={16} />Abrir conversación
             </Button>
           ) : (
@@ -405,7 +405,7 @@ function CustomerDetail({
               <CircleAlert size={15} />Sin conversación disponible
             </div>
           )}
-          <a href={`tel:+${customer.phone}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border px-4 font-heading text-xs font-bold text-foreground hover:bg-surface-raised">
+          <a href={`tel:+${customer.phone}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border px-4 font-heading text-xs font-bold text-foreground hover:bg-surface-raised sm:w-auto">
             <UserRound size={15} />Llamar
           </a>
         </div>
@@ -448,8 +448,8 @@ function CustomerDetail({
                           {address.confirmed ? "Confirmado" : "Por confirmar"}
                         </span>
                       </div>
-                      <p className="mt-1 font-body text-sm text-foreground">{address.addressText}</p>
-                      {address.reference ? <p className="mt-1 font-body text-xs text-muted-foreground">Referencia: {address.reference}</p> : null}
+                      <p className="mt-1 break-words font-body text-sm text-foreground">{address.addressText}</p>
+                      {address.reference ? <p className="mt-1 break-words font-body text-xs text-muted-foreground">Referencia: {address.reference}</p> : null}
                       <div className="mt-2 flex flex-wrap gap-2 font-body text-[11px] text-muted-foreground">
                         {address.deliveryFee !== null ? <span>Último envío: {formatMoney(address.deliveryFee)}</span> : null}
                         <span>Usado {formatDate(address.lastUsedAt)}</span>
@@ -490,24 +490,24 @@ function CustomerDetail({
                 const orderState = whatsappOrderStatus(order.status, order.deliveryStatus);
                 return (
                   <details key={order.id} className="group rounded-xl bg-background">
-                    <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 p-3 [&::-webkit-details-marker]:hidden">
+                    <summary className="grid min-h-16 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 [&::-webkit-details-marker]:hidden">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-raised font-mono text-xs font-bold text-brand">#{order.number}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-2">
+                        <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                           <strong className="font-heading text-xs">{serviceLabel(order.type)}</strong>
-                          <span className="rounded-full bg-surface-raised px-2 py-0.5 font-heading text-[10px] font-bold text-muted-foreground">{orderState}</span>
+                          <strong className="font-mono text-sm text-gold tabular-nums">{formatMoney(order.total)}</strong>
                         </span>
+                        <span className="mt-1 inline-flex rounded-full bg-surface-raised px-2 py-0.5 font-heading text-[10px] font-bold text-muted-foreground">{orderState}</span>
                         <span className="mt-1 block font-body text-[11px] text-muted-foreground">{formatDate(order.createdAt)} · {paymentLabel(order.paymentStatus)} · {order.sourceChannel === "whatsapp" ? "WhatsApp" : "POS"}</span>
                       </span>
-                      <strong className="font-mono text-sm text-gold tabular-nums">{formatMoney(order.total)}</strong>
                       <ChevronDown size={15} className="text-muted-foreground transition-transform group-open:rotate-180" />
                     </summary>
                     <div className="border-t border-border px-3 pb-3 pt-2">
                       {order.items.length > 0 ? (
                         <div className="space-y-1">
                           {order.items.map((item) => (
-                            <p key={item.id} className="flex justify-between gap-3 font-body text-xs">
-                              <span><strong className="font-mono text-brand">{item.quantity}x</strong> {item.name}{item.notes ? ` · ${item.notes}` : ""}</span>
+                            <p key={item.id} className="flex min-w-0 justify-between gap-3 font-body text-xs">
+                              <span className="min-w-0 break-words"><strong className="font-mono text-brand">{item.quantity}x</strong> {item.name}{item.notes ? ` · ${item.notes}` : ""}</span>
                               <span className="shrink-0 font-mono text-muted-foreground">{formatMoney(item.unitPrice * item.quantity)}</span>
                             </p>
                           ))}
@@ -517,7 +517,7 @@ function CustomerDetail({
                         <Metric label="Pagado" value={formatMoney(order.paidAmount)} />
                         <Metric label="Envío" value={formatMoney(order.deliveryFee)} />
                       </div>
-                      {order.deliveryAddress ? <p className="mt-3 font-body text-xs text-muted-foreground">📍 {order.deliveryAddress}{order.deliveryReference ? ` · ${order.deliveryReference}` : ""}</p> : null}
+                      {order.deliveryAddress ? <p className="mt-3 break-words font-body text-xs text-muted-foreground">📍 {order.deliveryAddress}{order.deliveryReference ? ` · ${order.deliveryReference}` : ""}</p> : null}
                       {order.channelConversationId ? (
                         <Button variant="outline" className="mt-3 h-11 gap-2" onClick={() => onOpenConversation(order.channelConversationId!)}>
                           <MessageCircleMore size={15} />Abrir chat de este pedido
@@ -617,8 +617,8 @@ export function WhatsappCustomers({ onOpenConversation }: Props) {
   }
 
   return (
-    <div className="grid min-h-[620px] gap-3 lg:h-[calc(100dvh-13rem)] lg:grid-cols-[360px_minmax(0,1fr)]">
-      <div className={mobileDetail ? "hidden lg:block" : "block"}>
+    <div className="grid h-[calc(100dvh-17rem)] min-h-[30rem] w-full min-w-0 max-w-full gap-3 overflow-hidden lg:h-[calc(100dvh-13rem)] lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className={`min-w-0 ${mobileDetail ? "hidden lg:block" : "block"}`}>
         <CustomerList
           customers={customers}
           selectedId={selectedId}
@@ -629,7 +629,7 @@ export function WhatsappCustomers({ onOpenConversation }: Props) {
           onRefresh={() => void loadDirectory(query)}
         />
       </div>
-      <div className={mobileDetail ? "block" : "hidden lg:block"}>
+      <div className={`min-w-0 ${mobileDetail ? "block" : "hidden lg:block"}`}>
         <CustomerDetail
           key={selectedId ?? "empty-customer"}
           detail={detail}
