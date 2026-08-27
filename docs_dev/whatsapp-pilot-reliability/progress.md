@@ -18,3 +18,7 @@
 - `npx tsc --noEmit`, `npm run lint` y `npm run build` terminaron correctamente.
 - `npx supabase migration list` muestra solo la migración nueva como pendiente.
 - `npx supabase db push --linked --dry-run` confirmó que únicamente se aplicaría esa migración.
+- Se aplicó `20260827011009_whatsapp_conversation_processing_leases.sql` y el historial remoto quedó sincronizado.
+- Vercel desplegó el commit `0006712` y actualizó el alias `https://mideli.vercel.app`.
+- `GET /api/health` respondió 200 con versión `0006712a53e1`.
+- El webhook respondió 403 ante un token de verificación deliberadamente inválido.

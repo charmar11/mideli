@@ -33,4 +33,4 @@ Corregir el orden y tiempo de procesamiento, impedir cotizaciones sobre domicili
 
 ## Estado de entrega
 
-La implementación local está completa. Para probarla con Meta faltan dos acciones externas con autorización explícita: aplicar la migración pendiente y desplegar el código en Vercel. La creación de órdenes seguirá desactivada.
+La implementación está aplicada en Supabase y desplegada en Vercel. La creación de órdenes continúa desactivada para realizar el piloto conversacional sin afectar cocina, caja, impresión ni inventario.
