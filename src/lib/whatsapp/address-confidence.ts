@@ -27,8 +27,6 @@ const REJECTED_TYPES = new Set([
   "shopping_mall",
   "transit_station",
 ]);
-const PRECISE_LOCATION_TYPES = new Set(["ROOFTOP", "RANGE_INTERPOLATED"]);
-
 export function normalizeAddressQuery(value: string) {
   const compact = value
     .trim()
@@ -41,7 +39,7 @@ export function normalizeAddressQuery(value: string) {
   const street = parts[1].replace(/,\s*$/, "").trim();
   const number = parts[2].trim();
   const area = parts[3]
-    .replace(/^(?:col(?:onia)?|fracc(?:ionamiento)?)\.?\s+/i, "")
+    .replace(/^(?:col(?:onia)?|fracc(?:ionamiento)?)\.?\s*,?\s*/i, "")
     .trim();
   return [street, number, area].filter(Boolean).join(", ");
 }
@@ -78,11 +76,13 @@ function candidateScore(result: GoogleGeocodingResult) {
   let score = 0;
   if (result.types?.some((type) => ADDRESS_TYPES.has(type))) score += 20;
   if (result.geometry?.location_type === "ROOFTOP") score += 10;
+  if (result.geometry?.location_type === "RANGE_INTERPOLATED") score += 7;
   if (component(result, "street_number")) score += 8;
   if (component(result, "route")) score += 6;
   if (component(result, "sublocality_level_1") || component(result, "neighborhood")) {
     score += 3;
   }
+  if (result.partial_match) score -= 4;
   return score;
 }
 
@@ -95,12 +95,14 @@ export function selectConfidentAddressResult(
 
   const candidates = results.filter((result) => {
     const types = result.types ?? [];
-    if (result.partial_match) return false;
     if (types.some((type) => REJECTED_TYPES.has(type))) return false;
     if (!types.some((type) => ADDRESS_TYPES.has(type))) return false;
-    if (!PRECISE_LOCATION_TYPES.has(result.geometry?.location_type ?? "")) return false;
     if (!component(result, "route")?.long_name) return false;
     if (!hasExpectedLocality(result)) return false;
+    if (
+      !Number.isFinite(result.geometry?.location?.lat) ||
+      !Number.isFinite(result.geometry?.location?.lng)
+    ) return false;
     const actualNumber = normalizeText(component(result, "street_number")?.long_name ?? "");
     return actualNumber === expectedNumber;
   });

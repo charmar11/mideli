@@ -201,6 +201,7 @@ La sección `/dashboard/whatsapp` funciona como una bandeja operativa para owner
 
 - La vista inicial prioriza conversaciones en relevo humano y permite buscar por nombre, teléfono o folio.
 - En escritorio muestra cola, chat y comanda contextual. En móvil separa bandeja y conversación con regreso visible.
+- En móvil, `Ver carrito y cliente` abre una hoja inferior con desplazamiento propio para que cliente, comanda, entrega y acciones nunca queden recortados por el alto del chat.
 - La comanda reúne cliente, responsable, pedido, total, entrega, pago, dirección, copia y acceso a Google Maps.
 - El chat baja al final al abrirlo, pero conserva la posición cuando el personal revisa mensajes anteriores y avisa si llegan mensajes nuevos.
 - Responder desde Mideli toma la conversación y pausa el bot; también se puede devolver al bot o cerrar.
@@ -210,6 +211,8 @@ La sección `/dashboard/whatsapp` funciona como una bandeja operativa para owner
 - La carga inicial ya no consulta el catálogo completo para un simulador. La bandeja usa una instantánea ligera cada dos segundos solo mientras la página está visible.
 - Owner y admin tienen la pestaña `Clientes` dentro de WhatsApp. Permite buscar globalmente por nombre, teléfono o folio, revisar totales pagados, domicilios e historial de hasta 100 pedidos, editar nombre y domicilios y abrir la conversación asociada. Los datos se cargan bajo demanda y no se agrega otra opción a la navegación principal.
 - Toda dirección nueva escrita se geocodifica como candidata y se envía al cliente como ubicación nativa de WhatsApp. El costo de envío y el domicilio se guardan solo después de que el cliente confirma el punto. Una ubicación compartida o un domicilio previamente confirmado conserva el flujo rápido.
+- La geocodificación acepta como candidata una dirección aproximada solo cuando coinciden ciudad, calle y número; sigue rechazando puntos de interés. El cliente siempre confirma el mapa y dispone de dos correcciones antes del relevo humano.
+- Las decisiones breves usan botones nativos cuando caben en tres opciones: bebida, tipo de entrega, confirmación del domicilio, método de pago y confirmación final. El catálogo y las variaciones amplias conservan texto natural y numeración.
 - El bot reconoce indicaciones naturales de preparación, notas generales y datos de acceso. Las notas de producto llegan a la comanda; las generales se guardan en el pedido; los PIN y accesos privados se reservan para entrega y no aparecen en avisos Push.
 - Cada dispositivo puede activar o pausar `Chats por atender`. El primer relevo humano del ciclo genera un Push idempotente y abre directamente la conversación correspondiente.
 

@@ -19,6 +19,12 @@ export type MetaLocationMessage = {
   address?: string;
 };
 
+export type MetaReplyButtonsMessage = {
+  to: string;
+  body: string;
+  buttons: Array<{ id: string; title: string }>;
+};
+
 function metaErrorInfo(payload: unknown) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { detail: "", isTransient: false };
@@ -155,6 +161,38 @@ export async function sendMetaLocationMessage(
         longitude: message.longitude,
         ...(name ? { name } : {}),
         ...(address ? { address } : {}),
+      },
+    },
+    config,
+    fetcher
+  );
+}
+
+export async function sendMetaReplyButtonsMessage(
+  message: MetaReplyButtonsMessage,
+  config: MetaProviderConfig,
+  fetcher: typeof fetch = fetch
+) {
+  const body = message.body.trim();
+  if (!body) throw new Error("El mensaje de WhatsApp está vacío");
+  if (body.length > 1024) throw new Error("El mensaje interactivo de WhatsApp es demasiado largo");
+  if (message.buttons.length < 1 || message.buttons.length > 3) {
+    throw new Error("WhatsApp admite entre uno y tres botones de respuesta");
+  }
+  const buttons = message.buttons.map((button) => {
+    const id = button.id.trim().slice(0, 256);
+    const title = button.title.trim().slice(0, 20);
+    if (!id || !title) throw new Error("Los botones de WhatsApp necesitan identificador y texto");
+    return { type: "reply", reply: { id, title } };
+  });
+  return sendMetaMessage(
+    message.to,
+    {
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: body },
+        action: { buttons },
       },
     },
     config,

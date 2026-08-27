@@ -1,5 +1,6 @@
 import {
   findCatalogProducts,
+  findCatalogProductsInCategory,
   matchItemModifiers,
   missingRequiredGroups,
 } from "./catalog";
@@ -273,7 +274,7 @@ export function recoverDeliveryQuote(
       "handoff"
     );
   }
-  if (attempts >= 2) {
+  if (attempts >= 3) {
     return result(
       { ...state, stage: "handoff", deliveryQuoteAttempts: attempts },
       "No quiero hacerte perder tiempo 😊 Ya compartí tu dirección con el equipo para que continúe contigo.",
@@ -291,7 +292,9 @@ export function recoverDeliveryQuote(
       pendingDeliveryQuote: null,
       deliveryQuoteAttempts: attempts,
     },
-    "📍 No pude ubicar esa dirección con suficiente precisión. Envíamela con calle, número y colonia, o comparte tu ubicación desde WhatsApp 😊"
+    attempts === 1
+      ? "📍 No pude ubicar esa dirección con suficiente precisión. Envíamela con calle, número y colonia, o comparte tu ubicación desde WhatsApp 😊"
+      : "📍 Todavía no logro confirmar el punto exacto. Revisa calle, número y colonia, o comparte tu ubicación desde WhatsApp para evitar errores 😊"
   );
 }
 
@@ -1258,16 +1261,21 @@ function handleBrowsingCatalog(
   }
 
   const directMatches = findCatalogProducts(message, catalog);
+  const contextualMatches =
+    directMatches.length === 0 && state.selectedCategoryId
+      ? findCatalogProductsInCategory(message, catalog, state.selectedCategoryId)
+      : [];
+  const productMatches = directMatches.length > 0 ? directMatches : contextualMatches;
   const requestedCategory = requestedNavigationCategory(
     text,
     catalog,
-    directMatches.length > 0
+    productMatches.length > 0
   );
-  if (directMatches.length > 0) {
+  if (productMatches.length > 0) {
     return rememberServiceType(
       addMatchesAndMaybeBrowse(
         state,
-        directMatches,
+        productMatches,
         requestedCategory?.id ?? null,
         catalog
       ),

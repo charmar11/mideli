@@ -16,7 +16,12 @@ import { createGeminiSemanticInterpreter } from "./gemini-interpreter.server";
 import { handleHybridConversationMessage } from "./hybrid-interpreter";
 import type { readWhatsappServerConfig } from "./config.server";
 import type { NormalizedMetaMessage, NormalizedMetaWebhook } from "./meta-webhook";
-import { sendMetaLocationMessage, sendMetaTextMessage } from "./meta-provider";
+import {
+  sendMetaLocationMessage,
+  sendMetaReplyButtonsMessage,
+  sendMetaTextMessage,
+} from "./meta-provider";
+import { quickRepliesForState } from "./quick-replies";
 import { canCreateWhatsappOrder } from "./order-creation-policy";
 import {
   acquireConversationProcessing,
@@ -181,17 +186,23 @@ function dryRunResult(result: ConversationResult) {
 async function sendReply(
   config: WhatsappConfig,
   phone: string,
-  body: string
+  body: string,
+  state: ConversationState
 ) {
   if (!config.accessToken || !config.phoneNumberId) return null;
-  return sendMetaTextMessage(
-    { to: phone, body },
-    {
-      graphApiVersion: config.graphApiVersion,
-      phoneNumberId: config.phoneNumberId,
-      accessToken: config.accessToken,
-    }
-  );
+  const providerConfig = {
+    graphApiVersion: config.graphApiVersion,
+    phoneNumberId: config.phoneNumberId,
+    accessToken: config.accessToken,
+  };
+  const buttons = quickRepliesForState(state);
+  if (buttons.length > 0 && body.length <= 1024) {
+    return sendMetaReplyButtonsMessage(
+      { to: phone, body, buttons },
+      providerConfig
+    );
+  }
+  return sendMetaTextMessage({ to: phone, body }, providerConfig);
 }
 
 async function sendAddressLocation(
@@ -350,7 +361,7 @@ async function processDryRunMessage(
         }
       }
     }
-    const sent = await sendReply(config, message.phone, replyBody);
+    const sent = await sendReply(config, message.phone, replyBody, result.state);
     if (sent) summary.repliesSent += 1;
     else summary.replyFailures += 1;
   } catch (error) {
@@ -523,7 +534,7 @@ async function processQueuedMessage(
         }
       }
       try {
-        const sent = await sendReply(config, message.phone, replyBody);
+        const sent = await sendReply(config, message.phone, replyBody, result.state);
         if (sent) {
           summary.repliesSent += 1;
           try {

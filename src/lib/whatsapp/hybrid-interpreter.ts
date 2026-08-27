@@ -104,7 +104,8 @@ function localMisunderstood(
 ) {
   return (
     result.action === "handoff" ||
-    result.state.ambiguityCount > previous.ambiguityCount
+    result.state.ambiguityCount > previous.ambiguityCount ||
+    result.reply.includes("No encontré ese producto")
   );
 }
 

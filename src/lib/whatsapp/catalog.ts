@@ -204,6 +204,44 @@ export function findCatalogProducts(
   });
 }
 
+const CONTEXT_ALIAS_STOP_WORDS = new Set(["de", "del", "el", "la", "los", "las", "para", "y"]);
+
+function contextualAlias(item: ConversationCatalogItem) {
+  const categoryWords = new Set(
+    normalizeText(item.categoryName)
+      .split(" ")
+      .map(singularWord)
+  );
+  return item.normalizedName
+    .split(" ")
+    .map(singularWord)
+    .filter((word) => !categoryWords.has(word) && !CONTEXT_ALIAS_STOP_WORDS.has(word))
+    .join(" ");
+}
+
+export function findCatalogProductsInCategory(
+  message: string,
+  catalog: ConversationCatalog,
+  categoryId: string
+): CatalogProductMatch[] {
+  const text = normalizeText(message);
+  const singularText = text.split(" ").map(singularWord).join(" ");
+  const candidates = catalog.items
+    .filter((item) => item.categoryId === categoryId)
+    .map((item) => ({ item, alias: contextualAlias(item) }))
+    .filter(({ alias }) => alias.length >= 4 && includesPhrase(singularText, alias));
+
+  if (candidates.length !== 1) return [];
+  const item = candidates[0].item;
+  return [{
+    item,
+    start: 0,
+    end: text.length,
+    quantity: quantityFromText(text),
+    segment: text,
+  }];
+}
+
 function optionMatches(segment: string, optionName: string) {
   const normalizedOption = normalizeText(optionName);
   if (includesPhrase(segment, normalizedOption)) return true;

@@ -31,6 +31,9 @@ test("normaliza calle, número y colonia antes de consultar Google", () => {
   expect(normalizeAddressQuery("Las Palmas, 1747, colonia Villas del Palmar")).toBe(
     "Las Palmas, 1747, Villas del Palmar"
   );
+  expect(normalizeAddressQuery("Las Palmas 1747 col, Villas del Palmar")).toBe(
+    "Las Palmas, 1747, Villas del Palmar"
+  );
   expect(addressQueryCandidates("Sinagogas 1230, col san xavier")).toEqual([
     "Sinagogas, 1230, san xavier",
     "Sinagogas 1230, col san xavier",
@@ -110,6 +113,31 @@ test("no acepta un punto de interés como domicilio aunque sea el único resulta
       },
     ])
   ).toThrow("address_low_confidence");
+});
+
+test("acepta como candidato confirmable un domicilio numerado aunque Google lo marque aproximado", () => {
+  const selected = selectConfidentAddressResult(
+    "Las Palmas 1747, Villas del Palmar",
+    [
+      {
+        formatted_address: "C. Las Palmas 1747, Villas del Palmar, Ciudad Obregón, Sonora",
+        partial_match: true,
+        types: ["street_address"],
+        geometry: {
+          location: { lat: 27.51, lng: -109.91 },
+          location_type: "APPROXIMATE",
+        },
+        address_components: [
+          { long_name: "1747", types: ["street_number"] },
+          { long_name: "Calle Las Palmas", types: ["route"] },
+          { long_name: "Villas del Palmar", types: ["sublocality_level_1"] },
+          { long_name: "Ciudad Obregón", types: ["locality"] },
+        ],
+      },
+    ]
+  );
+
+  expect(selected.formatted_address).toContain("1747");
 });
 
 test("transfiere a atención humana cuando la distancia supera 15 km", () => {

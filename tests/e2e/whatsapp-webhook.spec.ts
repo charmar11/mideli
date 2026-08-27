@@ -1,8 +1,14 @@
 import { createHmac } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { normalizeMetaWebhook } from "@/lib/whatsapp/meta-webhook";
-import { sendMetaLocationMessage, sendMetaTextMessage } from "@/lib/whatsapp/meta-provider";
+import { createConversation } from "@/lib/whatsapp/conversation-engine";
+import {
+  sendMetaLocationMessage,
+  sendMetaReplyButtonsMessage,
+  sendMetaTextMessage,
+} from "@/lib/whatsapp/meta-provider";
 import { verifyMetaSignature } from "@/lib/whatsapp/meta-signature";
+import { quickRepliesForState } from "@/lib/whatsapp/quick-replies";
 
 test("valida la firma de Meta sobre el cuerpo crudo", () => {
   const body = JSON.stringify({ object: "whatsapp_business_account" });
@@ -153,6 +159,61 @@ test("el adaptador de Meta envía el punto nativo de la dirección candidata", a
       address: "C. Chihuahua 110, Centro, Ciudad Obregón",
     },
   });
+});
+
+test("el adaptador de Meta envía decisiones cortas como botones de respuesta", async () => {
+  let requestInit: RequestInit | undefined;
+  const fetcher: typeof fetch = async (_input, init) => {
+    requestInit = init;
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.buttons-1" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  await sendMetaReplyButtonsMessage(
+    {
+      to: "526440000000",
+      body: "¿Tu pedido será para recoger o a domicilio?",
+      buttons: [
+        { id: "pickup", title: "Para recoger" },
+        { id: "delivery", title: "A domicilio" },
+      ],
+    },
+    {
+      graphApiVersion: "v25.0",
+      phoneNumberId: "phone-test",
+      accessToken: "temporary-test-token",
+    },
+    fetcher
+  );
+
+  expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+    messaging_product: "whatsapp",
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: "¿Tu pedido será para recoger o a domicilio?" },
+      action: {
+        buttons: [
+          { type: "reply", reply: { id: "pickup", title: "Para recoger" } },
+          { type: "reply", reply: { id: "delivery", title: "A domicilio" } },
+        ],
+      },
+    },
+  });
+});
+
+test("ofrece botones solo en decisiones breves del pedido", () => {
+  const base = createConversation("5216440000000");
+  expect(quickRepliesForState({ ...base, stage: "awaiting_fulfillment" }))
+    .toEqual([
+      { id: "pickup", title: "Para recoger" },
+      { id: "delivery", title: "A domicilio" },
+    ]);
+  expect(quickRepliesForState({ ...base, stage: "awaiting_address_confirmation" }))
+    .toHaveLength(3);
+  expect(quickRepliesForState({ ...base, stage: "browsing_catalog" })).toEqual([]);
 });
 
 test("un error de Meta se reporta sin incluir credenciales ni cuerpo remoto", async () => {

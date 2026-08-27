@@ -875,7 +875,7 @@ test("ofrece reutilizar el último domicilio pero vuelve a cotizarlo", () => {
   expect(reuse.state.addressReference).toBe("Portón negro");
 });
 
-test("pide una dirección más precisa antes de transferir una cotización fallida", () => {
+test("permite dos correcciones de dirección antes de transferir una cotización fallida", () => {
   const state = {
     ...createConversation("5216440000000"),
     stage: "awaiting_delivery_quote" as const,
@@ -904,8 +904,16 @@ test("pide una dirección más precisa antes de transferir una cotización falli
     { ...first.state, stage: "awaiting_delivery_quote" },
     "address_not_found"
   );
-  expect(second.action).toBe("handoff");
-  expect(second.state.stage).toBe("handoff");
+  expect(second.action).toBe("none");
+  expect(second.state.stage).toBe("awaiting_address");
+  expect(second.reply).toContain("comparte tu ubicación");
+
+  const third = recoverDeliveryQuote(
+    { ...second.state, stage: "awaiting_delivery_quote" },
+    "address_not_found"
+  );
+  expect(third.action).toBe("handoff");
+  expect(third.state.stage).toBe("handoff");
 });
 
 test("un producto inactivo nunca aparece como coincidencia", () => {
@@ -980,6 +988,23 @@ test("tolera plural y un error ortográfico claro sin ampliar el catálogo", () 
     catalog
   );
   expect(typo.state.cart[0]).toMatchObject({ menuItemId: "california", quantity: 1 });
+});
+
+test("entiende un producto abreviado dentro de la categoría visible", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Menú",
+    navigationCatalog
+  );
+  result = handleConversationMessage(result.state, "Hamburguesas", navigationCatalog);
+  result = handleConversationMessage(result.state, "Dos sencillas", navigationCatalog);
+
+  expect(result.state.cart).toHaveLength(1);
+  expect(result.state.cart[0]).toMatchObject({
+    menuItemId: "hamburguesa-sencilla",
+    quantity: 2,
+  });
+  expect(result.reply).not.toContain("No encontré ese producto");
 });
 
 test("permite cambiar cantidad y quitar un producto del carrito", () => {

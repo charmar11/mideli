@@ -19,6 +19,7 @@ import {
   Send,
   Trash2,
   UserRoundCheck,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -29,6 +30,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -498,6 +500,26 @@ function ChatPanel({
   viewportRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showContext, setShowContext] = useState(false);
+  const contextTriggerRef = useRef<HTMLButtonElement>(null);
+  const contextCloseRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!showContext) return;
+    const trigger = contextTriggerRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    contextCloseRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowContext(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+      trigger?.focus();
+    };
+  }, [showContext]);
 
   if (!conversation) {
     return (
@@ -601,18 +623,68 @@ function ChatPanel({
         </details>
       </header>
 
-      <details className="group border-b border-border bg-surface-raised/35 px-3 py-2 xl:hidden">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 font-heading text-xs font-bold [&::-webkit-details-marker]:hidden">
+      <div className="border-b border-border bg-surface-raised/35 px-3 py-2 xl:hidden">
+        <button
+          ref={contextTriggerRef}
+          type="button"
+          className="flex min-h-11 w-full items-center gap-2 rounded-lg font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setShowContext(true)}
+          aria-haspopup="dialog"
+        >
           <span className="flex size-8 items-center justify-center rounded-lg bg-brand/12 text-brand">
             {conversation.latestOrder ? `#${conversation.latestOrder.number}` : "🧾"}
           </span>
           <span className="min-w-0 flex-1">
             {conversation.latestOrder ? "Ver pedido y entrega" : "Ver carrito y cliente"}
           </span>
-          <ChevronDown aria-hidden className="transition-transform group-open:rotate-180" size={16} />
-        </summary>
-        <OrderContext conversation={conversation} compact />
-      </details>
+          <ChevronDown aria-hidden size={16} />
+        </button>
+      </div>
+
+      {showContext ? createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-end bg-black/75 sm:items-center sm:justify-center sm:p-4 xl:hidden"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setShowContext(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="whatsapp-order-context-title"
+            className="flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-surface shadow-float sm:max-w-xl sm:rounded-3xl"
+          >
+            <header className="flex min-h-16 shrink-0 items-center gap-3 border-b border-border px-4">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-brand/12 font-data text-xs font-bold text-brand">
+                {conversation.latestOrder ? `#${conversation.latestOrder.number}` : "🧾"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 id="whatsapp-order-context-title" className="font-heading text-sm font-bold">
+                  {conversation.latestOrder ? "Pedido y entrega" : "Carrito y cliente"}
+                </h2>
+                <p className="truncate font-body text-xs text-muted-foreground">
+                  {customerLabel(conversation)}
+                </p>
+              </div>
+              <Button
+                ref={contextCloseRef}
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-11"
+                onClick={() => setShowContext(false)}
+                aria-label="Cerrar detalle"
+              >
+                <X aria-hidden size={19} />
+              </Button>
+            </header>
+            <div className="pos-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+              <OrderContext conversation={conversation} compact />
+            </div>
+          </section>
+        </div>,
+        document.body
+      ) : null}
 
       {confirmClear ? (
         <div className="border-b border-danger/25 bg-danger/10 p-3">
