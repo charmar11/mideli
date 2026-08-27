@@ -1,21 +1,17 @@
 import "server-only";
 
+import {
+  selectConfidentAddressResult,
+  selectReverseGeocodingResult,
+  type GoogleAddressComponent,
+  type GoogleGeocodingResult,
+} from "./address-confidence";
+
 type Coordinates = { latitude: number; longitude: number };
 
 export type GeocodedDestination = Coordinates & {
   formattedAddress: string;
   colony: string;
-};
-
-type GeocodingComponent = {
-  long_name?: string;
-  types?: string[];
-};
-
-type GeocodingResult = {
-  formatted_address?: string;
-  address_components?: GeocodingComponent[];
-  geometry?: { location?: { lat?: number; lng?: number } };
 };
 
 function apiKey() {
@@ -24,7 +20,7 @@ function apiKey() {
   return value;
 }
 
-function colonyFromComponents(components: GeocodingComponent[] = []) {
+function colonyFromComponents(components: GoogleAddressComponent[] = []) {
   const priorities = ["sublocality_level_1", "neighborhood", "sublocality", "locality"];
   for (const type of priorities) {
     const component = components.find((candidate) => candidate.types?.includes(type));
@@ -54,17 +50,20 @@ async function geocodingRequest(parameters: URLSearchParams) {
   if (!response.ok) throw new Error("google_geocoding_failed");
   const payload = (await response.json()) as {
     status?: string;
-    results?: GeocodingResult[];
+    results?: GoogleGeocodingResult[];
   };
-  if (payload.status !== "OK" || !payload.results?.[0]) {
+  if (payload.status !== "OK" || !payload.results?.length) {
     throw new Error("address_not_found");
   }
-  return payload.results[0];
+  return payload.results;
 }
 
-function destinationFromResult(result: GeocodingResult): GeocodedDestination {
-  const latitude = result.geometry?.location?.lat;
-  const longitude = result.geometry?.location?.lng;
+function destinationFromResult(
+  result: GoogleGeocodingResult,
+  coordinates?: Coordinates
+): GeocodedDestination {
+  const latitude = coordinates?.latitude ?? result.geometry?.location?.lat;
+  const longitude = coordinates?.longitude ?? result.geometry?.location?.lng;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     throw new Error("address_coordinates_missing");
   }
@@ -85,15 +84,18 @@ export async function geocodeDestination(
     const parameters = new URLSearchParams({
       latlng: `${coordinates.latitude},${coordinates.longitude}`,
     });
-    return destinationFromResult(await geocodingRequest(parameters));
+    const results = await geocodingRequest(parameters);
+    return destinationFromResult(
+      selectReverseGeocodingResult(results),
+      coordinates
+    );
   }
 
   const address = value.toLowerCase().includes("sonora")
     ? value
     : `${value}, ${localityHint}`;
-  return destinationFromResult(
-    await geocodingRequest(new URLSearchParams({ address }))
-  );
+  const results = await geocodingRequest(new URLSearchParams({ address }));
+  return destinationFromResult(selectConfidentAddressResult(value, results));
 }
 
 export async function computeDrivingDistance(

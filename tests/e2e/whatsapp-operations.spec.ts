@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { selectConfidentAddressResult } from "../../src/lib/whatsapp/address-confidence";
 import { isWhatsappBusinessOpen } from "../../src/lib/whatsapp/business-hours";
 import { calculateDeliveryPrice } from "../../src/lib/whatsapp/delivery-pricing";
 
@@ -31,6 +32,67 @@ test("calcula el rango por kilómetros y suma el recargo de colonia", () => {
   expect(quote.baseFee).toBe(35);
   expect(quote.surcharge).toBe(15);
   expect(quote.totalFee).toBe(50);
+});
+
+test("usa el texto original para reconocer un recargo de colonia", () => {
+  const quote = calculateDeliveryPrice({
+    distanceMeters: 4_850,
+    colony: "Cajeme",
+    colonySearchText: "Calle Uno 123, Fraccionamiento Villa Bonita",
+    rates,
+    surcharges,
+  });
+  expect(quote).toMatchObject({
+    status: "quoted",
+    surcharge: 15,
+    totalFee: 50,
+  });
+});
+
+test("descarta un parque y elige la dirección que coincide con calle y número", () => {
+  const selected = selectConfidentAddressResult(
+    "Las Palmas 1747, colonia Villas del Palmar",
+    [
+      {
+        formatted_address: "Parque Villa del Palmar, Ciudad Obregón, Sonora",
+        types: ["park", "point_of_interest", "establishment"],
+        geometry: {
+          location: { lat: 27.5, lng: -109.9 },
+          location_type: "GEOMETRIC_CENTER",
+        },
+      },
+      {
+        formatted_address: "Las Palmas 1747, Villas del Palmar, Ciudad Obregón, Sonora",
+        types: ["street_address"],
+        geometry: {
+          location: { lat: 27.51, lng: -109.91 },
+          location_type: "ROOFTOP",
+        },
+        address_components: [
+          { long_name: "1747", types: ["street_number"] },
+          { long_name: "Las Palmas", types: ["route"] },
+          { long_name: "Villas del Palmar", types: ["sublocality_level_1"] },
+          { long_name: "Ciudad Obregón", types: ["locality"] },
+        ],
+      },
+    ]
+  );
+  expect(selected.formatted_address).toContain("Las Palmas 1747");
+});
+
+test("no acepta un punto de interés como domicilio aunque sea el único resultado", () => {
+  expect(() =>
+    selectConfidentAddressResult("Las Palmas 1747, Villas del Palmar", [
+      {
+        formatted_address: "Parque Villa del Palmar, Ciudad Obregón, Sonora",
+        types: ["park", "point_of_interest"],
+        geometry: {
+          location: { lat: 27.5, lng: -109.9 },
+          location_type: "GEOMETRIC_CENTER",
+        },
+      },
+    ])
+  ).toThrow("address_low_confidence");
 });
 
 test("transfiere a atención humana cuando la distancia supera 15 km", () => {

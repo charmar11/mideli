@@ -402,13 +402,15 @@ test("permite cambiar de domicilio a recoger después de cotizar", () => {
     address: "Calle Uno 123",
     addressReference: "Casa blanca",
     deliveryQuote: {
-      destinationAddress: "Calle Uno 123",
+      id: "quote-previous",
       formattedAddress: "Calle Uno 123",
-      distanceKm: 4,
+      colony: "Centro",
+      latitude: 27.49,
+      longitude: -109.94,
+      distanceMeters: 4_000,
       baseFee: 30,
       surcharge: 0,
       totalFee: 30,
-      matchedNeighborhood: null,
     },
     cart: [
       {
@@ -626,15 +628,42 @@ test("completa domicilio, efectivo y solicita crear solo después de confirmar",
     totalFee: 30,
   });
 
-  result = handleConversationMessage(quotedState, "Efectivo, pago con 500", catalog);
+  result = handleConversationMessage(quotedState, "Efectivo", catalog);
   expect(result.state.stage).toBe("awaiting_confirmation");
-  expect(result.state.payment).toMatchObject({ method: "efectivo", cashTendered: 500 });
+  expect(result.state.payment).toMatchObject({ method: "efectivo", cashTendered: null });
   expect(result.action).toBe("none");
   expect(result.reply).toContain("$155");
 
   result = handleConversationMessage(result.state, "Sí, confirmo", catalog);
   expect(result.state.stage).toBe("confirmed");
   expect(result.action).toBe("request_order_creation");
+});
+
+test("una conversación antigua que esperaba efectivo continúa al resumen", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_cash_tendered" as const,
+    serviceType: "domicilio" as const,
+    payment: { method: "efectivo" as const, cashTendered: null },
+    cart: [
+      {
+        id: "line-1",
+        menuItemId: "california",
+        categoryId: "sushis",
+        name: "California",
+        quantity: 1,
+        unitPrice: 125,
+        selectedModifiers: [],
+        notes: "",
+      },
+    ],
+    total: 155,
+  };
+
+  const result = handleConversationMessage(state, "Efectivo por favor", catalog);
+  expect(result.state.stage).toBe("awaiting_confirmation");
+  expect(result.state.payment).toEqual({ method: "efectivo", cashTendered: null });
+  expect(result.reply).toContain("Resumen de tu pedido");
 });
 
 test("ofrece reutilizar el último domicilio pero vuelve a cotizarlo", () => {
@@ -674,13 +703,24 @@ test("pide una dirección más precisa antes de transferir una cotización falli
     stage: "awaiting_delivery_quote" as const,
     serviceType: "domicilio" as const,
     address: "Dirección ambigua",
+    addressReference: "Casa blanca",
   };
 
   const first = recoverDeliveryQuote(state, "address_not_found");
   expect(first.action).toBe("none");
   expect(first.state.stage).toBe("awaiting_address");
   expect(first.state.deliveryQuoteAttempts).toBe(1);
+  expect(first.state.addressReference).toBe("Casa blanca");
   expect(first.reply).toContain("comparte tu ubicación");
+
+  const corrected = handleConversationMessage(
+    first.state,
+    "Calle Kino 123, colonia Centro",
+    catalog
+  );
+  expect(corrected.state.stage).toBe("awaiting_delivery_quote");
+  expect(corrected.action).toBe("request_delivery_quote");
+  expect(corrected.state.addressReference).toBe("Casa blanca");
 
   const second = recoverDeliveryQuote(
     { ...first.state, stage: "awaiting_delivery_quote" },

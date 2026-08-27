@@ -1,4 +1,3 @@
-import { after } from "next/server";
 import { readWhatsappServerConfig } from "@/lib/whatsapp/config.server";
 import { processMetaWebhook } from "@/lib/whatsapp/meta-runtime.server";
 import { normalizeMetaWebhook } from "@/lib/whatsapp/meta-webhook";
@@ -68,26 +67,29 @@ export async function POST(request: Request) {
     `[WhatsApp Meta] Evento válido. Mensajes=${normalized.messages.length}, permitidos=${acceptedMessages.length}, estados=${normalized.statuses.length}.`
   );
 
-  after(async () => {
-    try {
-      const processing = await processMetaWebhook(
-        { messages: acceptedMessages, statuses: normalized.statuses },
-        config
-      );
-      console.info(
-        `[WhatsApp Meta] Procesamiento terminado. Procesados=${processing.processed}, duplicados=${processing.duplicates}, respuestas=${processing.repliesSent}, fallos_envío=${processing.replyFailures}, fallos_proceso=${processing.processingFailures}.`
-      );
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "Error desconocido";
-      console.error(`[WhatsApp Meta] Falló el procesamiento: ${detail}`);
-    }
-  });
+  const startedAt = Date.now();
+  const processing = await processMetaWebhook(
+    { messages: acceptedMessages, statuses: normalized.statuses },
+    config
+  );
+  const durationMs = Date.now() - startedAt;
+  console.info(
+    `[WhatsApp Meta] Procesamiento terminado en ${durationMs}ms. Procesados=${processing.processed}, duplicados=${processing.duplicates}, respuestas=${processing.repliesSent}, fallos_envío=${processing.replyFailures}, fallos_proceso=${processing.processingFailures}.`
+  );
+
+  if (processing.processingFailures > 0) {
+    return Response.json(
+      { ok: false, reason: "processing_failed", durationMs },
+      { status: 500 }
+    );
+  }
 
   return Response.json({
     ok: true,
     dryRun: config.dryRun,
     acceptedMessages: acceptedMessages.length,
     receivedStatuses: normalized.statuses.length,
-    queued: true,
+    processedMessages: processing.processed,
+    durationMs,
   });
 }

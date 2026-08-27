@@ -24,8 +24,21 @@ type ConversationRow = {
 
 export type ClaimedConversation = {
   id: string;
-  state: ConversationState;
   duplicate: boolean;
+};
+
+export type ConversationProcessingSnapshot = {
+  id: string;
+  phone: string;
+  state: ConversationState;
+};
+
+type PendingMessageRow = {
+  external_message_id: string;
+  message_type: NormalizedMetaMessage["type"];
+  body: string;
+  metadata: unknown;
+  occurred_at: string;
 };
 
 function messageDate(timestamp: string) {
@@ -130,7 +143,10 @@ export async function claimInboundMessage(
 ): Promise<ClaimedConversation> {
   const admin = createAdminClient();
   const conversation = await ensureConversation(admin, message.phone);
-  const metadata = message.location ? { location: message.location } : {};
+  const metadata = {
+    ...(message.location ? { location: message.location } : {}),
+    phoneNumberId: message.phoneNumberId,
+  };
   const { data, error } = await admin
     .from("channel_messages")
     .upsert(
@@ -153,7 +169,33 @@ export async function claimInboundMessage(
     .select("id");
   if (error) throw error;
 
-  const duplicate = !data || data.length === 0;
+  let duplicate = !data || data.length === 0;
+  if (duplicate) {
+    const existing = await admin
+      .from("channel_messages")
+      .select("status")
+      .eq("provider", "meta")
+      .eq("external_message_id", message.id)
+      .eq("direction", "inbound")
+      .maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.status === "failed") {
+      const retried = await admin
+        .from("channel_messages")
+        .update({
+          status: "processing",
+          processing_started_at: null,
+          processing_finished_at: null,
+          processing_error: null,
+        })
+        .eq("provider", "meta")
+        .eq("external_message_id", message.id)
+        .eq("direction", "inbound")
+        .eq("status", "failed");
+      if (retried.error) throw retried.error;
+      duplicate = false;
+    }
+  }
   if (!duplicate) {
     const { error: updateError } = await admin
       .from("channel_conversations")
@@ -164,8 +206,101 @@ export async function claimInboundMessage(
 
   return {
     id: conversation.id,
-    state: conversationState(conversation.state, message.phone),
     duplicate,
+  };
+}
+
+export async function acquireConversationProcessing(
+  conversationId: string,
+  owner: string
+) {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("claim_whatsapp_conversation_processing", {
+    p_conversation_id: conversationId,
+    p_owner: owner,
+    p_lease_seconds: 45,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+export async function releaseConversationProcessing(
+  conversationId: string,
+  owner: string
+) {
+  const { error } = await createAdminClient().rpc(
+    "release_whatsapp_conversation_processing",
+    { p_conversation_id: conversationId, p_owner: owner }
+  );
+  if (error) throw error;
+}
+
+export async function loadConversationForProcessing(
+  conversationId: string
+): Promise<ConversationProcessingSnapshot> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("channel_conversations")
+    .select("id,external_contact_id,state")
+    .eq("id", conversationId)
+    .single();
+  if (error || !data) throw error ?? new Error("La conversación no existe");
+  return {
+    id: data.id,
+    phone: data.external_contact_id,
+    state: conversationState(data.state, data.external_contact_id),
+  };
+}
+
+function locationFromMetadata(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const location = (value as Record<string, unknown>).location;
+  if (!location || typeof location !== "object" || Array.isArray(location)) return null;
+  const record = location as Record<string, unknown>;
+  if (typeof record.latitude !== "number" || typeof record.longitude !== "number") {
+    return null;
+  }
+  return { latitude: record.latitude, longitude: record.longitude };
+}
+
+export async function loadNextPendingInboundMessage(
+  conversationId: string,
+  phone: string
+): Promise<NormalizedMetaMessage | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("channel_messages")
+    .select("external_message_id,message_type,body,metadata,occurred_at")
+    .eq("conversation_id", conversationId)
+    .eq("provider", "meta")
+    .eq("direction", "inbound")
+    .eq("status", "processing")
+    .order("occurred_at", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as PendingMessageRow;
+  const started = await admin
+    .from("channel_messages")
+    .update({ processing_started_at: new Date().toISOString() })
+    .eq("provider", "meta")
+    .eq("external_message_id", row.external_message_id)
+    .eq("direction", "inbound")
+    .eq("status", "processing");
+  if (started.error) throw started.error;
+
+  const timestamp = Math.floor(new Date(row.occurred_at).getTime() / 1000).toString();
+  return {
+    id: row.external_message_id,
+    phone,
+    phoneNumberId: "",
+    timestamp,
+    type: row.message_type,
+    text: row.body,
+    location: locationFromMetadata(row.metadata),
   };
 }
 
@@ -176,30 +311,38 @@ function statusForResult(result: ConversationResult) {
   return "active";
 }
 
-export async function saveConversationResult(
+export async function commitConversationMessage(
   conversationId: string,
+  owner: string,
+  externalMessageId: string,
   result: ConversationResult
 ) {
   const admin = createAdminClient();
-  const { error } = await admin
-    .from("channel_conversations")
-    .update({
-      state: result.state,
-      stage: result.state.stage,
-      status: statusForResult(result),
-    })
-    .eq("id", conversationId);
+  const { error } = await admin.rpc("commit_whatsapp_conversation_message", {
+    p_conversation_id: conversationId,
+    p_owner: owner,
+    p_external_message_id: externalMessageId,
+    p_state: result.state,
+    p_stage: result.state.stage,
+    p_status: statusForResult(result),
+    p_disable_bot: result.state.stage === "handoff",
+  });
   if (error) throw error;
 }
 
 export async function markInboundMessage(
   externalMessageId: string,
-  status: "received" | "failed" | "ignored"
+  status: "received" | "failed" | "ignored",
+  processingError?: string
 ) {
   const admin = createAdminClient();
   const { error } = await admin
     .from("channel_messages")
-    .update({ status })
+    .update({
+      status,
+      processing_finished_at: new Date().toISOString(),
+      processing_error: processingError?.slice(0, 300) ?? null,
+    })
     .eq("provider", "meta")
     .eq("external_message_id", externalMessageId)
     .eq("direction", "inbound");
@@ -235,6 +378,38 @@ export async function recordOutboundMessage(input: {
     .update({ last_outbound_at: now })
     .eq("id", input.conversationId);
   if (updateError) throw updateError;
+}
+
+export async function recordOutboundFailure(input: {
+  conversationId: string;
+  inboundMessageId: string;
+  phone: string;
+  body: string;
+  error: string;
+}) {
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const { error } = await admin.from("channel_messages").upsert(
+    {
+      conversation_id: input.conversationId,
+      provider: "meta",
+      external_message_id: `failed-reply:${input.inboundMessageId}`,
+      direction: "outbound",
+      message_type: "text",
+      body: input.body,
+      status: "failed",
+      metadata: {
+        recipient: input.phone,
+        inboundMessageId: input.inboundMessageId,
+        error: input.error.slice(0, 300),
+      },
+      occurred_at: now,
+      processing_finished_at: now,
+      processing_error: input.error.slice(0, 300),
+    },
+    { onConflict: "provider,external_message_id" }
+  );
+  if (error) throw error;
 }
 
 export async function applyOutboundStatuses(statuses: NormalizedMetaStatus[]) {

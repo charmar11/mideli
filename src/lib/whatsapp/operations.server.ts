@@ -258,6 +258,7 @@ export async function quoteWhatsappDelivery(input: {
     const price = calculateDeliveryPrice({
       distanceMeters,
       colony: destination.colony,
+      colonySearchText: input.address,
       rates: input.config.rates.map((rate) => ({
         id: rate.id,
         minDistanceKm: Number(rate.min_distance_km),

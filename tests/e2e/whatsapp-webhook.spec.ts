@@ -147,3 +147,33 @@ test("un error de Meta se reporta sin incluir credenciales ni cuerpo remoto", as
     )
   ).rejects.not.toThrow("remote sensitive detail");
 });
+
+test("reintenta un rechazo transitorio de Meta antes de declarar el envío fallido", async () => {
+  let attempts = 0;
+  const fetcher: typeof fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return new Response(
+        JSON.stringify({ error: { code: 2, is_transient: true } }),
+        { status: 500, headers: { "content-type": "application/json" } }
+      );
+    }
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.retried" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const sent = await sendMetaTextMessage(
+    { to: "526440000000", body: "Respuesta recuperada" },
+    {
+      graphApiVersion: "v25.0",
+      phoneNumberId: "phone-test",
+      accessToken: "test-token",
+    },
+    fetcher
+  );
+
+  expect(sent.messageId).toBe("wamid.retried");
+  expect(attempts).toBe(2);
+});

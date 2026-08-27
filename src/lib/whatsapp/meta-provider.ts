@@ -11,10 +11,14 @@ export type MetaTextMessage = {
   body: string;
 };
 
-function safeMetaErrorDetail(payload: unknown) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "";
+function metaErrorInfo(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { detail: "", isTransient: false };
+  }
   const error = (payload as { error?: unknown }).error;
-  if (!error || typeof error !== "object" || Array.isArray(error)) return "";
+  if (!error || typeof error !== "object" || Array.isArray(error)) {
+    return { detail: "", isTransient: false };
+  }
   const value = error as Record<string, unknown>;
   const parts: string[] = [];
   if (typeof value.code === "number") parts.push(`código ${value.code}`);
@@ -27,7 +31,10 @@ function safeMetaErrorDetail(payload: unknown) {
   if (typeof value.is_transient === "boolean") {
     parts.push(value.is_transient ? "transitorio" : "no transitorio");
   }
-  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+  return {
+    detail: parts.length > 0 ? ` (${parts.join(", ")})` : "",
+    isTransient: value.is_transient === true,
+  };
 }
 
 function normalizeMetaRecipient(value: string) {
@@ -49,34 +56,54 @@ export async function sendMetaTextMessage(
     throw new Error("Falta la configuración privada de Meta");
   }
 
-  const response = await fetcher(
-    `https://graph.facebook.com/${encodeURIComponent(config.graphApiVersion)}/${encodeURIComponent(config.phoneNumberId)}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "text",
-        text: { preview_url: false, body },
-      }),
-      signal: AbortSignal.timeout(12_000),
-    }
-  );
+  const requestUrl = `https://graph.facebook.com/${encodeURIComponent(config.graphApiVersion)}/${encodeURIComponent(config.phoneNumberId)}/messages`;
+  const requestInit = {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "text",
+      text: { preview_url: false, body },
+    }),
+  } satisfies RequestInit;
 
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(
-      `Meta rechazó el mensaje con estado ${response.status}${safeMetaErrorDetail(payload)}`
-    );
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetcher(requestUrl, {
+        ...requestInit,
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (response.ok) {
+        const payload = (await response.json()) as { messages?: Array<{ id?: string }> };
+        const messageId = payload.messages?.[0]?.id;
+        if (!messageId) throw new Error("Meta no devolvió el identificador del mensaje");
+        return { messageId };
+      }
+
+      const payload = await response.json().catch(() => null);
+      const errorInfo = metaErrorInfo(payload);
+      const retryable = response.status === 429 || response.status >= 500 || errorInfo.isTransient;
+      if (!retryable || attempt === 2) {
+        throw new Error(
+          `Meta rechazó el mensaje con estado ${response.status}${errorInfo.detail}`
+        );
+      }
+    } catch (error) {
+      if (attempt === 2) throw error;
+      if (
+        error instanceof Error &&
+        error.message.startsWith("Meta rechazó el mensaje con estado")
+      ) {
+        throw error;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
   }
 
-  const payload = (await response.json()) as { messages?: Array<{ id?: string }> };
-  const messageId = payload.messages?.[0]?.id;
-  if (!messageId) throw new Error("Meta no devolvió el identificador del mensaje");
-  return { messageId };
+  throw new Error("No se pudo enviar el mensaje a Meta");
 }

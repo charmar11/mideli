@@ -1,0 +1,22 @@
+# Hallazgos
+
+- El webhook usa `after()` y permite que ejecuciones independientes actualicen una conversación fuera de orden.
+- Meta entregó correctamente los mensajes; el retraso ocurrió dentro de Mideli.
+- El identificador externo de Meta permite idempotencia por mensaje.
+- Google devuelve varios candidatos, pero el código actual utiliza siempre el primero.
+- La tarifa por kilómetros fue correcta para coordenadas incorrectas.
+- El texto original del domicilio se reemplaza actualmente por la dirección normalizada.
+- El flujo de efectivo conserva una etapa innecesaria para preguntar cuánto recibirá el repartidor.
+- La creación de órdenes está desactivada en la configuración remota y debe permanecer así.
+- `claimInboundMessage` devuelve el estado de conversación leído antes de insertar el mensaje; dos solicitudes simultáneas pueden partir del mismo estado.
+- El webhook responde `queued: true` antes de que `processMetaWebhook` termine porque usa `after()`.
+- `geocodingRequest` descarta todos los candidatos salvo `results[0]` y no conserva `partial_match`, tipos ni `location_type`.
+- `deliveryQuoteReply` muestra la dirección normalizada de Google en lugar del domicilio escrito por el cliente.
+- `withDeliveryQuote` reemplaza `state.address`, por lo que el texto original del cliente se pierde también al crear la orden.
+- `handlePayment` envía efectivo a `awaiting_cash_tendered`; esa etapa debe quedar solo como compatibilidad para conversaciones ya iniciadas.
+- `quoteWhatsappDelivery` ya almacena por separado `input_address` y `formatted_address`, por lo que la validación puede endurecerse sin rediseñar las cotizaciones.
+- Las tablas conversacionales solo son accesibles con `service_role`, por lo que la exclusión puede implementarse como funciones SQL privadas para el servidor.
+- `bot_enabled` ya existe, pero `saveConversationResult` no lo cambia al entrar en `handoff`.
+- Los tests de WhatsApp son pruebas Playwright de módulos y permiten validar la selección de candidatos de Google con un `fetch` inyectado.
+- La bandeja consulta mensajes ordenados por `occurred_at`, pero la base solo tenía un índice por `created_at`; la nueva migración debe cubrir ambas consultas visibles.
+- Un error transitorio de Meta puede reintentarse con espera corta; un 401 no debe reintentarse porque requiere corregir credenciales.

@@ -46,6 +46,7 @@ function matchesColony(value: string, rule: DeliverySurchargeRule) {
 export function calculateDeliveryPrice(input: {
   distanceMeters: number;
   colony: string;
+  colonySearchText?: string;
   rates: DeliveryRateRule[];
   surcharges: DeliverySurchargeRule[];
   maximumDistanceKm?: number;
@@ -86,7 +87,11 @@ export function calculateDeliveryPrice(input: {
 
   const surchargeRule = input.surcharges
     .filter((rule) => rule.isActive !== false)
-    .find((rule) => matchesColony(input.colony, rule));
+    .find(
+      (rule) =>
+        matchesColony(input.colony, rule) ||
+        matchesColony(input.colonySearchText ?? "", rule)
+    );
   const surcharge = surchargeRule?.fee ?? 0;
 
   return {

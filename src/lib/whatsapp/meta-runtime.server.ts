@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { MenuItem, Order } from "@/types/database";
 import { buildConversationCatalog } from "./catalog";
@@ -16,13 +17,18 @@ import type { NormalizedMetaMessage, NormalizedMetaWebhook } from "./meta-webhoo
 import { sendMetaTextMessage } from "./meta-provider";
 import { canCreateWhatsappOrder } from "./order-creation-policy";
 import {
+  acquireConversationProcessing,
   applyOutboundStatuses,
   claimInboundMessage,
+  commitConversationMessage,
   createExternalOrder,
+  loadConversationForProcessing,
+  loadNextPendingInboundMessage,
   markConversationCustomerReceived,
   markInboundMessage,
+  recordOutboundFailure,
   recordOutboundMessage,
-  saveConversationResult,
+  releaseConversationProcessing,
 } from "./repository.server";
 import {
   channelIsOpen,
@@ -48,7 +54,10 @@ function deliveryQuoteReply(
     ? `\n🏘️ Recargo de zona: $${quote.surcharge}`
     : "";
   const total = state.total + quote.totalFee;
-  return `🛵 *¡Sí llegamos hasta tu domicilio!*\n\n📍 ${quote.formattedAddress}\n📏 Distancia: ${distanceKm} km\n💰 Tarifa base: $${quote.baseFee}${surcharge}\n🛵 Envío total: *$${quote.totalFee}*\n🧾 Total con envío: *$${total}*\n\n¿Pagarás en efectivo o por transferencia? 😊`;
+  const customerAddress = state.address?.startsWith("Ubicación compartida:")
+    ? quote.formattedAddress
+    : state.address || quote.formattedAddress;
+  return `🛵 *¡Sí llegamos hasta tu domicilio!*\n\n📍 ${customerAddress}\n📏 Distancia: ${distanceKm} km\n💰 Tarifa base: $${quote.baseFee}${surcharge}\n🛵 Envío total: *$${quote.totalFee}*\n🧾 Total con envío: *$${total}*\n\n¿Pagarás en efectivo o por transferencia? 😊`;
 }
 
 export type MetaProcessingSummary = {
@@ -198,42 +207,43 @@ async function processDryRunMessage(
   }
 }
 
-async function processPersistentMessage(
+async function processQueuedMessage(
   message: NormalizedMetaMessage,
+  conversationId: string,
+  owner: string,
+  state: ConversationState,
   catalog: ConversationCatalog,
   config: WhatsappConfig,
   operations: WhatsappOperationsConfig,
   summary: MetaProcessingSummary
 ) {
-  const claimed = await claimInboundMessage(message);
-  if (claimed.duplicate) {
-    summary.duplicates += 1;
-    return;
-  }
-
   try {
-    if (claimed.state.stage === "handoff") {
-      await markInboundMessage(message.id, "received");
+    if (state.stage === "handoff") {
+      await commitConversationMessage(conversationId, owner, message.id, {
+        state,
+        action: "none",
+        reply: "",
+      });
       summary.processed += 1;
       return;
     }
-    const input = messageInput(message, claimed.state);
+    const input = messageInput(message, state);
     let result =
       input === null
-        ? unsupportedMessageHandoff(claimed.state)
-        : handleConversationMessage(claimed.state, input, catalog);
+        ? unsupportedMessageHandoff(state)
+        : handleConversationMessage(state, input, catalog);
     let createdOrder: Order | null = null;
     let customerReceived = false;
 
-    if (!channelIsOpen(operations) && claimed.state.stage !== "confirmed") {
+    if (!channelIsOpen(operations) && state.stage !== "confirmed") {
       result = {
-        state: claimed.state,
+        state,
         action: "none",
         reply: operations.settings.closed_message,
       };
     } else if (result.action === "request_delivery_quote") {
       const quoted = await quoteWhatsappDelivery({
-        conversationId: claimed.id,
+        conversationId,
         address: result.state.address ?? "",
         config: operations,
       });
@@ -272,7 +282,7 @@ async function processPersistentMessage(
       } else try {
         createdOrder = await createExternalOrder({
           externalOrderId: message.id,
-          conversationId: claimed.id,
+          conversationId,
           state: result.state,
         });
         result = {
@@ -290,9 +300,8 @@ async function processPersistentMessage(
       }
     }
 
-    await saveConversationResult(claimed.id, result);
-    if (customerReceived) await markConversationCustomerReceived(claimed.id);
-    await markInboundMessage(message.id, "received");
+    await commitConversationMessage(conversationId, owner, message.id, result);
+    if (customerReceived) await markConversationCustomerReceived(conversationId);
     summary.processed += 1;
 
     if (operations.settings.auto_reply_enabled) {
@@ -302,7 +311,7 @@ async function processPersistentMessage(
           summary.repliesSent += 1;
           try {
             await recordOutboundMessage({
-              conversationId: claimed.id,
+              conversationId,
               externalMessageId: sent.messageId,
               phone: message.phone,
               body: result.reply,
@@ -318,18 +327,88 @@ async function processPersistentMessage(
       } catch (error) {
         summary.replyFailures += 1;
         const detail = error instanceof Error ? error.message : "Error desconocido";
+        try {
+          await recordOutboundFailure({
+            conversationId,
+            inboundMessageId: message.id,
+            phone: message.phone,
+            body: result.reply,
+            error: detail,
+          });
+        } catch {
+          console.warn(
+            "[WhatsApp Meta] La respuesta fallida tampoco pudo guardarse en el historial."
+          );
+        }
         console.warn(`[WhatsApp Meta] No se pudo enviar la respuesta: ${detail}`);
       }
     }
 
     if (createdOrder) void notifyKitchen(createdOrder);
   } catch (error) {
+    const detail = error instanceof Error ? error.message : "Error desconocido";
     try {
-      await markInboundMessage(message.id, "failed");
+      await markInboundMessage(message.id, "failed", detail);
     } catch {
       console.warn("No se pudo actualizar el estado interno de un mensaje de WhatsApp.");
     }
     throw error;
+  }
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function acquireProcessingTurn(conversationId: string, owner: string) {
+  const deadline = Date.now() + 6_000;
+  do {
+    if (await acquireConversationProcessing(conversationId, owner)) return true;
+    await wait(120);
+  } while (Date.now() < deadline);
+  return false;
+}
+
+async function processPersistentMessage(
+  message: NormalizedMetaMessage,
+  catalog: ConversationCatalog,
+  config: WhatsappConfig,
+  operations: WhatsappOperationsConfig,
+  summary: MetaProcessingSummary
+) {
+  const claimed = await claimInboundMessage(message);
+  if (claimed.duplicate) {
+    summary.duplicates += 1;
+    return;
+  }
+
+  const owner = randomUUID();
+  const acquired = await acquireProcessingTurn(claimed.id, owner);
+  if (!acquired) {
+    throw new Error("La conversación sigue ocupada y el mensaje quedó pendiente");
+  }
+
+  try {
+    while (true) {
+      const conversation = await loadConversationForProcessing(claimed.id);
+      const pending = await loadNextPendingInboundMessage(
+        claimed.id,
+        conversation.phone
+      );
+      if (!pending) break;
+      await processQueuedMessage(
+        pending,
+        claimed.id,
+        owner,
+        conversation.state,
+        catalog,
+        config,
+        operations,
+        summary
+      );
+    }
+  } finally {
+    await releaseConversationProcessing(claimed.id, owner);
   }
 }
 

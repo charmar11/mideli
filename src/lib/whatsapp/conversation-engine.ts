@@ -215,7 +215,6 @@ export function withDeliveryQuote(
 ): ConversationState {
   return {
     ...state,
-    address: deliveryQuote.formattedAddress || state.address,
     deliveryQuote,
     deliveryQuoteAttempts: 0,
     total: orderTotal(state.cart, deliveryQuote),
@@ -258,7 +257,6 @@ export function recoverDeliveryQuote(
       ...state,
       stage: "awaiting_address",
       address: null,
-      addressReference: "",
       deliveryQuote: null,
       deliveryQuoteAttempts: attempts,
     },
@@ -1301,6 +1299,13 @@ function handleAddress(state: ConversationState, message: string) {
   if (text.length < 8) {
     return result(state, "Necesito una dirección un poco más completa para evitar retrasos.");
   }
+  if (state.addressReference.trim()) {
+    return result(
+      { ...state, address: message.trim(), stage: "awaiting_delivery_quote" },
+      "🛵 Estoy validando el domicilio corregido y calculando el envío 😊",
+      "request_delivery_quote"
+    );
+  }
   return result(
     { ...state, address: message.trim(), stage: "awaiting_address_reference" },
     "🏠 ¿Hay alguna referencia que ayude a encontrar el domicilio? Si no, escribe *omitir*."
@@ -1336,34 +1341,18 @@ function handlePayment(state: ConversationState, message: string) {
     return result(state, paymentQuestion(state));
   }
 
-  const amountMatch = method === "efectivo" ? text.match(/(?:con|de)\s+\$?(\d+)/) : null;
-  const cashTendered = amountMatch ? Number(amountMatch[1]) : null;
-  if (method === "efectivo" && cashTendered === null) {
-    return result(
-      { ...state, payment: { method, cashTendered: null }, stage: "awaiting_cash_tendered" },
-      `💵 El total es *$${state.total}*. ¿Con cuánto pagarás?`
-    );
-  }
-  if (cashTendered !== null && cashTendered < state.total) {
-    return result(state, `El total es $${state.total}. Indícame una cantidad suficiente.`);
-  }
-
   const nextState: ConversationState = {
     ...state,
-    payment: { method, cashTendered },
+    payment: { method, cashTendered: null },
     stage: "awaiting_confirmation",
   };
   return result(nextState, cartSummary(nextState));
 }
 
-function handleCashTendered(state: ConversationState, message: string) {
-  const amount = Number(normalizeText(message).replace(/[^0-9.]/g, ""));
-  if (!Number.isFinite(amount) || amount < state.total) {
-    return result(state, `💵 El total es *$${state.total}*. ¿Con cuánto pagarás?`);
-  }
+function handleCashTendered(state: ConversationState) {
   const nextState: ConversationState = {
     ...state,
-    payment: { method: "efectivo", cashTendered: amount },
+    payment: { method: "efectivo", cashTendered: null },
     stage: "awaiting_confirmation",
   };
   return result(nextState, cartSummary(nextState));
@@ -1488,7 +1477,7 @@ export function handleConversationMessage(
     return result(state, "Sigo validando el domicilio. Si tarda demasiado, una persona te ayudará.");
   }
   if (state.stage === "awaiting_payment") return handlePayment(state, message);
-  if (state.stage === "awaiting_cash_tendered") return handleCashTendered(state, message);
+  if (state.stage === "awaiting_cash_tendered") return handleCashTendered(state);
   if (state.stage === "awaiting_confirmation") return handleConfirmation(state, message, catalog);
   if (state.stage === "handoff") {
     return result(state, "Una persona del equipo continuará contigo en cuanto esté disponible.", "handoff");
