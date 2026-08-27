@@ -25,7 +25,7 @@ function categoryFor(item: MenuItemWithCategory) {
 
 function isBeverageCategory(value: string) {
   const text = normalizeText(value);
-  return ["bebida", "refresco", "limonada", "te", "agua", "cheve", "cerveza"].some(
+  return ["bebida", "bebidas", "refresco", "limonada", "te", "agua", "cheve", "cerveza"].some(
     (word) => includesPhrase(text, word)
   );
 }

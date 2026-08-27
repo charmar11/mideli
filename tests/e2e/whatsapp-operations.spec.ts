@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { selectConfidentAddressResult } from "../../src/lib/whatsapp/address-confidence";
+import {
+  addressQueryCandidates,
+  normalizeAddressQuery,
+  selectConfidentAddressResult,
+} from "../../src/lib/whatsapp/address-confidence";
 import { isWhatsappBusinessOpen } from "../../src/lib/whatsapp/business-hours";
 import { calculateDeliveryPrice } from "../../src/lib/whatsapp/delivery-pricing";
 
@@ -19,6 +23,19 @@ const hours = Array.from({ length: 7 }, (_, dayOfWeek) => ({
   opensAt: "12:00",
   closesAt: "23:00",
 }));
+
+test("normaliza calle, número y colonia antes de consultar Google", () => {
+  expect(normalizeAddressQuery("Sinagogas 1230, col san xavier")).toBe(
+    "Sinagogas, 1230, san xavier"
+  );
+  expect(normalizeAddressQuery("Las Palmas, 1747, colonia Villas del Palmar")).toBe(
+    "Las Palmas, 1747, Villas del Palmar"
+  );
+  expect(addressQueryCandidates("Sinagogas 1230, col san xavier")).toEqual([
+    "Sinagogas, 1230, san xavier",
+    "Sinagogas 1230, col san xavier",
+  ]);
+});
 
 test("calcula el rango por kilómetros y suma el recargo de colonia", () => {
   const quote = calculateDeliveryPrice({

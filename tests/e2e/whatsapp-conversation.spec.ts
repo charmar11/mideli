@@ -118,6 +118,21 @@ const navigationCatalog = buildConversationCatalog([
       is_active: true,
     },
   },
+  {
+    ...menuItems[0],
+    id: "refresco",
+    category_id: "bebidas",
+    name: "Refresco",
+    description: "Refresco de temporada.",
+    price: 30,
+    modifiers: [],
+    categories: {
+      id: "bebidas",
+      name: "Bebidas",
+      sort_order: 6,
+      is_active: true,
+    },
+  },
 ]);
 
 const configurableCatalog = buildConversationCatalog([
@@ -256,6 +271,134 @@ test("conserva el flujo reportado entre menú, dos categorías y rechazo de bebi
   result = handleConversationMessage(result.state, "No gracias", navigationCatalog);
   expect(result.state.stage).toBe("awaiting_fulfillment");
   expect(result.action).toBe("none");
+});
+
+test("permite regresar a bebidas después de haber respondido que no", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Dos hamburguesas sencillas",
+    navigationCatalog
+  );
+  result = handleConversationMessage(result.state, "Sería todo", navigationCatalog);
+  result = handleConversationMessage(result.state, "No", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_fulfillment");
+
+  result = handleConversationMessage(
+    result.state,
+    "Bueno sí deseo agregar bebida",
+    navigationCatalog
+  );
+  expect(result.state.stage).toBe("browsing_catalog");
+  expect(result.state.selectedCategoryId).toBe("__beverages__");
+  expect(result.reply).toContain("Refresco");
+
+  result = handleConversationMessage(result.state, "1", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_fulfillment");
+  expect(result.state.cart.map((line) => line.name)).toEqual([
+    "Hamburguesa Sencilla",
+    "Refresco",
+  ]);
+  expect(result.reply).toContain("recoger o a domicilio");
+});
+
+test("agrega una bebida desde el resumen y acepta Confirmar literalmente", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_confirmation" as const,
+    cart: [{
+      id: "line-1",
+      menuItemId: "hamburguesa-sencilla",
+      categoryId: "hamburguesas",
+      name: "Hamburguesa Sencilla",
+      quantity: 1,
+      unitPrice: 135,
+      selectedModifiers: [],
+      notes: "",
+    }],
+    serviceType: "domicilio" as const,
+    address: "Sinagogas 1230, San Xavier",
+    addressReference: "",
+    deliveryQuote: {
+      id: "quote-1",
+      formattedAddress: "Sinagogas 1230, Misión de San Xavier",
+      colony: "Misión de San Xavier",
+      latitude: 27.45,
+      longitude: -109.92,
+      distanceMeters: 6_600,
+      baseFee: 45,
+      surcharge: 0,
+      totalFee: 45,
+    },
+    payment: { method: "transferencia" as const, cashTendered: null },
+    beveragesOffered: true,
+    total: 180,
+  };
+
+  let result = handleConversationMessage(state, "Agrega bebida", navigationCatalog);
+  expect(result.state.stage).toBe("browsing_catalog");
+  expect(result.state.selectedCategoryId).toBe("__beverages__");
+
+  result = handleConversationMessage(result.state, "1", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_confirmation");
+  expect(result.state.payment?.method).toBe("transferencia");
+  expect(result.state.deliveryQuote?.totalFee).toBe(45);
+  expect(result.state.total).toBe(210);
+  expect(result.reply).toContain("Resumen de tu pedido");
+  expect(result.reply).toContain("Refresco");
+
+  result = handleConversationMessage(result.state, "Confirmar", navigationCatalog);
+  expect(result.state.stage).toBe("confirmed");
+  expect(result.action).toBe("request_order_creation");
+});
+
+test("modificar sin detalle conserva el resumen y explica cambios válidos", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_confirmation" as const,
+    cart: [{
+      id: "line-1",
+      menuItemId: "hamburguesa-sencilla",
+      categoryId: "hamburguesas",
+      name: "Hamburguesa Sencilla",
+      quantity: 1,
+      unitPrice: 135,
+      selectedModifiers: [],
+      notes: "",
+    }],
+    serviceType: "para_llevar" as const,
+    payment: { method: "transferencia" as const, cashTendered: null },
+    beveragesOffered: true,
+    total: 135,
+  };
+
+  const result = handleConversationMessage(state, "Modificar", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_confirmation");
+  expect(result.state.payment?.method).toBe("transferencia");
+  expect(result.reply).toContain("agrega bebida");
+  expect(result.reply).toContain("cambia el domicilio");
+  expect(result.reply).not.toContain("No encontré ese producto");
+});
+
+test("no vuelve a pedir referencia después de omitirla y corregir el domicilio", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_address_reference" as const,
+    serviceType: "domicilio" as const,
+    address: "Sinagogas 1230, col San Xavier",
+  };
+
+  let result = handleConversationMessage(state, "Omitir", navigationCatalog);
+  expect(result.action).toBe("request_delivery_quote");
+
+  result = recoverDeliveryQuote(result.state, "address_low_confidence");
+  result = handleConversationMessage(
+    result.state,
+    "Sinagogas, 1230, San Xavier",
+    navigationCatalog
+  );
+  expect(result.state.stage).toBe("awaiting_delivery_quote");
+  expect(result.action).toBe("request_delivery_quote");
+  expect(result.reply).not.toContain("referencia");
 });
 
 test("agrega varios productos, cantidades y variaciones reales", () => {

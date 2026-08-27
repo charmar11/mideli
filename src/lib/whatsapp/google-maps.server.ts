@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  addressQueryCandidates,
   selectConfidentAddressResult,
   selectReverseGeocodingResult,
   type GoogleAddressComponent,
@@ -91,11 +92,22 @@ export async function geocodeDestination(
     );
   }
 
-  const address = value.toLowerCase().includes("sonora")
-    ? value
-    : `${value}, ${localityHint}`;
-  const results = await geocodingRequest(new URLSearchParams({ address }));
-  return destinationFromResult(selectConfidentAddressResult(value, results));
+  const candidates = addressQueryCandidates(value);
+  let lastError: unknown = new Error("address_not_found");
+  for (const candidate of candidates) {
+    const address = candidate.toLowerCase().includes("sonora")
+      ? candidate
+      : `${candidate}, ${localityHint}`;
+    try {
+      const results = await geocodingRequest(new URLSearchParams({ address }));
+      return destinationFromResult(selectConfidentAddressResult(value, results));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "";
+      if (reason !== "address_not_found" && reason !== "address_low_confidence") throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 export async function computeDrivingDistance(

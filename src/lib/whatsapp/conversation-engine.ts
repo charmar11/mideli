@@ -17,6 +17,7 @@ import type {
   ConversationCartLine,
   ConversationDeliveryQuote,
   ConversationModifier,
+  ConversationResumeStage,
   ConversationResult,
   ConversationServiceType,
   ConversationState,
@@ -68,6 +69,7 @@ function withServiceType(
     serviceType,
     address: null,
     addressReference: "",
+    addressReferenceCollected: false,
     deliveryQuote: null,
     total: itemsSubtotal(state.cart),
   };
@@ -279,9 +281,18 @@ function isDoneIntent(text: string) {
 }
 
 function isConfirmation(text: string) {
-  return ["si", "si confirmo", "confirmo", "correcto", "adelante"].some(
-    (phrase) => text === phrase || includesPhrase(text, phrase)
+  if (["si", "correcto", "adelante", "de acuerdo"].includes(text)) return true;
+  return /^(?:si\s+)?confirm(?:o|ar)(?:\s+(?:el|mi)\s+pedido)?$/.test(text);
+}
+
+function requestsBeverage(text: string) {
+  return ["bebida", "refresco", "agua", "limonada", "algo para tomar"].some(
+    (phrase) => includesPhrase(text, phrase)
   );
+}
+
+function unspecifiedChange(text: string) {
+  return ["modificar", "hacer cambios", "cambiar el pedido", "modificar el pedido"].includes(text);
 }
 
 function acceptsCurrentCart(text: string) {
@@ -544,6 +555,11 @@ function finishModifierSelection(
     pendingBrowseCategoryId: null,
     ambiguityCount: 0,
   };
+  const resumed = resumeAfterBeverageSelection(
+    completedState,
+    "✅ *Opciones guardadas*"
+  );
+  if (resumed) return resumed;
   return result(completedState, cartUpdatedReply(completedState, "✅ *Opciones guardadas*"));
 }
 
@@ -558,6 +574,38 @@ function cartSummary(state: ConversationState) {
   return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido? 😊`;
 }
 
+function resumeAfterBeverageSelection(
+  state: ConversationState,
+  intro: string
+): ConversationResult | null {
+  const resumeStage = state.resumeAfterBeverage;
+  if (!resumeStage) return null;
+  const resumedState: ConversationState = {
+    ...state,
+    stage: resumeStage,
+    pendingLineId: null,
+    pendingBrowseCategoryId: null,
+    selectedCategoryId: null,
+    resumeAfterBeverage: null,
+    beveragesOffered: true,
+    catalogPage: 0,
+    ambiguityCount: 0,
+  };
+  if (resumeStage === "awaiting_confirmation") {
+    return result(resumedState, `${intro}\n\n${cartSummary(resumedState)}`);
+  }
+  if (resumeStage === "awaiting_payment") {
+    return result(
+      resumedState,
+      `${intro}\n\n🧾 Total actualizado: *$${resumedState.total}*\n\n${paymentQuestion(resumedState)}`
+    );
+  }
+  return result(
+    resumedState,
+    `${intro}\n\n🧾 Total actualizado: *$${resumedState.total}*\n\n📍 ¿Tu pedido será para recoger o a domicilio?`
+  );
+}
+
 export function createConversation(phone: string): ConversationState {
   return {
     phone: normalizePhone(phone),
@@ -568,6 +616,7 @@ export function createConversation(phone: string): ConversationState {
     serviceType: null,
     address: null,
     addressReference: "",
+    addressReferenceCollected: false,
     deliveryQuote: null,
     deliveryQuoteAttempts: 0,
     savedAddress: null,
@@ -576,6 +625,7 @@ export function createConversation(phone: string): ConversationState {
     catalogPage: 0,
     selectedCategoryId: null,
     pendingBrowseCategoryId: null,
+    resumeAfterBeverage: null,
     ambiguityCount: 0,
     nextLineNumber: 1,
   };
@@ -591,6 +641,9 @@ export function hydrateConversation(
     phone: normalizePhone(phone),
     cart: Array.isArray(value.cart) ? value.cart : [],
     addressReference: value.addressReference ?? "",
+    addressReferenceCollected: Boolean(
+      value.addressReferenceCollected || value.addressReference?.trim()
+    ),
     deliveryQuote: value.deliveryQuote ?? null,
     deliveryQuoteAttempts: value.deliveryQuoteAttempts ?? 0,
     savedAddress: value.savedAddress ?? null,
@@ -598,6 +651,7 @@ export function hydrateConversation(
     catalogPage: value.catalogPage ?? 0,
     selectedCategoryId: value.selectedCategoryId ?? null,
     pendingBrowseCategoryId: value.pendingBrowseCategoryId ?? null,
+    resumeAfterBeverage: value.resumeAfterBeverage ?? null,
   };
 }
 
@@ -781,12 +835,20 @@ function addMatches(
     );
   }
 
+  const completedState: ConversationState = {
+    ...nextState,
+    stage: "ordering",
+    ambiguityCount: 0,
+    nextLineNumber,
+  };
+  const resumed = resumeAfterBeverageSelection(
+    completedState,
+    "✅😋 *¡Buena elección! Ya lo agregué*"
+  );
+  if (resumed) return resumed;
   return result(
-    { ...nextState, stage: "ordering", ambiguityCount: 0, nextLineNumber },
-    cartUpdatedReply(
-      { ...nextState, stage: "ordering", ambiguityCount: 0, nextLineNumber },
-      "✅😋 *¡Buena elección! Ya lo agregué*"
-    )
+    completedState,
+    cartUpdatedReply(completedState, "✅😋 *¡Buena elección! Ya lo agregué*")
   );
 }
 
@@ -1400,6 +1462,7 @@ function handleAddress(state: ConversationState, message: string) {
         ...state,
         address: state.savedAddress.address,
         addressReference: state.savedAddress.reference,
+        addressReferenceCollected: true,
         stage: "awaiting_delivery_quote",
       },
       "Estoy actualizando la cobertura y el costo de envío para ese domicilio.",
@@ -1415,7 +1478,7 @@ function handleAddress(state: ConversationState, message: string) {
   if (text.length < 8) {
     return result(state, "Necesito una dirección un poco más completa para evitar retrasos.");
   }
-  if (state.addressReference.trim()) {
+  if (state.addressReferenceCollected) {
     return result(
       { ...state, address: message.trim(), stage: "awaiting_delivery_quote" },
       "🛵 Estoy validando el domicilio corregido y calculando el envío 😊",
@@ -1423,7 +1486,13 @@ function handleAddress(state: ConversationState, message: string) {
     );
   }
   return result(
-    { ...state, address: message.trim(), stage: "awaiting_address_reference" },
+    {
+      ...state,
+      address: message.trim(),
+      addressReference: "",
+      addressReferenceCollected: false,
+      stage: "awaiting_address_reference",
+    },
     "🏠 ¿Hay alguna referencia que ayude a encontrar el domicilio? Si no, escribe *omitir*."
   );
 }
@@ -1432,7 +1501,12 @@ function handleAddressReference(state: ConversationState, message: string) {
   const text = normalizeText(message);
   const reference = includesPhrase(text, "omitir") || text === "no" ? "" : message.trim();
   return result(
-    { ...state, addressReference: reference, stage: "awaiting_delivery_quote" },
+    {
+      ...state,
+      addressReference: reference,
+      addressReferenceCollected: true,
+      stage: "awaiting_delivery_quote",
+    },
     "🛵 Estoy ubicando tu domicilio y calculando el envío. Dame un momento 😊",
     "request_delivery_quote"
   );
@@ -1487,6 +1561,12 @@ function handleConfirmation(
       "request_order_creation"
     );
   }
+  if (unspecifiedChange(text)) {
+    return result(
+      state,
+      "Claro 😊 Dime el cambio directamente. Por ejemplo: *agrega bebida*, *quita una hamburguesa*, *cambia el domicilio* o *cambia a recoger*."
+    );
+  }
   if (
     includesPhrase(text, "modificar") ||
     /^(cambia|cambiar|cambiame|reemplaza|reemplazar|quita|quitar|elimina|eliminar)\b/.test(text)
@@ -1500,7 +1580,10 @@ function handleConfirmation(
   if (includesPhrase(text, "cancelar")) {
     return result({ ...state, stage: "cancelled" }, "El pedido fue cancelado.");
   }
-  return result(state, "Escribe confirmar para enviar el pedido o modificar para hacer cambios.");
+  return result(
+    state,
+    "Responde *Confirmar* para enviar el pedido o *Modificar* para hacer cambios."
+  );
 }
 
 function handleLateConversationChange(
@@ -1519,9 +1602,18 @@ function handleLateConversationChange(
     "awaiting_cash_tendered",
     "awaiting_confirmation",
   ];
-  if (!editableStages.includes(state.stage)) return null;
+  const beverageResumeStages: ConversationResumeStage[] = [
+    "awaiting_fulfillment",
+    "awaiting_payment",
+    "awaiting_confirmation",
+  ];
+  const canResumeBeverages = beverageResumeStages.includes(
+    state.stage as ConversationResumeStage
+  );
+  if (!editableStages.includes(state.stage) && !canResumeBeverages) return null;
 
   if (
+    editableStages.includes(state.stage) &&
     state.serviceType === "domicilio" &&
     /\b(cambia|cambiar|corrige|corregir|otra|nuevo|nueva)\b.*\b(direccion|domicilio|ubicacion)\b/.test(text)
   ) {
@@ -1531,12 +1623,39 @@ function handleLateConversationChange(
         ...nextState,
         address: null,
         addressReference: "",
+        addressReferenceCollected: false,
         payment: null,
         stage: "awaiting_address",
       },
       "📍 Claro, actualizamos el domicilio. Escribe la nueva dirección completa o comparte tu ubicación 😊"
     );
   }
+
+  if (canResumeBeverages) {
+    const beverageMatches = findCatalogProducts(message, catalog).filter(
+      (match) => match.item.isBeverage && !match.item.isAlcoholic
+    );
+    if (requestsBeverage(text) || beverageMatches.length > 0) {
+      const resumableState: ConversationState = {
+        ...state,
+        resumeAfterBeverage: state.stage as ConversationResumeStage,
+        beveragesOffered: true,
+      };
+      if (beverageMatches.length > 0) {
+        return addMatches(resumableState, beverageMatches, catalog);
+      }
+      const browsingState: ConversationState = {
+        ...resumableState,
+        stage: "browsing_catalog",
+        selectedCategoryId: "__beverages__",
+        catalogPage: 0,
+        ambiguityCount: 0,
+      };
+      return result(browsingState, productMessage(browsingState, catalog));
+    }
+  }
+
+  if (!editableStages.includes(state.stage)) return null;
 
   const productEdit = /^(cambia|cambiar|cambiame|reemplaza|reemplazar|quita|quitar|elimina|eliminar|borra|borrar)\b/.test(text);
   const productAddition = /^(agrega|agregar|anade|añade|sumale|pon)\b/.test(text) &&

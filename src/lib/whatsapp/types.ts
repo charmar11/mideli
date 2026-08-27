@@ -25,6 +25,11 @@ export type ConversationAction =
 
 export type ConversationServiceType = "domicilio" | "para_llevar";
 
+export type ConversationResumeStage =
+  | "awaiting_fulfillment"
+  | "awaiting_payment"
+  | "awaiting_confirmation";
+
 export type ConversationPayment = {
   method: "efectivo" | "tarjeta" | "transferencia";
   cashTendered: number | null;
@@ -82,6 +87,7 @@ export type ConversationState = {
   serviceType: ConversationServiceType | null;
   address: string | null;
   addressReference: string;
+  addressReferenceCollected: boolean;
   deliveryQuote: ConversationDeliveryQuote | null;
   deliveryQuoteAttempts: number;
   savedAddress: ConversationSavedAddress | null;
@@ -90,6 +96,7 @@ export type ConversationState = {
   catalogPage: number;
   selectedCategoryId: string | null;
   pendingBrowseCategoryId: string | null;
+  resumeAfterBeverage: ConversationResumeStage | null;
   ambiguityCount: number;
   nextLineNumber: number;
 };

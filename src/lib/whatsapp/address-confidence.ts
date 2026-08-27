@@ -29,6 +29,27 @@ const REJECTED_TYPES = new Set([
 ]);
 const PRECISE_LOCATION_TYPES = new Set(["ROOFTOP", "RANGE_INTERPOLATED"]);
 
+export function normalizeAddressQuery(value: string) {
+  const compact = value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\s*,\s*/g, ", ");
+  const parts = compact.match(
+    /^(.*?)(?:,\s*|\s+)(\d{1,6}[a-z]?)(?=\s*(?:,|\bcol(?:onia)?\.?\b|\bfracc(?:ionamiento)?\.?\b|$))\s*,?\s*(.*)$/i
+  );
+  if (!parts) return compact;
+  const street = parts[1].replace(/,\s*$/, "").trim();
+  const number = parts[2].trim();
+  const area = parts[3]
+    .replace(/^(?:col(?:onia)?|fracc(?:ionamiento)?)\.?\s+/i, "")
+    .trim();
+  return [street, number, area].filter(Boolean).join(", ");
+}
+
+export function addressQueryCandidates(value: string) {
+  return [...new Set([normalizeAddressQuery(value), value.trim()].filter(Boolean))];
+}
+
 function component(
   result: GoogleGeocodingResult,
   type: string
