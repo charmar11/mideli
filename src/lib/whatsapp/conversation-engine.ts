@@ -19,6 +19,7 @@ import type {
   ConversationCartReconciliation,
   ConversationCartLine,
   ConversationDeliveryQuote,
+  ConversationEditAction,
   ConversationModifier,
   ConversationResumeStage,
   ConversationResult,
@@ -306,6 +307,48 @@ function result(
   return { state, reply, action };
 }
 
+function decodedCommandPart(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function commandValue(message: string, prefix: string) {
+  const value = message.trim();
+  return value.startsWith(prefix) ? decodedCommandPart(value.slice(prefix.length)) : null;
+}
+
+function semanticMessageForCommand(message: string) {
+  const commands: Record<string, string> = {
+    "cmd:start": "hola",
+    "beverage:show": "bebida",
+    "beverage:skip": "no gracias",
+    "fulfillment:pickup": "para recoger",
+    "fulfillment:delivery": "a domicilio",
+    "address:reuse": "si",
+    "address:new": "no",
+    "address:skip_reference": "omitir",
+    "address:confirm": "si",
+    "address:change": "no",
+    "payment:cash": "efectivo",
+    "payment:card": "tarjeta",
+    "payment:transfer": "transferencia",
+    "confirmation:confirm": "confirmo",
+    show_beverages: "bebida",
+    skip_beverage: "no gracias",
+    pickup: "para recoger",
+    delivery: "a domicilio",
+    confirm_address: "si",
+    change_address: "no",
+    cash: "efectivo",
+    transfer: "transferencia",
+    confirm_order: "confirmo",
+  };
+  return commands[message.trim()] ?? message;
+}
+
 function isDoneIntent(text: string) {
   return ["ya es todo", "eso es todo", "seria todo", "terminar", "listo", "nada mas"].some(
     (phrase) => text === phrase || includesPhrase(text, phrase)
@@ -582,6 +625,13 @@ function finishModifierSelection(
     pendingBrowseCategoryId: null,
     ambiguityCount: 0,
   };
+  if (completedState.editContext?.action === "add") {
+    return finishGuidedChange(
+      completedState,
+      "✅ *Producto agregado y opciones guardadas*",
+      completedState.editContext.returnStage
+    );
+  }
   const resumed = resumeAfterBeverageSelection(
     completedState,
     "✅ *Opciones guardadas*"
@@ -822,6 +872,8 @@ export function createConversation(phone: string): ConversationState {
     orderNotes: "",
     deliveryNotes: "",
     pendingNote: null,
+    editContext: null,
+    guidedNote: null,
     beveragesOffered: false,
     catalogPage: 0,
     selectedCategoryId: null,
@@ -855,6 +907,8 @@ export function hydrateConversation(
     orderNotes: value.orderNotes ?? "",
     deliveryNotes: value.deliveryNotes ?? "",
     pendingNote: value.pendingNote ?? null,
+    editContext: value.editContext ?? null,
+    guidedNote: value.guidedNote ?? null,
     beveragesOffered: value.beveragesOffered ?? false,
     catalogPage: value.catalogPage ?? 0,
     selectedCategoryId: value.selectedCategoryId ?? null,
@@ -968,6 +1022,27 @@ function handlePendingModifiers(
   }
 
   let additions = matchItemModifiers(catalogItem, message);
+  const modifierCommand = message.trim().startsWith("modifier:")
+    ? message.trim().slice("modifier:".length).split(":").map(decodedCommandPart)
+    : null;
+  if (modifierCommand?.length === 2) {
+    const [requestedGroupId, requestedOptionId] = modifierCommand;
+    const groupIndex = catalogItem.modifiers.findIndex((group, index) =>
+      (group.id ?? `group-${index}`) === requestedGroupId
+    );
+    const group = groupIndex >= 0 ? catalogItem.modifiers[groupIndex] : null;
+    const optionIndex = group?.options.findIndex((option, index) =>
+      (option.id ?? `option-${groupIndex}-${index}`) === requestedOptionId
+    ) ?? -1;
+    const option = optionIndex >= 0 ? group?.options[optionIndex] : null;
+    const missing = missingRequiredGroups(catalogItem, line.selectedModifiers)[0];
+    const missingId = missing
+      ? missing.id ?? `group-${catalogItem.modifiers.indexOf(missing)}`
+      : null;
+    if (group && option && requestedGroupId === missingId) {
+      additions = [modifierFromOption(group, groupIndex, option, optionIndex)];
+    }
+  }
   const numeric = Number.parseInt(normalizeText(message), 10);
   if (additions.length === 0 && Number.isInteger(numeric) && numeric > 0) {
     const missing = missingRequiredGroups(catalogItem, line.selectedModifiers)[0];
@@ -1049,6 +1124,13 @@ function addMatches(
     ambiguityCount: 0,
     nextLineNumber,
   };
+  if (completedState.editContext?.action === "add") {
+    return finishGuidedChange(
+      completedState,
+      "✅😋 *Producto agregado*",
+      completedState.editContext.returnStage
+    );
+  }
   const resumed = resumeAfterBeverageSelection(
     completedState,
     "✅😋 *¡Buena elección! Ya lo agregué*"
@@ -1246,6 +1328,71 @@ function handleBrowsingCatalog(
   message: string,
   catalog: ConversationCatalog
 ): ConversationResult {
+  const raw = message.trim();
+  if (raw === "catalog:close") {
+    const next = {
+      ...state,
+      stage: "ordering" as const,
+      selectedCategoryId: null,
+      catalogPage: 0,
+    };
+    return result(
+      next,
+      state.cart.length > 0
+        ? cartUpdatedReply(next)
+        : "Cuando quieras, toca *Ver menú* o escribe lo que se te antoja 😊"
+    );
+  }
+  if (raw === "catalog:categories") {
+    const next = { ...state, selectedCategoryId: null, catalogPage: 0 };
+    return result(next, categoryMessage(catalog, 0));
+  }
+  if (raw === "catalog:previous") {
+    const next = { ...state, catalogPage: Math.max(0, state.catalogPage - 1) };
+    return result(
+      next,
+      next.selectedCategoryId ? productMessage(next, catalog) : categoryMessage(catalog, next.catalogPage)
+    );
+  }
+  if (raw === "catalog:more") {
+    const next = { ...state, catalogPage: state.catalogPage + 1 };
+    return result(
+      next,
+      next.selectedCategoryId ? productMessage(next, catalog) : categoryMessage(catalog, next.catalogPage)
+    );
+  }
+
+  const categoryId = commandValue(raw, "category:");
+  if (categoryId) {
+    const category = foodCategories(catalog).find((candidate) => candidate.id === categoryId);
+    if (!category) {
+      return result(
+        { ...state, selectedCategoryId: null, catalogPage: 0 },
+        `Esa categoría ya no está disponible. ${categoryMessage(catalog, 0)}`
+      );
+    }
+    const next = { ...state, selectedCategoryId: category.id, catalogPage: 0 };
+    return result(next, productMessage(next, catalog));
+  }
+
+  const productId = commandValue(raw, "product:");
+  if (productId) {
+    const item = catalogItemsForSelection(state, catalog).find(
+      (candidate) => candidate.id === productId
+    );
+    if (!item) {
+      return result(
+        state,
+        `Ese producto ya no está disponible. ${productMessage(state, catalog)}`
+      );
+    }
+    return addMatches(
+      state,
+      [{ item, start: 0, end: item.normalizedName.length, quantity: 1, segment: item.name }],
+      catalog
+    );
+  }
+
   const text = normalizeText(message);
   const requestedService = serviceTypeFromText(text);
   if (includesPhrase(text, "volver")) {
@@ -1416,23 +1563,39 @@ function handleOrdering(
     if (state.cart.length === 0) {
       return result(state, "Tu pedido está vacío. Dime qué platillo deseas agregar.");
     }
+    const completedCartState = requestedService
+      ? withServiceType(state, requestedService)
+      : state;
     if (!state.beveragesOffered) {
       return result(
-        { ...state, stage: "awaiting_beverage", beveragesOffered: true, ambiguityCount: 0 },
+        {
+          ...completedCartState,
+          stage: "awaiting_beverage",
+          beveragesOffered: true,
+          ambiguityCount: 0,
+        },
         "🥤 *¿Algo para tomar?*\n\n¿Deseas agregar alguna bebida a tu pedido? 😊"
       );
     }
-    return continueAfterBeverages({ ...state, ambiguityCount: 0 });
+    return continueAfterBeverages({ ...completedCartState, ambiguityCount: 0 });
   }
 
   if (acceptsCurrentCart(text) && state.cart.length > 0) {
+    const acceptedState = requestedService
+      ? withServiceType(state, requestedService)
+      : state;
     if (!state.beveragesOffered) {
       return result(
-        { ...state, stage: "awaiting_beverage", beveragesOffered: true, ambiguityCount: 0 },
+        {
+          ...acceptedState,
+          stage: "awaiting_beverage",
+          beveragesOffered: true,
+          ambiguityCount: 0,
+        },
         "🥤 *¿Algo para tomar?*\n\n¿Deseas agregar alguna bebida a tu pedido? 😊"
       );
     }
-    return continueAfterBeverages({ ...state, ambiguityCount: 0 });
+    return continueAfterBeverages({ ...acceptedState, ambiguityCount: 0 });
   }
 
   if (isConfirmation(text) && state.cart.length > 0) {
@@ -1834,6 +1997,7 @@ function handlePayment(state: ConversationState, message: string) {
     ...state,
     payment: { method, cashTendered: null },
     stage: "awaiting_confirmation",
+    editContext: null,
   };
   return result(nextState, cartSummary(nextState));
 }
@@ -1845,6 +2009,524 @@ function handleCashTendered(state: ConversationState) {
     stage: "awaiting_confirmation",
   };
   return result(nextState, cartSummary(nextState));
+}
+
+function editActionPrompt() {
+  return "✏️ *¿Qué deseas cambiar?*\n\n1. Agregar productos\n2. Quitar producto\n3. Cambiar cantidad\n4. Cambiar opciones\n5. Añadir indicación\n6. Cambiar entrega\n7. Cambiar domicilio\n8. Cambiar pago\n9. Ver resumen";
+}
+
+function finishGuidedChange(
+  state: ConversationState,
+  intro: string,
+  returnStage: "ordering" | "awaiting_confirmation"
+) {
+  const next: ConversationState = {
+    ...state,
+    stage: returnStage,
+    editContext: null,
+    guidedNote: null,
+    ambiguityCount: 0,
+  };
+  return returnStage === "awaiting_confirmation"
+    ? result(next, `${intro}\n\n${cartSummary(next)}`)
+    : result(next, cartUpdatedReply(next, intro));
+}
+
+function beginEdit(state: ConversationState) {
+  return result(
+    {
+      ...state,
+      stage: "awaiting_edit_action",
+      editContext: {
+        action: null,
+        targetLineId: null,
+        targetGroupId: null,
+        returnStage: "awaiting_confirmation",
+      },
+      guidedNote: null,
+      ambiguityCount: 0,
+    },
+    editActionPrompt()
+  );
+}
+
+function beginGuidedNote(
+  state: ConversationState,
+  returnStage: "ordering" | "awaiting_confirmation"
+) {
+  if (state.cart.length === 0) {
+    return result(state, "Primero agrega un producto y después podrás añadir indicaciones 😊");
+  }
+  return result(
+    {
+      ...state,
+      stage: "awaiting_note_scope",
+      guidedNote: {
+        scope: null,
+        targetLineId: null,
+        quantityScope: null,
+        returnStage,
+      },
+      editContext: null,
+      ambiguityCount: 0,
+    },
+    "📝 *¿Dónde quieres guardar la indicación?*\n\n1. A un producto\n2. A todo el pedido\n3. Para la entrega"
+  );
+}
+
+function returnToSummary(state: ConversationState) {
+  const next: ConversationState = {
+    ...state,
+    stage: "awaiting_confirmation",
+    editContext: null,
+    guidedNote: null,
+    ambiguityCount: 0,
+  };
+  return result(next, cartSummary(next));
+}
+
+function editActionFromMessage(message: string): ConversationEditAction | null {
+  const command = commandValue(message, "edit:action:");
+  if (command && [
+    "add",
+    "remove",
+    "quantity",
+    "modifiers",
+    "note",
+    "fulfillment",
+    "address",
+    "payment",
+  ].includes(command)) {
+    return command as ConversationEditAction;
+  }
+  const text = normalizeText(message);
+  const numeric = Number.parseInt(text, 10);
+  const numericActions: ConversationEditAction[] = [
+    "add",
+    "remove",
+    "quantity",
+    "modifiers",
+    "note",
+    "fulfillment",
+    "address",
+    "payment",
+  ];
+  if (numeric >= 1 && numeric <= numericActions.length) return numericActions[numeric - 1];
+  if (includesPhrase(text, "agregar")) return "add";
+  if (includesPhrase(text, "quitar") || includesPhrase(text, "eliminar")) return "remove";
+  if (includesPhrase(text, "cantidad")) return "quantity";
+  if (includesPhrase(text, "opcion") || includesPhrase(text, "variacion")) return "modifiers";
+  if (includesPhrase(text, "nota") || includesPhrase(text, "indicacion")) return "note";
+  if (includesPhrase(text, "entrega") || includesPhrase(text, "recoger")) return "fulfillment";
+  if (includesPhrase(text, "domicilio") || includesPhrase(text, "direccion")) return "address";
+  if (includesPhrase(text, "pago")) return "payment";
+  return null;
+}
+
+function handleEditAction(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+) {
+  if (normalizeText(message) === "9") return returnToSummary(state);
+  const action = editActionFromMessage(message);
+  if (!action) return result(state, editActionPrompt());
+  const context = {
+    action,
+    targetLineId: null,
+    targetGroupId: null,
+    returnStage: "awaiting_confirmation" as const,
+  };
+  if (action === "add") {
+    const next: ConversationState = {
+      ...state,
+      stage: "browsing_catalog",
+      selectedCategoryId: null,
+      catalogPage: 0,
+      editContext: context,
+    };
+    return result(next, categoryMessage(catalog, 0));
+  }
+  if (action === "note") return beginGuidedNote(state, "awaiting_confirmation");
+  if (action === "fulfillment") {
+    return result(
+      { ...state, stage: "awaiting_fulfillment", editContext: context },
+      "📍 ¿El pedido será para recoger o a domicilio?"
+    );
+  }
+  if (action === "address") {
+    if (state.serviceType !== "domicilio") {
+      return result(state, "El pedido está para recoger. Primero elige *Cambiar entrega* para pasarlo a domicilio.");
+    }
+    return result(
+      {
+        ...withServiceType(state, "domicilio"),
+        stage: "awaiting_address",
+        address: null,
+        addressReference: "",
+        addressReferenceCollected: false,
+        addressSource: null,
+        payment: null,
+        editContext: context,
+      },
+      "📍 Escribe el domicilio corregido o comparte la ubicación desde WhatsApp."
+    );
+  }
+  if (action === "payment") {
+    return result(
+      { ...state, stage: "awaiting_payment", payment: null, editContext: context },
+      paymentQuestion(state)
+    );
+  }
+
+  const eligible = action === "modifiers"
+    ? state.cart.filter((line) => itemForLine(line, catalog)?.modifiers.length)
+    : state.cart;
+  if (eligible.length === 0) {
+    return result(state, "No hay productos que se puedan modificar de esa forma.");
+  }
+  return result(
+    { ...state, stage: "awaiting_edit_item", editContext: context },
+    `${action === "remove"
+      ? "🗑️ Elige el producto que deseas quitar."
+      : action === "quantity"
+        ? "🔢 Elige el producto cuya cantidad deseas cambiar."
+        : "⚙️ Elige el producto cuyas opciones deseas cambiar."}\n\n${eligible
+      .slice(0, 9)
+      .map((line, index) => `${index + 1}. ${lineDescription(line)}`)
+      .join("\n")}`
+  );
+}
+
+function selectedEditLine(state: ConversationState, message: string) {
+  const lineId = commandValue(message, "edit:item:");
+  if (lineId) return state.cart.find((line) => line.id === lineId) ?? null;
+  const text = normalizeText(message);
+  const numeric = Number.parseInt(text, 10);
+  if (Number.isInteger(numeric) && numeric >= 1 && numeric <= state.cart.length) {
+    return state.cart[numeric - 1];
+  }
+  return state.cart.find((line) => includesPhrase(text, normalizeText(line.name))) ?? null;
+}
+
+function handleEditItem(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+) {
+  const line = selectedEditLine(state, message);
+  const action = state.editContext?.action;
+  if (!line || !action) return result(state, "Elige uno de los productos actuales.");
+
+  if (action === "remove") {
+    const cart = state.cart.filter((candidate) => candidate.id !== line.id);
+    if (cart.length === 0) {
+      const next = withCart({ ...state, stage: "ordering", editContext: null }, cart);
+      return result(next, "🗑️ Quité el producto. Tu pedido quedó vacío. ¿Qué deseas agregar?");
+    }
+    return finishGuidedChange(
+      withCart(state, cart),
+      `🗑️ *Quité ${line.name}*`,
+      state.editContext?.returnStage ?? "awaiting_confirmation"
+    );
+  }
+  if (action === "quantity") {
+    return result(
+      {
+        ...state,
+        stage: "awaiting_edit_quantity",
+        editContext: { ...state.editContext!, targetLineId: line.id },
+      },
+      `🔢 ¿Cuántos ${line.name} deseas?`
+    );
+  }
+  if (action === "modifiers") {
+    const item = itemForLine(line, catalog);
+    if (!item?.modifiers.length) {
+      return result(state, `${line.name} no tiene opciones configurables.`);
+    }
+    return result(
+      {
+        ...state,
+        stage: "awaiting_edit_modifier_group",
+        editContext: { ...state.editContext!, targetLineId: line.id },
+      },
+      `⚙️ ¿Qué opción de ${line.name} deseas cambiar?\n\n${item.modifiers
+        .map((group, index) => `${index + 1}. ${group.name}`)
+        .join("\n")}`
+    );
+  }
+  return result(state, editActionPrompt());
+}
+
+function handleEditQuantity(state: ConversationState, message: string) {
+  const lineId = state.editContext?.targetLineId;
+  const line = state.cart.find((candidate) => candidate.id === lineId);
+  const command = commandValue(message, "edit:quantity:");
+  const quantity = command ? Number.parseInt(command, 10) : quantityFromText(normalizeText(message));
+  if (!line || !Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+    return result(state, "Elige una cantidad entre 1 y 20.");
+  }
+  const cart = state.cart.map((candidate) =>
+    candidate.id === line.id ? { ...candidate, quantity } : candidate
+  );
+  return finishGuidedChange(
+    withCart(state, cart),
+    `🔢 *Cantidad actualizada: ${quantity} ${line.name}*`,
+    state.editContext?.returnStage ?? "awaiting_confirmation"
+  );
+}
+
+function handleEditModifierGroup(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+) {
+  const line = state.cart.find((candidate) => candidate.id === state.editContext?.targetLineId);
+  const item = line ? itemForLine(line, catalog) : null;
+  const requested = commandValue(message, "edit:group:");
+  const text = normalizeText(message);
+  const numeric = Number.parseInt(text, 10);
+  const group = item?.modifiers.find((candidate, index) => {
+    const id = candidate.id ?? `group-${index}`;
+    return requested
+      ? id === requested
+      : numeric === index + 1 || includesPhrase(text, normalizeText(candidate.name));
+  });
+  if (!line || !item || !group) return result(state, "Elige una de las opciones configurables.");
+  const groupIndex = item.modifiers.indexOf(group);
+  return result(
+    {
+      ...state,
+      stage: "awaiting_edit_modifier_option",
+      editContext: {
+        ...state.editContext!,
+        targetGroupId: group.id ?? `group-${groupIndex}`,
+      },
+    },
+    `⚙️ Elige el nuevo valor para *${group.name}*.\n\n${group.options
+      .map((option, index) => `${index + 1}. ${option.name}${Number(option.price) > 0 ? ` +$${Number(option.price)}` : ""}`)
+      .join("\n")}${group.required ? "" : `\n${group.options.length + 1}. Sin esta opción`}`
+  );
+}
+
+function handleEditModifierOption(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+) {
+  const line = state.cart.find((candidate) => candidate.id === state.editContext?.targetLineId);
+  const item = line ? itemForLine(line, catalog) : null;
+  const group = item?.modifiers.find((candidate, index) =>
+    (candidate.id ?? `group-${index}`) === state.editContext?.targetGroupId
+  );
+  if (!line || !item || !group) return returnToSummary(state);
+  const groupIndex = item.modifiers.indexOf(group);
+  const groupId = group.id ?? `group-${groupIndex}`;
+  const requested = commandValue(message, "edit:option:");
+  const text = normalizeText(message);
+  const numeric = Number.parseInt(text, 10);
+
+  let selectedModifiers = [...line.selectedModifiers];
+  if (
+    !group.required &&
+    (requested === "clear" || numeric === group.options.length + 1)
+  ) {
+    selectedModifiers = selectedModifiers.filter((modifier) => modifier.groupId !== groupId);
+  } else {
+    const optionIndex = group.options.findIndex((option, index) => {
+      const id = option.id ?? `option-${index}`;
+      return requested
+        ? id === requested
+        : numeric === index + 1 || includesPhrase(text, normalizeText(option.name));
+    });
+    const option = optionIndex >= 0 ? group.options[optionIndex] : null;
+    if (!option) return result(state, `Elige una opción válida para ${group.name}.`);
+    const modifier = modifierFromOption(group, groupIndex, option, optionIndex);
+    if ((group.selection_mode ?? "single") === "multiple") {
+      const selectedInGroup = selectedModifiers.filter(
+        (candidate) => candidate.groupId === groupId
+      );
+      const isSelected = selectedInGroup.some(
+        (candidate) => candidate.groupId === groupId && candidate.optionId === modifier.optionId
+      );
+      const maximum = Math.max(1, group.max_selections ?? group.options.length);
+      if (isSelected && group.required && selectedInGroup.length === 1) {
+        return result(state, `${group.name} requiere al menos una opción.`);
+      }
+      if (!isSelected && selectedInGroup.length >= maximum) {
+        return result(state, `Puedes elegir hasta ${maximum} opciones en ${group.name}.`);
+      }
+      selectedModifiers = isSelected
+        ? selectedModifiers.filter((candidate) => candidate.optionId !== modifier.optionId)
+        : [...selectedModifiers, modifier];
+    } else {
+      selectedModifiers = mergeModifiers(
+        selectedModifiers,
+        [modifier],
+        catalog,
+        line.menuItemId
+      );
+    }
+  }
+
+  const next = withCart(
+    state,
+    state.cart.map((candidate) =>
+      candidate.id === line.id ? { ...candidate, selectedModifiers } : candidate
+    )
+  );
+  if ((group.selection_mode ?? "single") === "multiple" && requested !== "clear") {
+    return result(
+      { ...next, stage: "awaiting_edit_modifier_more" },
+      `✅ Actualicé *${group.name}*. ¿Deseas elegir otra opción del mismo grupo?`
+    );
+  }
+  return finishGuidedChange(
+    next,
+    `✅ *Opciones de ${line.name} actualizadas*`,
+    state.editContext?.returnStage ?? "awaiting_confirmation"
+  );
+}
+
+function handleEditModifierMore(state: ConversationState, message: string) {
+  if (message.trim() === "edit:modifier:more") {
+    return result(
+      { ...state, stage: "awaiting_edit_modifier_option" },
+      "Elige otra opción. Toca una seleccionada para quitarla."
+    );
+  }
+  if (message.trim() === "edit:modifier:done" || isDoneIntent(normalizeText(message))) {
+    return finishGuidedChange(
+      state,
+      "✅ *Opciones actualizadas*",
+      state.editContext?.returnStage ?? "awaiting_confirmation"
+    );
+  }
+  return result(state, "Elige *Agregar otra* o *Listo*.");
+}
+
+function handleNoteScope(state: ConversationState, message: string) {
+  const requested = commandValue(message, "note:scope:");
+  const text = normalizeText(message);
+  const numeric = Number.parseInt(text, 10);
+  const scope: "product" | "order" | "delivery" | null =
+    requested === "product" || numeric === 1 || includesPhrase(text, "producto")
+    ? "product"
+    : requested === "order" || numeric === 2 || includesPhrase(text, "pedido")
+      ? "order"
+      : requested === "delivery" || numeric === 3 || includesPhrase(text, "entrega")
+        ? "delivery"
+        : null;
+  if (!scope || !state.guidedNote) {
+    return result(state, "Elige si la indicación es para un producto, todo el pedido o la entrega.");
+  }
+  const guidedNote = { ...state.guidedNote, scope };
+  return scope === "product"
+    ? result(
+        { ...state, stage: "awaiting_note_item", guidedNote },
+        `🍽️ Elige el producto que llevará la indicación.\n\n${state.cart
+          .slice(0, 9)
+          .map((line, index) => `${index + 1}. ${lineDescription(line)}`)
+          .join("\n")}`
+      )
+    : result(
+        { ...state, stage: "awaiting_note_text", guidedNote },
+        scope === "delivery"
+          ? "🔐 Escribe la referencia, acceso o PIN para la entrega."
+          : "📝 Escribe la indicación para todo el pedido."
+      );
+}
+
+function handleGuidedNoteItem(state: ConversationState, message: string) {
+  const lineId = commandValue(message, "note:item:");
+  const text = normalizeText(message);
+  const numeric = Number.parseInt(text, 10);
+  const line = lineId
+    ? state.cart.find((candidate) => candidate.id === lineId)
+    : Number.isInteger(numeric) && numeric >= 1 && numeric <= state.cart.length
+      ? state.cart[numeric - 1]
+      : state.cart.find((candidate) => includesPhrase(text, normalizeText(candidate.name)));
+  if (!line || !state.guidedNote) return result(state, "Elige uno de los productos del pedido.");
+  const guidedNote = { ...state.guidedNote, targetLineId: line.id };
+  if (line.quantity > 1) {
+    return result(
+      { ...state, stage: "awaiting_note_quantity_scope", guidedNote },
+      `📝 ¿La indicación es para las ${line.quantity} unidades de ${line.name} o solo para una?`
+    );
+  }
+  return result(
+    {
+      ...state,
+      stage: "awaiting_note_text",
+      guidedNote: { ...guidedNote, quantityScope: "all" },
+    },
+    `📝 Escribe la indicación para ${line.name}.`
+  );
+}
+
+function handleGuidedNoteQuantity(state: ConversationState, message: string) {
+  if (!state.guidedNote) return returnToSummary(state);
+  const requested = commandValue(message, "note:quantity:");
+  const text = normalizeText(message);
+  const quantityScope = requested === "one" || includesPhrase(text, "solo una")
+    ? "one"
+    : requested === "all" || includesPhrase(text, "todas")
+      ? "all"
+      : null;
+  if (!quantityScope) return result(state, "Elige si es para todas las unidades o solo una.");
+  const line = state.cart.find((candidate) => candidate.id === state.guidedNote?.targetLineId);
+  return result(
+    {
+      ...state,
+      stage: "awaiting_note_text",
+      guidedNote: { ...state.guidedNote, quantityScope },
+    },
+    `📝 Escribe la indicación${line ? ` para ${line.name}` : ""}.`
+  );
+}
+
+function handleGuidedNoteText(state: ConversationState, message: string) {
+  const guided = state.guidedNote;
+  const note = message.trim().replace(/\s+/g, " ");
+  if (!guided) return returnToSummary(state);
+  if (note.length < 2 || note.length > 500) {
+    return result(state, "Escribe una indicación de hasta 500 caracteres.");
+  }
+  if (guided.scope === "order") {
+    const next = { ...state, orderNotes: appendNote(state.orderNotes, note) };
+    return finishGuidedChange(next, "📝 *Indicación general guardada*", guided.returnStage);
+  }
+  if (guided.scope === "delivery") {
+    const next = { ...state, deliveryNotes: appendNote(state.deliveryNotes, note) };
+    return finishGuidedChange(next, "🔐 *Indicación de entrega guardada*", guided.returnStage);
+  }
+  const target = state.cart.find((line) => line.id === guided.targetLineId);
+  if (!target) return finishGuidedChange(state, "No pude encontrar ese producto.", guided.returnStage);
+
+  let nextLineNumber = state.nextLineNumber;
+  let cart = state.cart;
+  if (guided.quantityScope === "one" && target.quantity > 1) {
+    const remainder: ConversationCartLine = {
+      ...target,
+      id: `line-${nextLineNumber}`,
+      quantity: target.quantity - 1,
+      selectedModifiers: [...target.selectedModifiers],
+      notes: target.notes,
+    };
+    nextLineNumber += 1;
+    cart = state.cart.flatMap((line) =>
+      line.id === target.id
+        ? [{ ...line, quantity: 1, notes: appendNote(line.notes, note) }, remainder]
+        : [line]
+    );
+  } else {
+    cart = state.cart.map((line) =>
+      line.id === target.id ? { ...line, notes: appendNote(line.notes, note) } : line
+    );
+  }
+  const next = withCart({ ...state, nextLineNumber }, cart);
+  return finishGuidedChange(next, "📝 *Indicación de preparación guardada*", guided.returnStage);
 }
 
 function handleConfirmation(
@@ -1870,10 +2552,7 @@ function handleConfirmation(
     );
   }
   if (unspecifiedChange(text)) {
-    return result(
-      state,
-      "Claro 😊 Dime el cambio directamente. Por ejemplo: *agrega bebida*, *quita una hamburguesa*, *cambia el domicilio* o *cambia a recoger*."
-    );
+    return beginEdit(state);
   }
   if (
     includesPhrase(text, "modificar") ||
@@ -2000,7 +2679,71 @@ export function handleConversationMessage(
   catalog: ConversationCatalog
 ): ConversationResult {
   const state = hydrateConversation(rawState, rawState.phone);
-  const text = normalizeText(message);
+  const command = message.trim();
+
+  if (command === "cmd:human" || command === "human_help") {
+    return result(
+      { ...state, stage: "handoff" },
+      "Claro. Una persona del equipo continuará contigo.",
+      "handoff"
+    );
+  }
+  if (command === "cmd:menu" || command === "cart:add") {
+    const next: ConversationState = {
+      ...state,
+      stage: "browsing_catalog",
+      selectedCategoryId: null,
+      catalogPage: 0,
+      ambiguityCount: 0,
+    };
+    return result(next, categoryMessage(catalog, 0));
+  }
+  if (command === "cart:note" || command === "confirmation:note") {
+    if (command === "confirmation:note" && state.stage !== "awaiting_confirmation") {
+      return handleConversationMessage(state, "menu", catalog);
+    }
+    return beginGuidedNote(
+      state,
+      state.stage === "awaiting_confirmation" ? "awaiting_confirmation" : "ordering"
+    );
+  }
+  if (
+    (command === "confirmation:edit" || command === "modify_order") &&
+    state.stage === "awaiting_confirmation"
+  ) {
+    return beginEdit(state);
+  }
+  if (
+    command === "edit:summary" &&
+    (state.stage.startsWith("awaiting_edit_") || state.stage.startsWith("awaiting_note_"))
+  ) {
+    return returnToSummary(state);
+  }
+  if (command === "note:cancel" && state.stage.startsWith("awaiting_note_")) {
+    const returnStage = state.guidedNote?.returnStage ?? "ordering";
+    return finishGuidedChange(
+      state,
+      "De acuerdo, no agregué ninguna indicación.",
+      returnStage
+    );
+  }
+  if (command === "beverage:back" && state.stage === "awaiting_beverage") {
+    const next: ConversationState = {
+      ...state,
+      stage: "ordering",
+      selectedCategoryId: null,
+      catalogPage: 0,
+      resumeAfterBeverage: null,
+    };
+    return result(next, cartUpdatedReply(next));
+  }
+  if (command === "cart:finish") message = "sería todo";
+  if (command === "cmd:start" && ["confirmed", "cancelled"].includes(state.stage)) {
+    return handleOrdering(createConversation(state.phone), "hola", catalog);
+  }
+
+  const effectiveMessage = semanticMessageForCommand(message);
+  const text = normalizeText(effectiveMessage);
 
   if (requestsHuman(text)) {
     return result(
@@ -2010,8 +2753,38 @@ export function handleConversationMessage(
     );
   }
 
+  if (state.stage === "awaiting_edit_action") {
+    return handleEditAction(state, effectiveMessage, catalog);
+  }
+  if (state.stage === "awaiting_edit_item") {
+    return handleEditItem(state, effectiveMessage, catalog);
+  }
+  if (state.stage === "awaiting_edit_quantity") {
+    return handleEditQuantity(state, effectiveMessage);
+  }
+  if (state.stage === "awaiting_edit_modifier_group") {
+    return handleEditModifierGroup(state, effectiveMessage, catalog);
+  }
+  if (state.stage === "awaiting_edit_modifier_option") {
+    return handleEditModifierOption(state, effectiveMessage, catalog);
+  }
+  if (state.stage === "awaiting_edit_modifier_more") {
+    return handleEditModifierMore(state, effectiveMessage);
+  }
+  if (state.stage === "awaiting_note_scope") {
+    return handleNoteScope(state, effectiveMessage);
+  }
+  if (state.stage === "awaiting_note_item") {
+    return handleGuidedNoteItem(state, effectiveMessage);
+  }
+  if (state.stage === "awaiting_note_quantity_scope") {
+    return handleGuidedNoteQuantity(state, effectiveMessage);
+  }
+  if (state.stage === "awaiting_note_text") {
+    return handleGuidedNoteText(state, effectiveMessage);
+  }
   if (state.stage === "awaiting_note_target") {
-    return handlePendingNoteTarget(state, message);
+    return handlePendingNoteTarget(state, effectiveMessage);
   }
 
   const noteStages: ConversationState["stage"][] = [
@@ -2023,29 +2796,29 @@ export function handleConversationMessage(
     "awaiting_confirmation",
   ];
   if (noteStages.includes(state.stage)) {
-    const note = handleDetectedNote(state, message);
+    const note = handleDetectedNote(state, effectiveMessage);
     if (note) return note;
   }
 
-  const lateChange = handleLateConversationChange(state, message, catalog);
+  const lateChange = handleLateConversationChange(state, effectiveMessage, catalog);
   if (lateChange) return lateChange;
 
-  if (state.stage === "awaiting_modifiers") return handlePendingModifiers(state, message, catalog);
-  if (state.stage === "ordering") return handleOrdering(state, message, catalog);
-  if (state.stage === "browsing_catalog") return handleBrowsingCatalog(state, message, catalog);
-  if (state.stage === "awaiting_beverage") return handleBeverage(state, message, catalog);
-  if (state.stage === "awaiting_fulfillment") return handleFulfillment(state, message);
-  if (state.stage === "awaiting_address") return handleAddress(state, message);
-  if (state.stage === "awaiting_address_reference") return handleAddressReference(state, message);
+  if (state.stage === "awaiting_modifiers") return handlePendingModifiers(state, effectiveMessage, catalog);
+  if (state.stage === "ordering") return handleOrdering(state, effectiveMessage, catalog);
+  if (state.stage === "browsing_catalog") return handleBrowsingCatalog(state, effectiveMessage, catalog);
+  if (state.stage === "awaiting_beverage") return handleBeverage(state, effectiveMessage, catalog);
+  if (state.stage === "awaiting_fulfillment") return handleFulfillment(state, effectiveMessage);
+  if (state.stage === "awaiting_address") return handleAddress(state, effectiveMessage);
+  if (state.stage === "awaiting_address_reference") return handleAddressReference(state, effectiveMessage);
   if (state.stage === "awaiting_delivery_quote") {
     return result(state, "Sigo validando el domicilio. Si tarda demasiado, una persona te ayudará.");
   }
   if (state.stage === "awaiting_address_confirmation") {
-    return handleAddressConfirmation(state, message);
+    return handleAddressConfirmation(state, effectiveMessage);
   }
-  if (state.stage === "awaiting_payment") return handlePayment(state, message);
+  if (state.stage === "awaiting_payment") return handlePayment(state, effectiveMessage);
   if (state.stage === "awaiting_cash_tendered") return handleCashTendered(state);
-  if (state.stage === "awaiting_confirmation") return handleConfirmation(state, message, catalog);
+  if (state.stage === "awaiting_confirmation") return handleConfirmation(state, effectiveMessage, catalog);
   if (state.stage === "handoff") {
     return result(state, "Una persona del equipo continuará contigo en cuanto esté disponible.", "handoff");
   }

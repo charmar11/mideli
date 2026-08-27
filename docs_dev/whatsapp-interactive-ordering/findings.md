@@ -1,0 +1,30 @@
+# Findings
+
+- El diseño aprobado está en `docs/superpowers/specs/2026-08-27-whatsapp-interactive-ordering-design.md`.
+- La rama de trabajo es `codex/whatsapp-orders`; al iniciar estaba limpia, 13 commits adelante y 1 detrás de su upstream.
+- El proyecto tiene pruebas Playwright focalizadas para conversación, webhook e infraestructura de WhatsApp.
+- La implementación vigente genera respuestas rápidas solo para etapas tardías; catálogo y modificadores todavía dependen de texto numerado.
+- El webhook extrae el título de `button_reply` y `list_reply`, pero todavía no conserva sus identificadores.
+- El proveedor Meta vigente envía texto, ubicación y botones; falta soporte de listas.
+- El ciclo de “Modificar” ocurre porque la frase genérica se procesa antes que la transición a una etapa de edición.
+- `NormalizedMetaMessage` convierte botones y listas en texto y descarta el ID; será necesario conservar `interactiveId` y `interactiveType` sin romper mensajes de texto o ubicación.
+- `sendMetaReplyButtonsMessage` ya valida límites de cuerpo, títulos y cantidad; la lista debe seguir el mismo patrón y usar una sola función privada de envío.
+- El estado persistido no tiene contexto de edición ni etapas guiadas de notas; como se almacena en JSON, la compatibilidad puede resolverse en `hydrateConversationState` sin migración.
+- `sendReply` decide el formato únicamente a partir del estado final y `quickRepliesForState`; para catálogo y edición necesita recibir también el catálogo y construir una interacción rica.
+- El runtime tiene dos rutas de envío, dry-run y persistente, que deben compartir el mismo envío con respaldo para no comportarse distinto durante las pruebas.
+- El registro de salida guarda el cuerpo, pero no exige persistir el payload interactivo para mantener la bandeja compatible.
+- La creación de orden, deduplicación y avisos de Cocina están después del motor; la implementación interactiva puede mantenerse aislada de esa lógica sensible.
+- `handleOrdering` calcula `requestedService`, pero al detectar “sería todo” entra a bebidas sin aplicar `withServiceType`; por eso “sería todo a domicilio” pierde la intención.
+- `handleConfirmation` evalúa `unspecifiedChange("modificar")` antes de cualquier transición, lo que confirma la causa exacta del ciclo.
+- Las notas actuales solo se activan al detectar semánticamente el contenido; no existe un estado donde el próximo texto sea aceptado directamente como nota.
+- Las líneas configurables ya usan IDs únicos y pueden dividirse por unidad; esto permite implementar notas para una sola unidad sin cambiar el esquema del pedido.
+- `handleLateConversationChange` ya permite regresar a bebidas desde etapas tardías, pero la edición guiada necesita recordar una etapa de retorno para no borrar pago o repetir todo el checkout.
+- Las pruebas actuales documentan el comportamiento antiguo: esperan que `Modificar` conserve `awaiting_confirmation` y que `browsing_catalog` no tenga respuestas rápidas. Estas expectativas deben reemplazarse por el flujo aprobado.
+- Playwright se usa también como runner unitario para módulos TypeScript; no hace falta añadir otra dependencia para probar el motor y los payloads Meta.
+- Los mensajes pendientes se reconstruyen en `repository.server.ts`; los nuevos campos interactivos deben hidratarse allí como `null` porque la tabla solo conserva texto y tipo.
+- TypeScript confirmó que el cambio de contrato queda limitado a creación/hidratación del estado, reconstrucción de mensaje persistido y un estrechamiento de nulos en la interacción.
+- Después de la primera implementación, 55 de 56 pruebas focalizadas pasan; el único fallo es una expectativa de arreglo demasiado estricta, no una falla funcional.
+- En producción los mensajes se reclaman y luego se vuelven a cargar desde `channel_messages`; por eso el ID interactivo también debe almacenarse dentro de `metadata`, no solo normalizarse en el webhook.
+- La metadata JSON existente permite conservar `interactiveId` e `interactiveType` sin una migración de Supabase.
+- El respaldo automático a texto se ejecuta si Meta rechaza un payload interactivo, por lo que una lista o botón inválido no deja al cliente sin respuesta.
+- La suite completa de WhatsApp termina con 89 pruebas aprobadas; TypeScript, ESLint y el build de Next.js también terminan correctamente.

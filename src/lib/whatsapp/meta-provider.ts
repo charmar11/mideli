@@ -25,6 +25,16 @@ export type MetaReplyButtonsMessage = {
   buttons: Array<{ id: string; title: string }>;
 };
 
+export type MetaListMessage = {
+  to: string;
+  body: string;
+  buttonText: string;
+  sections: Array<{
+    title?: string;
+    rows: Array<{ id: string; title: string; description?: string }>;
+  }>;
+};
+
 function metaErrorInfo(payload: unknown) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { detail: "", isTransient: false };
@@ -193,6 +203,59 @@ export async function sendMetaReplyButtonsMessage(
         type: "button",
         body: { text: body },
         action: { buttons },
+      },
+    },
+    config,
+    fetcher
+  );
+}
+
+export async function sendMetaListMessage(
+  message: MetaListMessage,
+  config: MetaProviderConfig,
+  fetcher: typeof fetch = fetch
+) {
+  const body = message.body.trim();
+  const button = message.buttonText.trim().slice(0, 20);
+  if (!body) throw new Error("El mensaje de WhatsApp está vacío");
+  if (body.length > 1024) throw new Error("El mensaje interactivo de WhatsApp es demasiado largo");
+  if (!button) throw new Error("La lista de WhatsApp necesita texto de apertura");
+  if (message.sections.length < 1 || message.sections.length > 10) {
+    throw new Error("La lista de WhatsApp necesita entre una y diez secciones");
+  }
+
+  let rowCount = 0;
+  const sections = message.sections.map((section) => {
+    if (section.rows.length < 1) {
+      throw new Error("Cada sección de WhatsApp necesita al menos una opción");
+    }
+    const rows = section.rows.map((row) => {
+      rowCount += 1;
+      const id = row.id.trim().slice(0, 200);
+      const title = row.title.trim().slice(0, 24);
+      const description = row.description?.trim().slice(0, 72);
+      if (!id || !title) {
+        throw new Error("Las opciones de WhatsApp necesitan identificador y texto");
+      }
+      return {
+        id,
+        title,
+        ...(description ? { description } : {}),
+      };
+    });
+    const title = section.title?.trim().slice(0, 24);
+    return { ...(title ? { title } : {}), rows };
+  });
+  if (rowCount > 10) throw new Error("WhatsApp admite hasta diez opciones por lista");
+
+  return sendMetaMessage(
+    message.to,
+    {
+      type: "interactive",
+      interactive: {
+        type: "list",
+        body: { text: body },
+        action: { button, sections },
       },
     },
     config,

@@ -353,7 +353,7 @@ test("agrega una bebida desde el resumen y acepta Confirmar literalmente", () =>
   expect(result.action).toBe("request_order_creation");
 });
 
-test("modificar sin detalle conserva el resumen y explica cambios válidos", () => {
+test("modificar abre un menú de edición real y conserva el cobro", () => {
   const state = {
     ...createConversation("5216440000000"),
     stage: "awaiting_confirmation" as const,
@@ -374,11 +374,192 @@ test("modificar sin detalle conserva el resumen y explica cambios válidos", () 
   };
 
   const result = handleConversationMessage(state, "Modificar", navigationCatalog);
-  expect(result.state.stage).toBe("awaiting_confirmation");
+  expect(result.state.stage).toBe("awaiting_edit_action");
   expect(result.state.payment?.method).toBe("transferencia");
-  expect(result.reply).toContain("agrega bebida");
-  expect(result.reply).toContain("cambia el domicilio");
+  expect(result.reply).toContain("¿Qué deseas cambiar");
   expect(result.reply).not.toContain("No encontré ese producto");
+});
+
+test("conserva domicilio cuando el cliente termina y lo indica en el mismo mensaje", () => {
+  const withCart = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Dos hamburguesas sencillas",
+    navigationCatalog
+  );
+  const result = handleConversationMessage(
+    withCart.state,
+    "Sería todo a domicilio",
+    navigationCatalog
+  );
+
+  expect(result.state.stage).toBe("awaiting_beverage");
+  expect(result.state.serviceType).toBe("domicilio");
+});
+
+test("edita cantidad y elimina productos mediante identificadores interactivos", () => {
+  const initial = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Dos hamburguesas sencillas y un California",
+    navigationCatalog
+  );
+  let result = handleConversationMessage({
+    ...initial.state,
+    stage: "awaiting_confirmation",
+    serviceType: "para_llevar",
+    payment: { method: "efectivo", cashTendered: null },
+    beveragesOffered: true,
+  }, "confirmation:edit", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_edit_action");
+  result = handleConversationMessage(result.state, "edit:action:quantity", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_edit_item");
+  result = handleConversationMessage(result.state, "edit:item:line-1", navigationCatalog);
+  expect(result.state.stage).toBe("awaiting_edit_quantity");
+  result = handleConversationMessage(result.state, "edit:quantity:3", navigationCatalog);
+
+  expect(result.state.cart.find((line) => line.id === "line-1")?.quantity).toBe(3);
+  expect(result.state.stage).toBe("awaiting_confirmation");
+
+  result = handleConversationMessage(result.state, "confirmation:edit", navigationCatalog);
+  result = handleConversationMessage(result.state, "edit:action:remove", navigationCatalog);
+  const california = result.state.cart.find((line) => line.menuItemId === "california");
+  expect(california).toBeTruthy();
+  result = handleConversationMessage(
+    result.state,
+    `edit:item:${california?.id}`,
+    navigationCatalog
+  );
+
+  expect(result.state.cart.some((line) => line.menuItemId === "california")).toBe(false);
+  expect(result.state.stage).toBe("awaiting_confirmation");
+});
+
+test("añade una nota guiada a una sola unidad y divide la línea", () => {
+  const initial = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Dos hamburguesas sencillas",
+    navigationCatalog
+  );
+  let result = handleConversationMessage(initial.state, "cart:note", navigationCatalog);
+  result = handleConversationMessage(result.state, "note:scope:product", navigationCatalog);
+  result = handleConversationMessage(result.state, "note:item:line-1", navigationCatalog);
+  result = handleConversationMessage(result.state, "note:quantity:one", navigationCatalog);
+  result = handleConversationMessage(result.state, "Sin cebolla", navigationCatalog);
+
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.cart).toHaveLength(2);
+  expect(result.state.cart.reduce((total, line) => total + line.quantity, 0)).toBe(2);
+  expect(result.state.cart.filter((line) => line.notes.includes("Sin cebolla"))).toHaveLength(1);
+});
+
+test("navega y agrega productos usando IDs de listas sin depender del título", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "cmd:menu",
+    navigationCatalog
+  );
+  result = handleConversationMessage(
+    result.state,
+    "category:hamburguesas",
+    navigationCatalog
+  );
+  result = handleConversationMessage(
+    result.state,
+    "product:hamburguesa-sencilla",
+    navigationCatalog
+  );
+
+  expect(result.state.cart).toHaveLength(1);
+  expect(result.state.cart[0].name).toBe("Hamburguesa Sencilla");
+});
+
+test("elige variaciones requeridas mediante IDs interactivos", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Un Boneless",
+    catalog
+  );
+  expect(result.state.stage).toBe("awaiting_modifiers");
+
+  result = handleConversationMessage(result.state, "modifier:sabor:bbq", catalog);
+  expect(result.state.stage).toBe("awaiting_modifiers");
+  expect(result.state.cart[0].selectedModifiers.map((modifier) => modifier.optionId))
+    .toContain("bbq");
+
+  result = handleConversationMessage(result.state, "modifier:cantidad:10", catalog);
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.cart[0].selectedModifiers.map((modifier) => modifier.optionId))
+    .toEqual(expect.arrayContaining(["bbq", "10"]));
+});
+
+test("cambia una variación desde el menú guiado sin duplicar el producto", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_confirmation" as const,
+    cart: [{
+      id: "line-boneless",
+      menuItemId: "boneless",
+      categoryId: "boneless",
+      name: "Boneless",
+      quantity: 1,
+      unitPrice: 159,
+      selectedModifiers: [
+        { groupId: "sabor", groupName: "Sabor", optionId: "bbq", optionName: "BBQ", price: 0 },
+        { groupId: "cantidad", groupName: "Cantidad", optionId: "10", optionName: "10 piezas", price: 0 },
+      ],
+      notes: "",
+    }],
+    serviceType: "para_llevar" as const,
+    payment: { method: "efectivo" as const, cashTendered: null },
+    beveragesOffered: true,
+    total: 159,
+  };
+
+  let result = handleConversationMessage(state, "confirmation:edit", catalog);
+  result = handleConversationMessage(result.state, "edit:action:modifiers", catalog);
+  result = handleConversationMessage(result.state, "edit:item:line-boneless", catalog);
+  result = handleConversationMessage(result.state, "edit:group:sabor", catalog);
+  result = handleConversationMessage(result.state, "edit:option:cajun", catalog);
+
+  expect(result.state.stage).toBe("awaiting_confirmation");
+  expect(result.state.cart).toHaveLength(1);
+  expect(result.state.cart[0].selectedModifiers.map((modifier) => modifier.optionId))
+    .toEqual(expect.arrayContaining(["cajun", "10"]));
+  expect(result.state.cart[0].selectedModifiers.map((modifier) => modifier.optionId))
+    .not.toContain("bbq");
+});
+
+test("guarda notas guiadas generales y de entrega en campos separados", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_confirmation" as const,
+    cart: [{
+      id: "line-1",
+      menuItemId: "hamburguesa-sencilla",
+      categoryId: "hamburguesas",
+      name: "Hamburguesa Sencilla",
+      quantity: 1,
+      unitPrice: 135,
+      selectedModifiers: [],
+      notes: "",
+    }],
+    serviceType: "domicilio" as const,
+    payment: { method: "transferencia" as const, cashTendered: null },
+    beveragesOffered: true,
+    total: 135,
+  };
+
+  let result = handleConversationMessage(state, "confirmation:note", navigationCatalog);
+  result = handleConversationMessage(result.state, "note:scope:order", navigationCatalog);
+  result = handleConversationMessage(result.state, "Todo bien cocido", navigationCatalog);
+  expect(result.state.orderNotes).toBe("Todo bien cocido");
+  expect(result.state.deliveryNotes).toBe("");
+
+  result = handleConversationMessage(result.state, "confirmation:note", navigationCatalog);
+  result = handleConversationMessage(result.state, "note:scope:delivery", navigationCatalog);
+  result = handleConversationMessage(result.state, "Privada, PIN 4821", navigationCatalog);
+  expect(result.state.orderNotes).toBe("Todo bien cocido");
+  expect(result.state.deliveryNotes).toBe("Privada, PIN 4821");
+  expect(result.state.cart[0].notes).toBe("");
 });
 
 test("no vuelve a pedir referencia después de omitirla y corregir el domicilio", () => {

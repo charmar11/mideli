@@ -3,12 +3,15 @@ import { expect, test } from "@playwright/test";
 import { normalizeMetaWebhook } from "@/lib/whatsapp/meta-webhook";
 import { createConversation } from "@/lib/whatsapp/conversation-engine";
 import {
+  sendMetaListMessage,
   sendMetaLocationMessage,
   sendMetaReplyButtonsMessage,
   sendMetaTextMessage,
 } from "@/lib/whatsapp/meta-provider";
 import { verifyMetaSignature } from "@/lib/whatsapp/meta-signature";
-import { quickRepliesForState } from "@/lib/whatsapp/quick-replies";
+import { interactionForState } from "@/lib/whatsapp/quick-replies";
+import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
+import type { MenuItem } from "@/types/database";
 
 test("valida la firma de Meta sobre el cuerpo crudo", () => {
   const body = JSON.stringify({ object: "whatsapp_business_account" });
@@ -71,6 +74,8 @@ test("normaliza mensajes entrantes y estados sin conservar el payload completo",
       type: "text",
       text: "Quiero un California",
       location: null,
+      interactiveId: null,
+      interactiveType: null,
     },
   ]);
   expect(normalized.statuses).toEqual([
@@ -79,6 +84,59 @@ test("normaliza mensajes entrantes y estados sin conservar el payload completo",
       phone: "526440000000",
       status: "delivered",
       timestamp: "1787612401",
+    },
+  ]);
+});
+
+test("conserva el identificador de botones y listas recibidos desde Meta", () => {
+  const normalized = normalizeMetaWebhook({
+    object: "whatsapp_business_account",
+    entry: [{
+      changes: [{
+        field: "messages",
+        value: {
+          metadata: { phone_number_id: "phone-test" },
+          messages: [
+            {
+              id: "wamid.button",
+              from: "526440000000",
+              timestamp: "1",
+              type: "interactive",
+              interactive: {
+                type: "button_reply",
+                button_reply: { id: "confirmation:confirm", title: "Confirmar" },
+              },
+            },
+            {
+              id: "wamid.list",
+              from: "526440000000",
+              timestamp: "2",
+              type: "interactive",
+              interactive: {
+                type: "list_reply",
+                list_reply: { id: "category:sushis", title: "Sushis" },
+              },
+            },
+          ],
+        },
+      }],
+    }],
+  });
+
+  expect(normalized.messages.map((message) => ({
+    text: message.text,
+    interactiveId: message.interactiveId,
+    interactiveType: message.interactiveType,
+  }))).toEqual([
+    {
+      text: "Confirmar",
+      interactiveId: "confirmation:confirm",
+      interactiveType: "button_reply",
+    },
+    {
+      text: "Sushis",
+      interactiveId: "category:sushis",
+      interactiveType: "list_reply",
     },
   ]);
 });
@@ -204,16 +262,114 @@ test("el adaptador de Meta envía decisiones cortas como botones de respuesta", 
   });
 });
 
-test("ofrece botones solo en decisiones breves del pedido", () => {
+test("el adaptador de Meta envía categorías y productos como lista nativa", async () => {
+  let requestInit: RequestInit | undefined;
+  const fetcher: typeof fetch = async (_input, init) => {
+    requestInit = init;
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.list-1" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  await sendMetaListMessage(
+    {
+      to: "526440000000",
+      body: "Elige una categoría",
+      buttonText: "Ver menú",
+      sections: [{
+        title: "Menú",
+        rows: [
+          { id: "category:hamburguesas", title: "🍔 Hamburguesas" },
+          { id: "category:sushis", title: "🍣 Sushis", description: "Rollos y especiales" },
+        ],
+      }],
+    },
+    {
+      graphApiVersion: "v25.0",
+      phoneNumberId: "phone-test",
+      accessToken: "temporary-test-token",
+    },
+    fetcher
+  );
+
+  expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+    messaging_product: "whatsapp",
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: "Elige una categoría" },
+      action: {
+        button: "Ver menú",
+        sections: [{
+          title: "Menú",
+          rows: [
+            { id: "category:hamburguesas", title: "🍔 Hamburguesas" },
+            {
+              id: "category:sushis",
+              title: "🍣 Sushis",
+              description: "Rollos y especiales",
+            },
+          ],
+        }],
+      },
+    },
+  });
+});
+
+test("ofrece controles nativos en todo el pedido", () => {
   const base = createConversation("5216440000000");
-  expect(quickRepliesForState({ ...base, stage: "awaiting_fulfillment" }))
-    .toEqual([
-      { id: "pickup", title: "Para recoger" },
-      { id: "delivery", title: "A domicilio" },
-    ]);
-  expect(quickRepliesForState({ ...base, stage: "awaiting_address_confirmation" }))
-    .toHaveLength(3);
-  expect(quickRepliesForState({ ...base, stage: "browsing_catalog" })).toEqual([]);
+  expect(interactionForState({ ...base, stage: "awaiting_fulfillment" }, {
+    items: [],
+    categories: [],
+  })).toMatchObject({
+    kind: "buttons",
+    buttons: [
+      { id: "fulfillment:pickup", title: "Para recoger" },
+      { id: "fulfillment:delivery", title: "A domicilio" },
+    ],
+  });
+
+  const now = "2026-08-27T00:00:00.000Z";
+  const catalog = buildConversationCatalog([{
+    id: "burger",
+    category_id: "hamburguesas",
+    name: "Hamburguesa Sencilla",
+    description: "Incluye papas",
+    price: 135,
+    is_active: true,
+    sort_order: 1,
+    image_url: "",
+    created_at: now,
+    updated_at: now,
+    modifiers: [],
+    categories: {
+      id: "hamburguesas",
+      name: "Hamburguesas",
+      sort_order: 1,
+      is_active: true,
+    },
+  }] as unknown as MenuItem[]);
+
+  const categories = interactionForState({
+    ...base,
+    stage: "browsing_catalog",
+    selectedCategoryId: null,
+  }, catalog);
+  expect(categories?.kind).toBe("list");
+  if (categories?.kind === "list") {
+    expect(categories.sections[0].rows[0].id).toBe("category:hamburguesas");
+  }
+
+  const products = interactionForState({
+    ...base,
+    stage: "browsing_catalog",
+    selectedCategoryId: "hamburguesas",
+  }, catalog);
+  expect(products?.kind).toBe("list");
+  if (products?.kind === "list") {
+    expect(products.sections[0].rows[0].id).toBe("product:burger");
+  }
 });
 
 test("un error de Meta se reporta sin incluir credenciales ni cuerpo remoto", async () => {

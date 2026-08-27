@@ -14,6 +14,16 @@ export type ConversationStage =
   | "awaiting_cash_tendered"
   | "awaiting_confirmation"
   | "awaiting_note_target"
+  | "awaiting_edit_action"
+  | "awaiting_edit_item"
+  | "awaiting_edit_quantity"
+  | "awaiting_edit_modifier_group"
+  | "awaiting_edit_modifier_option"
+  | "awaiting_edit_modifier_more"
+  | "awaiting_note_scope"
+  | "awaiting_note_item"
+  | "awaiting_note_quantity_scope"
+  | "awaiting_note_text"
   | "handoff"
   | "confirmed"
   | "cancelled";
@@ -73,6 +83,30 @@ export type ConversationPendingNote = {
   resumeStage: ConversationStage;
 };
 
+export type ConversationEditAction =
+  | "add"
+  | "remove"
+  | "quantity"
+  | "modifiers"
+  | "note"
+  | "fulfillment"
+  | "address"
+  | "payment";
+
+export type ConversationEditContext = {
+  action: ConversationEditAction | null;
+  targetLineId: string | null;
+  targetGroupId: string | null;
+  returnStage: "ordering" | "awaiting_confirmation";
+};
+
+export type ConversationGuidedNote = {
+  scope: "product" | "order" | "delivery" | null;
+  targetLineId: string | null;
+  quantityScope: "all" | "one" | null;
+  returnStage: "ordering" | "awaiting_confirmation";
+};
+
 export type ConversationModifier = {
   groupId: string;
   groupName: string;
@@ -119,6 +153,8 @@ export type ConversationState = {
   orderNotes: string;
   deliveryNotes: string;
   pendingNote: ConversationPendingNote | null;
+  editContext: ConversationEditContext | null;
+  guidedNote: ConversationGuidedNote | null;
   beveragesOffered: boolean;
   catalogPage: number;
   selectedCategoryId: string | null;

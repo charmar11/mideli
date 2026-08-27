@@ -172,6 +172,12 @@ export async function claimInboundMessage(
   const conversation = await ensureConversation(admin, message.phone, message.customerName);
   const metadata = {
     ...(message.location ? { location: message.location } : {}),
+    ...(message.interactiveId
+      ? {
+          interactiveId: message.interactiveId,
+          interactiveType: message.interactiveType,
+        }
+      : {}),
     phoneNumberId: message.phoneNumberId,
   };
   const { data, error } = await admin
@@ -290,6 +296,22 @@ function locationFromMetadata(value: unknown) {
   return { latitude: record.latitude, longitude: record.longitude };
 }
 
+function interactionFromMetadata(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { interactiveId: null, interactiveType: null } as const;
+  }
+  const metadata = value as Record<string, unknown>;
+  const interactiveId = typeof metadata.interactiveId === "string"
+    ? metadata.interactiveId
+    : null;
+  const interactiveType: NormalizedMetaMessage["interactiveType"] =
+    metadata.interactiveType === "button_reply" ||
+    metadata.interactiveType === "list_reply"
+    ? metadata.interactiveType
+    : null;
+  return { interactiveId, interactiveType };
+}
+
 export async function loadNextPendingInboundMessage(
   conversationId: string,
   phone: string
@@ -320,6 +342,7 @@ export async function loadNextPendingInboundMessage(
   if (started.error) throw started.error;
 
   const timestamp = Math.floor(new Date(row.occurred_at).getTime() / 1000).toString();
+  const interaction = interactionFromMetadata(row.metadata);
   return {
     id: row.external_message_id,
     phone,
@@ -329,6 +352,7 @@ export async function loadNextPendingInboundMessage(
     type: row.message_type,
     text: row.body,
     location: locationFromMetadata(row.metadata),
+    ...interaction,
   };
 }
 

@@ -6,6 +6,7 @@ import type { MenuItem, Order } from "@/types/database";
 import { buildConversationCatalog } from "./catalog";
 import {
   createConversation,
+  handleConversationMessage,
   recoverDeliveryQuote,
   reconcileCartWithCatalog,
   unsupportedMessageHandoff,
@@ -17,11 +18,12 @@ import { handleHybridConversationMessage } from "./hybrid-interpreter";
 import type { readWhatsappServerConfig } from "./config.server";
 import type { NormalizedMetaMessage, NormalizedMetaWebhook } from "./meta-webhook";
 import {
+  sendMetaListMessage,
   sendMetaLocationMessage,
   sendMetaReplyButtonsMessage,
   sendMetaTextMessage,
 } from "./meta-provider";
-import { quickRepliesForState } from "./quick-replies";
+import { interactionForState } from "./quick-replies";
 import { canCreateWhatsappOrder } from "./order-creation-policy";
 import {
   acquireConversationProcessing,
@@ -57,8 +59,10 @@ async function interpretMessage(
   state: ConversationState,
   message: string,
   catalog: ConversationCatalog,
-  config: WhatsappConfig
+  config: WhatsappConfig,
+  deterministic = false
 ) {
+  if (deterministic) return handleConversationMessage(state, message, catalog);
   const interpreter = config.geminiInterpreterEnabled
     ? createGeminiSemanticInterpreter({
         apiKey: config.geminiApiKey,
@@ -164,11 +168,19 @@ async function loadCatalog(): Promise<ConversationCatalog> {
 }
 
 function messageInput(message: NormalizedMetaMessage, state: ConversationState) {
-  if (message.type === "text") return message.text;
+  if (message.type === "text") {
+    return {
+      text: message.interactiveId ?? message.text,
+      deterministic: Boolean(message.interactiveId),
+    };
+  }
   if (message.type === "location" && message.location) {
     if (state.stage !== "awaiting_address") return null;
     const { latitude, longitude } = message.location;
-    return `Ubicación compartida: https://www.google.com/maps?q=${latitude},${longitude}`;
+    return {
+      text: `Ubicación compartida: https://www.google.com/maps?q=${latitude},${longitude}`,
+      deterministic: true,
+    };
   }
   return null;
 }
@@ -187,7 +199,8 @@ async function sendReply(
   config: WhatsappConfig,
   phone: string,
   body: string,
-  state: ConversationState
+  state: ConversationState,
+  catalog: ConversationCatalog
 ) {
   if (!config.accessToken || !config.phoneNumberId) return null;
   const providerConfig = {
@@ -195,12 +208,28 @@ async function sendReply(
     phoneNumberId: config.phoneNumberId,
     accessToken: config.accessToken,
   };
-  const buttons = quickRepliesForState(state);
-  if (buttons.length > 0 && body.length <= 1024) {
-    return sendMetaReplyButtonsMessage(
-      { to: phone, body, buttons },
-      providerConfig
-    );
+  const interaction = interactionForState(state, catalog);
+  if (interaction && body.length <= 1024) {
+    try {
+      if (interaction.kind === "buttons") {
+        return await sendMetaReplyButtonsMessage(
+          { to: phone, body, buttons: interaction.buttons },
+          providerConfig
+        );
+      }
+      return await sendMetaListMessage(
+        {
+          to: phone,
+          body,
+          buttonText: interaction.buttonText,
+          sections: interaction.sections,
+        },
+        providerConfig
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Error desconocido";
+      console.warn(`[WhatsApp Meta] El control interactivo falló; se enviará texto: ${detail}`);
+    }
   }
   return sendMetaTextMessage({ to: phone, body }, providerConfig);
 }
@@ -298,7 +327,13 @@ async function processDryRunMessage(
   let result = dryRunResult(
     input === null
       ? unsupportedMessageHandoff(preparedState)
-      : await interpretMessage(preparedState, input, catalog, config)
+      : await interpretMessage(
+          preparedState,
+          input.text,
+          catalog,
+          config,
+          input.deterministic
+        )
   );
   if (!channelIsOpen(operations) && current.stage !== "confirmed") {
     result = {
@@ -361,7 +396,7 @@ async function processDryRunMessage(
         }
       }
     }
-    const sent = await sendReply(config, message.phone, replyBody, result.state);
+    const sent = await sendReply(config, message.phone, replyBody, result.state, catalog);
     if (sent) summary.repliesSent += 1;
     else summary.replyFailures += 1;
   } catch (error) {
@@ -396,7 +431,13 @@ async function processQueuedMessage(
     let result =
       input === null
         ? unsupportedMessageHandoff(preparedState)
-        : await interpretMessage(preparedState, input, catalog, config);
+        : await interpretMessage(
+            preparedState,
+            input.text,
+            catalog,
+            config,
+            input.deterministic
+          );
     let createdOrder: Order | null = null;
     let customerReceived = false;
 
@@ -534,7 +575,13 @@ async function processQueuedMessage(
         }
       }
       try {
-        const sent = await sendReply(config, message.phone, replyBody, result.state);
+        const sent = await sendReply(
+          config,
+          message.phone,
+          replyBody,
+          result.state,
+          catalog
+        );
         if (sent) {
           summary.repliesSent += 1;
           try {

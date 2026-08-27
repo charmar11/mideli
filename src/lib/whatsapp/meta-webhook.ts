@@ -9,6 +9,8 @@ export type NormalizedMetaMessage = {
   type: "text" | "location" | "unsupported";
   text: string;
   location: { latitude: number; longitude: number } | null;
+  interactiveId: string | null;
+  interactiveType: "button_reply" | "list_reply" | null;
 };
 
 export type NormalizedMetaStatus = {
@@ -56,6 +58,28 @@ function messageText(message: Record<string, unknown>) {
   return "";
 }
 
+function messageInteraction(message: Record<string, unknown>) {
+  if (message.type !== "interactive") {
+    return { interactiveId: null, interactiveType: null } as const;
+  }
+  const interactive = record(message.interactive);
+  const button = record(interactive?.button_reply);
+  if (button) {
+    return {
+      interactiveId: stringValue(button.id) || null,
+      interactiveType: "button_reply" as const,
+    };
+  }
+  const list = record(interactive?.list_reply);
+  if (list) {
+    return {
+      interactiveId: stringValue(list.id) || null,
+      interactiveType: "list_reply" as const,
+    };
+  }
+  return { interactiveId: null, interactiveType: null } as const;
+}
+
 function normalizeMessage(
   message: Record<string, unknown>,
   phoneNumberId: string,
@@ -70,6 +94,7 @@ function normalizeMessage(
   const longitude = typeof location?.longitude === "number" ? location.longitude : null;
   const hasLocation = latitude !== null && longitude !== null;
   const text = messageText(message);
+  const interaction = messageInteraction(message);
 
   return {
     id,
@@ -80,6 +105,7 @@ function normalizeMessage(
     type: text ? "text" : hasLocation ? "location" : "unsupported",
     text,
     location: hasLocation ? { latitude, longitude } : null,
+    ...interaction,
   };
 }
 
