@@ -93,7 +93,7 @@ export async function getPushStatus(topic: PushTopic): Promise<PushStatus> {
 
   const { data, error } = await createClient()
     .from("push_subscriptions")
-    .select("is_active,ready_alerts,kitchen_alerts")
+    .select("is_active,ready_alerts,kitchen_alerts,whatsapp_attention_alerts")
     .eq("endpoint", subscription.endpoint)
     .maybeSingle();
 

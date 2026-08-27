@@ -279,7 +279,7 @@ export async function loadWhatsappCustomerDetail(
     admin
       .from("customer_addresses")
       .select(
-        "id,label,address_text,reference,formatted_address,colony,latitude,longitude,delivery_fee,is_default,last_used_at"
+        "id,label,address_text,reference,formatted_address,colony,latitude,longitude,delivery_fee,is_default,confirmed_at,last_used_at"
       )
       .eq("customer_id", customerId)
       .order("is_default", { ascending: false })
@@ -310,6 +310,7 @@ export async function loadWhatsappCustomerDetail(
     longitude: address.longitude === null ? null : Number(address.longitude),
     deliveryFee: address.delivery_fee === null ? null : Number(address.delivery_fee),
     isDefault: address.is_default,
+    confirmed: Boolean(address.confirmed_at),
     lastUsedAt: address.last_used_at,
   })) satisfies WhatsappCustomerAddress[];
 

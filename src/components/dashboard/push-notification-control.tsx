@@ -15,6 +15,7 @@ import { primeReadyOrderAudio } from "@/lib/ready-order-audio";
 const TOPIC_LABEL: Record<PushTopic, string> = {
   ready: "pedidos listos",
   kitchen: "pedidos nuevos",
+  whatsapp_attention: "chats por atender",
 };
 
 function statusCopy(status: PushStatus, topic: PushTopic) {
@@ -92,7 +93,7 @@ export function PushNotificationControl({ topic }: PushNotificationControlProps)
         topic === "ready" ? primeReadyOrderAudio(true) : Promise.resolve(true);
 
       if (status === "production_required") {
-        if (topic === "kitchen") {
+        if (topic !== "ready") {
           toast.info("Los avisos Push se activan en la versión publicada de Mideli");
           return;
         }
@@ -116,7 +117,9 @@ export function PushNotificationControl({ topic }: PushNotificationControlProps)
           description: audioReady
             ? topic === "kitchen"
               ? "Este dispositivo te avisará cuando entre un pedido nuevo."
-              : "Este dispositivo te avisará cuando cocina termine un pedido."
+              : topic === "ready"
+                ? "Este dispositivo te avisará cuando cocina termine un pedido."
+                : "Este dispositivo te avisará cuando un chat necesite atención humana."
             : "Push está activo. El sonido local se habilita al tocar la pantalla.",
         });
       }

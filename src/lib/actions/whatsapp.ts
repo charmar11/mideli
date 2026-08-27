@@ -81,6 +81,7 @@ function conversationContext(value: unknown): WhatsappAdminConversation["context
       return [{
         name: line.name,
         quantity: typeof line.quantity === "number" ? line.quantity : 1,
+        notes: typeof line.notes === "string" ? line.notes : "",
       }];
     }),
     total: typeof state.total === "number" ? state.total : 0,
@@ -91,6 +92,9 @@ function conversationContext(value: unknown): WhatsappAdminConversation["context
     address: typeof state.address === "string" ? state.address : "",
     addressReference:
       typeof state.addressReference === "string" ? state.addressReference : "",
+    addressConfirmed: state.addressConfirmed === true,
+    orderNotes: typeof state.orderNotes === "string" ? state.orderNotes : "",
+    deliveryNotes: typeof state.deliveryNotes === "string" ? state.deliveryNotes : "",
     paymentMethod: typeof payment.method === "string" ? payment.method : "",
   };
 }
@@ -1060,6 +1064,8 @@ export async function saveWhatsappCustomerAddressAction(input: {
             distance_meters: null,
             delivery_fee: null,
             geocoded_at: null,
+            confirmed_at: null,
+            confirmation_method: null,
           }
         : {}),
     };

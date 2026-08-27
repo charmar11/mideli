@@ -20,7 +20,7 @@ function responseSchema() {
     properties: {
       intent: {
         type: "string",
-        enum: ["cart_operations", "finish_order", "continue_order", "unknown"],
+        enum: ["cart_operations", "note", "finish_order", "continue_order", "unknown"],
       },
       confidence: { type: "number", minimum: 0, maximum: 1 },
       serviceType: {
@@ -46,6 +46,17 @@ function responseSchema() {
           },
         },
       },
+      note: {
+        type: "object",
+        nullable: true,
+        additionalProperties: false,
+        required: ["kind", "text", "productId"],
+        properties: {
+          kind: { type: "string", enum: ["delivery", "order", "product"] },
+          text: { type: "string", maxLength: 500 },
+          productId: { type: "string", nullable: true },
+        },
+      },
     },
   };
 }
@@ -60,6 +71,8 @@ function payloadForInterpreter(
       "Si el cliente distribuye unidades, crea una operación add por cada configuración distinta.",
       "Ejemplo: un California de carne y otro de pollo puede mapear carne a Res solo si Res existe.",
       "Para cambios, usa remove y add; para ajustar el total de un producto usa set_quantity.",
+      "Si el mensaje es una indicación de preparación, acceso o pedido, usa intent note y no cambies el carrito.",
+      "Una nota de producto debe usar un productId que ya esté en el carrito. PIN, caseta y privada son delivery.",
       "Usa unknown y confianza baja si falta información importante.",
       "No redactes la respuesta al cliente; Mideli la genera.",
     ].join(" "),
@@ -68,7 +81,9 @@ function payloadForInterpreter(
       serviceType: input.state.serviceType,
       cart: input.state.cart.map((line) => ({
         productId: line.menuItemId,
+        productName: line.name,
         quantity: line.quantity,
+        notes: line.notes,
         optionIds: line.selectedModifiers.map((modifier) => modifier.optionId),
       })),
     },
@@ -97,6 +112,7 @@ function parseInterpretation(value: unknown): SemanticInterpretation {
   const record = value as Record<string, unknown>;
   const validIntents = new Set([
     "cart_operations",
+    "note",
     "finish_order",
     "continue_order",
     "unknown",
@@ -134,11 +150,33 @@ function parseInterpretation(value: unknown): SemanticInterpretation {
   if (serviceType !== "none" && serviceType !== "domicilio" && serviceType !== "para_llevar") {
     throw new Error("invalid_semantic_service_type");
   }
+  let note: SemanticInterpretation["note"] = null;
+  if (record.note !== null && record.note !== undefined) {
+    if (!record.note || typeof record.note !== "object" || Array.isArray(record.note)) {
+      throw new Error("invalid_semantic_note");
+    }
+    const candidate = record.note as Record<string, unknown>;
+    if (
+      !["delivery", "order", "product"].includes(String(candidate.kind)) ||
+      typeof candidate.text !== "string" ||
+      candidate.text.length < 1 ||
+      candidate.text.length > 500 ||
+      (candidate.productId !== null && typeof candidate.productId !== "string")
+    ) {
+      throw new Error("invalid_semantic_note");
+    }
+    note = {
+      kind: candidate.kind as "delivery" | "order" | "product",
+      text: candidate.text,
+      productId: candidate.productId as string | null,
+    };
+  }
   return {
     intent: record.intent as SemanticInterpretation["intent"],
     confidence,
     operations,
     serviceType: serviceType === "none" ? null : serviceType,
+    note,
   };
 }
 

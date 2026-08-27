@@ -1,9 +1,11 @@
 import {
   applyValidatedCartOperations,
+  applyValidatedNote,
   handleConversationMessage,
   type ValidatedCartOperation,
 } from "./conversation-engine";
 import { normalizeText } from "./normalize";
+import { containsSensitiveAccessData } from "./conversation-notes";
 import type {
   ConversationCatalog,
   ConversationResult,
@@ -12,10 +14,15 @@ import type {
 } from "./types";
 
 export type SemanticInterpretation = {
-  intent: "cart_operations" | "finish_order" | "continue_order" | "unknown";
+  intent: "cart_operations" | "note" | "finish_order" | "continue_order" | "unknown";
   confidence: number;
   operations: ValidatedCartOperation[];
   serviceType?: ConversationServiceType | null;
+  note?: {
+    kind: "delivery" | "order" | "product";
+    text: string;
+    productId: string | null;
+  } | null;
 };
 
 export type SemanticInterpreter = (input: {
@@ -53,13 +60,21 @@ function semanticErrorReason(error: unknown): SemanticDiagnostic["reason"] {
 }
 
 function semanticStage(state: ConversationState) {
-  return state.stage === "ordering" || state.stage === "browsing_catalog";
+  return [
+    "ordering",
+    "browsing_catalog",
+    "awaiting_beverage",
+    "awaiting_fulfillment",
+    "awaiting_payment",
+    "awaiting_confirmation",
+  ].includes(state.stage);
 }
 
 function containsPrivateCustomerData(message: string) {
   const text = normalizeText(message);
   return (
     /\b\d{7,}\b/.test(message) ||
+    containsSensitiveAccessData(message) ||
     /\S+@\S+\.\S+/.test(message) ||
     /https?:\/\//i.test(message) ||
     (/\b(calle|avenida|colonia|fraccionamiento|privada|boulevard|blvd|numero|num)\b/.test(text) &&
@@ -76,6 +91,11 @@ function likelyComplexOrder(message: string) {
     (/\b(otro|otros|otra|otras|cambia|cambiame|reemplaza|quita|elimina)\b/.test(text) ||
       (/(\by\b|,)/.test(text) && /\b(un|uno|una|dos|tres|cuatro|cinco|1|2|3|4|5)\b/.test(text)))
   );
+}
+
+function likelyNaturalNote(message: string) {
+  const text = normalizeText(message);
+  return /\b(sin|mitad|aparte|separado|separada|bien cocido|poco|extra|indicacion|nota)\b/.test(text);
 }
 
 function localMisunderstood(
@@ -101,7 +121,12 @@ function localLooksComplete(
   const text = normalizeText(message);
   const quantityDelta = Math.abs(cartQuantity(result.state) - cartQuantity(previous));
   if (/\b(otro|otros|otra|otras)\b/.test(text)) return quantityDelta >= 2;
-  return quantityDelta > 0 || JSON.stringify(previous.cart) !== JSON.stringify(result.state.cart);
+  return (
+    quantityDelta > 0 ||
+    JSON.stringify(previous.cart) !== JSON.stringify(result.state.cart) ||
+    previous.orderNotes !== result.state.orderNotes ||
+    previous.deliveryNotes !== result.state.deliveryNotes
+  );
 }
 
 function semanticClarification(state: ConversationState) {
@@ -126,6 +151,9 @@ function applySemanticResult(
   }
   if (interpretation.intent === "continue_order") {
     return handleConversationMessage(state, "sí", catalog);
+  }
+  if (interpretation.intent === "note" && interpretation.note) {
+    return applyValidatedNote(state, interpretation.note);
   }
   if (interpretation.intent !== "cart_operations") return null;
   return applyValidatedCartOperations(
@@ -152,7 +180,10 @@ export async function handleHybridConversationMessage(input: {
     return local;
   }
 
-  const shouldInterpret = likelyComplexOrder(input.message) || localMisunderstood(input.state, local);
+  const shouldInterpret =
+    likelyComplexOrder(input.message) ||
+    likelyNaturalNote(input.message) ||
+    localMisunderstood(input.state, local);
   if (!shouldInterpret) return local;
 
   const startedAt = Date.now();

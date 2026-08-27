@@ -123,7 +123,7 @@ async function ensureConversation(
   const initialState = createConversation(phone);
   const saved = await admin
     .from("customer_addresses")
-    .select("id,address_text,formatted_address,reference")
+    .select("id,address_text,formatted_address,reference,latitude,longitude,confirmed_at")
     .eq("customer_id", customer.id)
     .order("last_used_at", { ascending: false })
     .limit(1)
@@ -134,6 +134,9 @@ async function ensureConversation(
       id: saved.data.id,
       address: saved.data.formatted_address || saved.data.address_text,
       reference: saved.data.reference ?? "",
+      latitude: saved.data.latitude === null ? null : Number(saved.data.latitude),
+      longitude: saved.data.longitude === null ? null : Number(saved.data.longitude),
+      confirmed: Boolean(saved.data.confirmed_at),
     };
   }
   const inserted = await admin
@@ -379,6 +382,8 @@ export async function recordOutboundMessage(input: {
   externalMessageId: string;
   phone: string;
   body: string;
+  messageType?: "text" | "location";
+  metadata?: Record<string, unknown>;
 }) {
   const admin = createAdminClient();
   const now = new Date().toISOString();
@@ -388,10 +393,10 @@ export async function recordOutboundMessage(input: {
       provider: "meta",
       external_message_id: input.externalMessageId,
       direction: "outbound",
-      message_type: "text",
+      message_type: input.messageType ?? "text",
       body: input.body,
       status: "sent",
-      metadata: { recipient: input.phone },
+      metadata: { recipient: input.phone, ...(input.metadata ?? {}) },
       occurred_at: now,
     },
     { onConflict: "provider,external_message_id", ignoreDuplicates: true }
@@ -467,6 +472,16 @@ export async function createExternalOrder(input: {
 }) {
   const admin = createAdminClient();
   const { state } = input;
+  if (
+    state.serviceType === "domicilio" &&
+    (!state.addressConfirmed || !state.deliveryQuote)
+  ) {
+    throw new Error("El domicilio todavía no está confirmado");
+  }
+  const deliveryReference = [state.addressReference.trim(), state.deliveryNotes.trim()]
+    .filter((value, index, values) => value && values.indexOf(value) === index)
+    .join(" · ")
+    .slice(0, 500);
   const { data, error } = await admin.rpc("create_external_order_from_channel", {
     p_external_order_id: input.externalOrderId,
     p_conversation_id: input.conversationId,
@@ -485,8 +500,8 @@ export async function createExternalOrder(input: {
     p_customer_phone: state.phone,
     p_customer_name: "",
     p_delivery_address: state.address ?? "",
-    p_delivery_reference: state.addressReference,
-    p_notes: "Pedido recibido por WhatsApp",
+    p_delivery_reference: deliveryReference,
+    p_notes: state.orderNotes.trim().slice(0, 500),
     p_delivery_fee: state.deliveryQuote?.totalFee ?? 0,
     p_payment_method: state.payment?.method ?? null,
     p_cash_tendered: state.payment?.cashTendered ?? null,

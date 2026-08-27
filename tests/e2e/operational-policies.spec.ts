@@ -17,6 +17,7 @@ test.describe("políticas de notificaciones", () => {
   test("cada tema usa una preferencia independiente", () => {
     expect(getPushTopicColumn("ready")).toBe("ready_alerts");
     expect(getPushTopicColumn("kitchen")).toBe("kitchen_alerts");
+    expect(getPushTopicColumn("whatsapp_attention")).toBe("whatsapp_attention_alerts");
   });
 
   test("nunca descarta un Push aunque la vista responsable esté visible", () => {

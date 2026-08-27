@@ -6,6 +6,7 @@ import {
   reconcileCartWithCatalog,
   unsupportedMessageHandoff,
   withDeliveryQuote,
+  withPendingDeliveryQuote,
 } from "@/lib/whatsapp/conversation-engine";
 import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
 import { normalizePhone, normalizeText, phoneAliases } from "@/lib/whatsapp/normalize";
@@ -329,6 +330,7 @@ test("agrega una bebida desde el resumen y acepta Confirmar literalmente", () =>
       surcharge: 0,
       totalFee: 45,
     },
+    addressConfirmed: true,
     payment: { method: "transferencia" as const, cashTendered: null },
     beveragesOffered: true,
     total: 180,
@@ -858,6 +860,9 @@ test("ofrece reutilizar el último domicilio pero vuelve a cotizarlo", () => {
       id: "address-1",
       address: "Calle Kino 123, Centro",
       reference: "Portón negro",
+      latitude: 27.492,
+      longitude: -109.937,
+      confirmed: true,
     },
   };
 
@@ -1006,6 +1011,135 @@ test("puede comenzar otro pedido desde una conversación confirmada", () => {
   expect(result.state.stage).toBe("ordering");
   expect(result.state.cart).toHaveLength(0);
   expect(result.reply).toContain("menú");
+});
+
+test("una dirección escrita exige confirmar el punto antes de cobrar el envío", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_delivery_quote" as const,
+    serviceType: "domicilio" as const,
+    address: "Calle Chihuahua Norte 110, Centro",
+    addressReferenceCollected: true,
+    addressSource: "text" as const,
+  };
+  const pending = withPendingDeliveryQuote(state, {
+    id: "quote-pending",
+    formattedAddress: "C. Chihuahua 110, Centro, Ciudad Obregón",
+    colony: "Centro",
+    latitude: 27.493,
+    longitude: -109.94,
+    distanceMeters: 950,
+    baseFee: 30,
+    surcharge: 0,
+    totalFee: 30,
+  });
+
+  expect(pending.stage).toBe("awaiting_address_confirmation");
+  expect(pending.addressConfirmed).toBe(false);
+  expect(pending.deliveryQuote).toBeNull();
+
+  const accepted = handleConversationMessage(pending, "Sí, es ahí", catalog);
+  expect(accepted.action).toBe("confirm_delivery_quote");
+
+  const rejected = handleConversationMessage(pending, "No", catalog);
+  expect(rejected.action).toBe("none");
+  expect(rejected.state.stage).toBe("awaiting_address");
+  expect(rejected.state.pendingDeliveryQuote).toBeNull();
+  expect(rejected.reply).toContain("dirección corregida");
+});
+
+test("impide confirmar un domicilio que no tenga punto y tarifa validados", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "awaiting_confirmation" as const,
+    serviceType: "domicilio" as const,
+    address: "Dirección sin confirmar",
+    payment: { method: "transferencia" as const, cashTendered: null },
+    cart: [{
+      id: "line-1",
+      menuItemId: "california",
+      categoryId: "sushis",
+      name: "California",
+      quantity: 1,
+      unitPrice: 125,
+      selectedModifiers: [],
+      notes: "",
+    }],
+    total: 125,
+  };
+
+  const result = handleConversationMessage(state, "Confirmo", catalog);
+  expect(result.action).toBe("none");
+  expect(result.state.stage).toBe("awaiting_address");
+  expect(result.reply).toContain("punto exacto");
+});
+
+test("guarda indicaciones naturales en producto, pedido o acceso", () => {
+  const base = {
+    ...createConversation("5216440000000"),
+    stage: "ordering" as const,
+    cart: [{
+      id: "line-1",
+      menuItemId: "boneless",
+      categoryId: "boneless",
+      name: "Boneless",
+      quantity: 1,
+      unitPrice: 159,
+      selectedModifiers: [],
+      notes: "",
+    }],
+    total: 159,
+  };
+
+  const product = handleConversationMessage(base, "Los boneless mitad BBQ y mitad Buffalo", catalog);
+  expect(product.state.cart[0].notes).toContain("mitad BBQ y mitad Buffalo");
+
+  const order = handleConversationMessage(product.state, "Nota para todo el pedido: llamar al llegar", catalog);
+  expect(order.state.orderNotes).toBe("llamar al llegar");
+
+  const delivery = handleConversationMessage(order.state, "Es privada, PIN 4821", catalog);
+  expect(delivery.state.deliveryNotes).toContain("PIN 4821");
+  expect(delivery.state.orderNotes).not.toContain("4821");
+  expect(delivery.state.cart[0].notes).not.toContain("4821");
+});
+
+test("pregunta una sola vez cuando una indicación puede pertenecer a dos productos", () => {
+  const state = {
+    ...createConversation("5216440000000"),
+    stage: "ordering" as const,
+    cart: [
+      {
+        id: "line-california",
+        menuItemId: "california",
+        categoryId: "sushis",
+        name: "California",
+        quantity: 1,
+        unitPrice: 125,
+        selectedModifiers: [],
+        notes: "",
+      },
+      {
+        id: "line-boneless",
+        menuItemId: "boneless",
+        categoryId: "boneless",
+        name: "Boneless",
+        quantity: 1,
+        unitPrice: 159,
+        selectedModifiers: [],
+        notes: "",
+      },
+    ],
+    total: 284,
+  };
+
+  const ambiguous = handleConversationMessage(state, "La salsa aparte", catalog);
+  expect(ambiguous.state.stage).toBe("awaiting_note_target");
+  expect(ambiguous.reply).toContain("¿Para cuál producto");
+
+  const selected = handleConversationMessage(ambiguous.state, "Boneless", catalog);
+  expect(selected.state.stage).toBe("ordering");
+  expect(selected.state.cart.find((line) => line.id === "line-boneless")?.notes).toContain("salsa aparte");
+  expect(selected.state.cart.find((line) => line.id === "line-california")?.notes).toBe("");
 });
 
 test("cierra el seguimiento solo cuando el cliente confirma una entrega real", () => {

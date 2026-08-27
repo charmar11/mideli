@@ -9,9 +9,11 @@ export type ConversationStage =
   | "awaiting_address"
   | "awaiting_address_reference"
   | "awaiting_delivery_quote"
+  | "awaiting_address_confirmation"
   | "awaiting_payment"
   | "awaiting_cash_tendered"
   | "awaiting_confirmation"
+  | "awaiting_note_target"
   | "handoff"
   | "confirmed"
   | "cancelled";
@@ -20,6 +22,8 @@ export type ConversationAction =
   | "none"
   | "handoff"
   | "request_delivery_quote"
+  | "send_address_confirmation"
+  | "confirm_delivery_quote"
   | "mark_customer_received"
   | "request_order_creation";
 
@@ -51,6 +55,22 @@ export type ConversationSavedAddress = {
   id: string;
   address: string;
   reference: string;
+  latitude: number | null;
+  longitude: number | null;
+  confirmed: boolean;
+};
+
+export type ConversationAddressSource =
+  | "text"
+  | "shared_location"
+  | "saved_confirmed"
+  | "saved_unconfirmed";
+
+export type ConversationPendingNote = {
+  text: string;
+  candidateLineIds: string[];
+  attempts: number;
+  resumeStage: ConversationStage;
 };
 
 export type ConversationModifier = {
@@ -88,10 +108,17 @@ export type ConversationState = {
   address: string | null;
   addressReference: string;
   addressReferenceCollected: boolean;
+  addressSource: ConversationAddressSource | null;
+  addressConfirmed: boolean;
+  addressConfirmationAttempts: number;
   deliveryQuote: ConversationDeliveryQuote | null;
+  pendingDeliveryQuote: ConversationDeliveryQuote | null;
   deliveryQuoteAttempts: number;
   savedAddress: ConversationSavedAddress | null;
   payment: ConversationPayment | null;
+  orderNotes: string;
+  deliveryNotes: string;
+  pendingNote: ConversationPendingNote | null;
   beveragesOffered: boolean;
   catalogPage: number;
   selectedCategoryId: string | null;

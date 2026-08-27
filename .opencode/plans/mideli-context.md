@@ -209,6 +209,9 @@ La sección `/dashboard/whatsapp` funciona como una bandeja operativa para owner
 - Catálogo y Resumen permanecen visibles; Entregas, Horarios, Bot y Diagnóstico viven bajo `Configurar`. El simulador fue retirado de la interfaz y del bundle.
 - La carga inicial ya no consulta el catálogo completo para un simulador. La bandeja usa una instantánea ligera cada dos segundos solo mientras la página está visible.
 - Owner y admin tienen la pestaña `Clientes` dentro de WhatsApp. Permite buscar globalmente por nombre, teléfono o folio, revisar totales pagados, domicilios e historial de hasta 100 pedidos, editar nombre y domicilios y abrir la conversación asociada. Los datos se cargan bajo demanda y no se agrega otra opción a la navegación principal.
+- Toda dirección nueva escrita se geocodifica como candidata y se envía al cliente como ubicación nativa de WhatsApp. El costo de envío y el domicilio se guardan solo después de que el cliente confirma el punto. Una ubicación compartida o un domicilio previamente confirmado conserva el flujo rápido.
+- El bot reconoce indicaciones naturales de preparación, notas generales y datos de acceso. Las notas de producto llegan a la comanda; las generales se guardan en el pedido; los PIN y accesos privados se reservan para entrega y no aparecen en avisos Push.
+- Cada dispositivo puede activar o pausar `Chats por atender`. El primer relevo humano del ciclo genera un Push idempotente y abre directamente la conversación correspondiente.
 
 ### Imágenes de productos
 
@@ -318,7 +321,7 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- Migraciones locales y remotas alineadas: 43 migraciones, de `00001` a `20260814030217`.
+- Migraciones locales y remotas alineadas: 47 migraciones, de `00001` a `20260827103000`.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 

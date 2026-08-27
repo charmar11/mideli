@@ -161,23 +161,21 @@ async function saveCustomerAddress(input: {
   conversationId: string;
   inputAddress: string;
   formattedAddress: string;
+  reference: string;
   colony: string;
   latitude: number;
   longitude: number;
   distanceMeters: number;
   deliveryFee: number;
+  confirmationMethod: "text_confirmation" | "shared_location";
 }) {
   const admin = createAdminClient();
   const conversation = await admin
     .from("channel_conversations")
-    .select("customer_id,state")
+    .select("customer_id")
     .eq("id", input.conversationId)
     .single();
   if (conversation.error || !conversation.data) return null;
-  const state = conversation.data.state && typeof conversation.data.state === "object"
-    ? (conversation.data.state as Record<string, unknown>)
-    : {};
-  const reference = typeof state.addressReference === "string" ? state.addressReference : "";
   const addresses = await admin
     .from("customer_addresses")
     .select("id,address_text")
@@ -190,13 +188,15 @@ async function saveCustomerAddress(input: {
   const payload = {
     address_text: input.inputAddress.trim(),
     formatted_address: input.formattedAddress,
-    reference,
+    reference: input.reference,
     colony: input.colony,
     latitude: input.latitude,
     longitude: input.longitude,
     distance_meters: input.distanceMeters,
     delivery_fee: input.deliveryFee,
     geocoded_at: new Date().toISOString(),
+    confirmed_at: new Date().toISOString(),
+    confirmation_method: input.confirmationMethod,
     last_used_at: new Date().toISOString(),
   };
   if (existing) {
@@ -216,6 +216,49 @@ async function saveCustomerAddress(input: {
     .single();
   if (inserted.error) throw inserted.error;
   return inserted.data.id;
+}
+
+export async function confirmWhatsappDeliveryQuote(input: {
+  conversationId: string;
+  inputAddress: string;
+  reference: string;
+  quote: ConversationDeliveryQuote;
+  confirmationMethod: "text_confirmation" | "shared_location";
+}) {
+  if (
+    !input.quote.id ||
+    input.quote.latitude === null ||
+    input.quote.longitude === null
+  ) {
+    throw new Error("delivery_quote_confirmation_incomplete");
+  }
+
+  const customerAddressId = await saveCustomerAddress({
+    conversationId: input.conversationId,
+    inputAddress: input.inputAddress,
+    formattedAddress: input.quote.formattedAddress,
+    reference: input.reference,
+    colony: input.quote.colony,
+    latitude: input.quote.latitude,
+    longitude: input.quote.longitude,
+    distanceMeters: input.quote.distanceMeters,
+    deliveryFee: input.quote.totalFee,
+    confirmationMethod: input.confirmationMethod,
+  });
+
+  const updated = await createAdminClient()
+    .from("whatsapp_delivery_quotes")
+    .update({ status: "quoted", customer_address_id: customerAddressId })
+    .eq("id", input.quote.id)
+    .eq("conversation_id", input.conversationId)
+    .eq("status", "pending_confirmation")
+    .select("id")
+    .maybeSingle();
+  if (updated.error || !updated.data) {
+    throw updated.error ?? new Error("delivery_quote_not_pending");
+  }
+
+  return customerAddressId;
 }
 
 export async function quoteWhatsappDelivery(input: {
@@ -294,23 +337,11 @@ export async function quoteWhatsappDelivery(input: {
     }
 
     let quoteId: string | null = null;
-    let customerAddressId: string | null = null;
     if (input.conversationId && input.config.persisted) {
-      customerAddressId = await saveCustomerAddress({
-        conversationId: input.conversationId,
-        inputAddress: input.address,
-        formattedAddress: destination.formattedAddress,
-        colony: price.colony,
-        latitude: destination.latitude,
-        longitude: destination.longitude,
-        distanceMeters,
-        deliveryFee: price.totalFee,
-      });
       const inserted = await createAdminClient()
         .from("whatsapp_delivery_quotes")
         .insert({
           conversation_id: input.conversationId,
-          customer_address_id: customerAddressId,
           input_address: input.address,
           formatted_address: destination.formattedAddress,
           colony: price.colony,
@@ -320,7 +351,7 @@ export async function quoteWhatsappDelivery(input: {
           base_fee: price.baseFee,
           surcharge: price.surcharge,
           total_fee: price.totalFee,
-          status: "quoted",
+          status: "pending_confirmation",
         })
         .select("id")
         .single();

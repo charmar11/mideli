@@ -50,9 +50,19 @@ self.addEventListener("push", (event: PushEvent) => {
   } catch {
     payload = {};
   }
-  const topic: PushTopic = payload.topic === "kitchen" ? "kitchen" : "ready";
+  const topic: PushTopic =
+    payload.topic === "kitchen"
+      ? "kitchen"
+      : payload.topic === "whatsapp_attention"
+        ? "whatsapp_attention"
+        : "ready";
   const title =
-    payload.title ?? (topic === "kitchen" ? "Nuevo pedido" : "Pedido listo");
+    payload.title ??
+    (topic === "kitchen"
+      ? "Nuevo pedido"
+      : topic === "whatsapp_attention"
+        ? "WhatsApp necesita atención"
+        : "Pedido listo");
   event.waitUntil(
     (async () => {
       const clients = await self.clients.matchAll({
@@ -76,17 +86,25 @@ self.addEventListener("push", (event: PushEvent) => {
           payload.body ??
           (topic === "kitchen"
             ? "Entró un pedido nuevo."
-            : "Cocina terminó un pedido."),
+            : topic === "whatsapp_attention"
+              ? "Un cliente está esperando respuesta."
+              : "Cocina terminó un pedido."),
         icon: payload.icon ?? "/icons/icon-192x192.png",
         badge: payload.badge ?? "/icons/icon-192x192.png",
         tag:
           payload.tag ??
-          (topic === "kitchen" ? "mideli-order-new" : "mideli-order-ready"),
+          (topic === "kitchen"
+            ? "mideli-order-new"
+            : topic === "whatsapp_attention"
+              ? "mideli-whatsapp-attention"
+              : "mideli-order-ready"),
         data:
           payload.data ??
           (topic === "kitchen"
             ? { url: "/dashboard/cocina", topic }
-            : { url: "/dashboard/mesero?mode=status", topic }),
+            : topic === "whatsapp_attention"
+              ? { url: "/dashboard/whatsapp", topic }
+              : { url: "/dashboard/mesero?mode=status", topic }),
       });
     })()
   );

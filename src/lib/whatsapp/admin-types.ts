@@ -38,11 +38,14 @@ export type WhatsappAdminConversation = {
     createdAt: string;
   } | null;
   context: {
-    items: Array<{ name: string; quantity: number }>;
+    items: Array<{ name: string; quantity: number; notes: string }>;
     total: number;
     serviceType: "domicilio" | "para_llevar" | null;
     address: string;
     addressReference: string;
+    addressConfirmed: boolean;
+    orderNotes: string;
+    deliveryNotes: string;
     paymentMethod: string;
   };
 };
@@ -87,6 +90,7 @@ export type WhatsappCustomerAddress = {
   longitude: number | null;
   deliveryFee: number | null;
   isDefault: boolean;
+  confirmed: boolean;
   lastUsedAt: string;
 };
 

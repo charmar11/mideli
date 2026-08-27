@@ -1,13 +1,17 @@
-export type PushTopic = "ready" | "kitchen";
+export type PushTopic = "ready" | "kitchen" | "whatsapp_attention";
 
 export type PushClientSnapshot = {
   url: string;
   visibilityState?: string;
 };
 
-const TOPIC_COLUMNS: Record<PushTopic, "ready_alerts" | "kitchen_alerts"> = {
+const TOPIC_COLUMNS: Record<
+  PushTopic,
+  "ready_alerts" | "kitchen_alerts" | "whatsapp_attention_alerts"
+> = {
   ready: "ready_alerts",
   kitchen: "kitchen_alerts",
+  whatsapp_attention: "whatsapp_attention_alerts",
 };
 
 export function getPushTopicColumn(topic: PushTopic) {

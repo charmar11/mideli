@@ -21,9 +21,10 @@ import {
   Trash2,
   UsersRound,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { PushNotificationControl } from "@/components/dashboard/push-notification-control";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -109,8 +110,11 @@ function Toggle({
 
 export function WhatsAppControlCenter({ data }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<ControlTab>("inbox");
-  const [focusedConversationId, setFocusedConversationId] = useState<string | null>(null);
+  const [focusedConversationId, setFocusedConversationId] = useState<string | null>(
+    searchParams.get("conversation")
+  );
   const [isPending, startTransition] = useTransition();
   const admin = data.role === "owner" || data.role === "admin";
 
@@ -134,6 +138,7 @@ export function WhatsAppControlCenter({ data }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <PushNotificationControl topic="whatsapp_attention" />
             <span className={`rounded-full px-3 py-1.5 font-heading text-[11px] font-bold ${data.persisted && data.settings.receive_enabled ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
               {!data.persisted
                 ? "Configuración pendiente"

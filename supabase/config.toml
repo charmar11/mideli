@@ -429,3 +429,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/send-order-notification/deno.json"
 entrypoint = "./functions/send-order-notification/index.ts"
+
+[functions.send-whatsapp-attention-notification]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-whatsapp-attention-notification/deno.json"
+entrypoint = "./functions/send-whatsapp-attention-notification/index.ts"

@@ -10,12 +10,13 @@ import {
   reconcileCartWithCatalog,
   unsupportedMessageHandoff,
   withDeliveryQuote,
+  withPendingDeliveryQuote,
 } from "./conversation-engine";
 import { createGeminiSemanticInterpreter } from "./gemini-interpreter.server";
 import { handleHybridConversationMessage } from "./hybrid-interpreter";
 import type { readWhatsappServerConfig } from "./config.server";
 import type { NormalizedMetaMessage, NormalizedMetaWebhook } from "./meta-webhook";
-import { sendMetaTextMessage } from "./meta-provider";
+import { sendMetaLocationMessage, sendMetaTextMessage } from "./meta-provider";
 import { canCreateWhatsappOrder } from "./order-creation-policy";
 import {
   acquireConversationProcessing,
@@ -33,6 +34,7 @@ import {
 } from "./repository.server";
 import {
   channelIsOpen,
+  confirmWhatsappDeliveryQuote,
   loadWhatsappOperationsConfig,
   quoteWhatsappDelivery,
   type WhatsappOperationsConfig,
@@ -82,6 +84,34 @@ function deliveryQuoteReply(
     ? quote.formattedAddress
     : state.address || quote.formattedAddress;
   return `🛵 *¡Sí llegamos hasta tu domicilio!*\n\n📍 ${customerAddress}\n📏 Distancia: ${distanceKm} km\n💰 Tarifa base: $${quote.baseFee}${surcharge}\n🛵 Envío total: *$${quote.totalFee}*\n🧾 Total con envío: *$${total}*\n\n¿Pagarás en efectivo o por transferencia? 😊`;
+}
+
+function addressConfirmationReply(quote: ConversationDeliveryQuote) {
+  return `📍 *Encontré este domicilio:*\n${quote.formattedAddress}\n\n¿Es aquí? Responde *sí* o envía otra dirección o ubicación.`;
+}
+
+function stateForInboundMessage(
+  state: ConversationState,
+  message: NormalizedMetaMessage
+) {
+  if (
+    message.type === "location" &&
+    message.location &&
+    ["awaiting_address", "awaiting_address_confirmation"].includes(state.stage)
+  ) {
+    return {
+      ...state,
+      stage: "awaiting_address" as const,
+      address: null,
+      addressReference: "",
+      addressReferenceCollected: false,
+      addressSource: "shared_location" as const,
+      addressConfirmed: false,
+      pendingDeliveryQuote: null,
+      payment: null,
+    };
+  }
+  return state;
 }
 
 export type MetaProcessingSummary = {
@@ -164,6 +194,59 @@ async function sendReply(
   );
 }
 
+async function sendAddressLocation(
+  config: WhatsappConfig,
+  phone: string,
+  quote: ConversationDeliveryQuote
+) {
+  if (
+    !config.accessToken ||
+    !config.phoneNumberId ||
+    quote.latitude === null ||
+    quote.longitude === null
+  ) {
+    return null;
+  }
+  return sendMetaLocationMessage(
+    {
+      to: phone,
+      latitude: quote.latitude,
+      longitude: quote.longitude,
+      name: "Domicilio encontrado",
+      address: quote.formattedAddress,
+    },
+    {
+      graphApiVersion: config.graphApiVersion,
+      phoneNumberId: config.phoneNumberId,
+      accessToken: config.accessToken,
+    }
+  );
+}
+
+async function confirmQuoteForState(
+  conversationId: string | null,
+  state: ConversationState,
+  quote: ConversationDeliveryQuote,
+  operations: WhatsappOperationsConfig
+) {
+  if (conversationId && operations.persisted) {
+    await confirmWhatsappDeliveryQuote({
+      conversationId,
+      inputAddress: state.address ?? quote.formattedAddress,
+      reference: [state.addressReference.trim(), state.deliveryNotes.trim()]
+        .filter((value, index, values) => value && values.indexOf(value) === index)
+        .join(" · ")
+        .slice(0, 500),
+      quote,
+      confirmationMethod:
+        state.addressSource === "shared_location"
+          ? "shared_location"
+          : "text_confirmation",
+    });
+  }
+  return withDeliveryQuote(state, quote);
+}
+
 async function notifyKitchen(order: Order) {
   const admin = createAdminClient();
   const { error } = await admin.functions.invoke("send-order-notification", {
@@ -171,6 +254,16 @@ async function notifyKitchen(order: Order) {
   });
   if (error) {
     console.warn("El pedido de WhatsApp se creó, pero el aviso Push no pudo solicitarse.");
+  }
+}
+
+async function notifyWhatsappAttention(conversationId: string, eventKey: string) {
+  const { error } = await createAdminClient().functions.invoke(
+    "send-whatsapp-attention-notification",
+    { body: { conversationId, eventKey } }
+  );
+  if (error) {
+    console.warn("El chat requiere atención, pero el aviso Push no pudo solicitarse.");
   }
 }
 
@@ -189,11 +282,12 @@ async function processDryRunMessage(
   trimDryRunMessageIds();
 
   const current = dryRunConversations.get(message.phone) ?? createConversation(message.phone);
-  const input = messageInput(message, current);
+  const preparedState = stateForInboundMessage(current, message);
+  const input = messageInput(message, preparedState);
   let result = dryRunResult(
     input === null
-      ? unsupportedMessageHandoff(current)
-      : await interpretMessage(current, input, catalog, config)
+      ? unsupportedMessageHandoff(preparedState)
+      : await interpretMessage(preparedState, input, catalog, config)
   );
   if (!channelIsOpen(operations) && current.stage !== "confirmed") {
     result = {
@@ -207,13 +301,33 @@ async function processDryRunMessage(
       address: result.state.address ?? "",
       config: operations,
     });
-    result = quoted.status === "quoted"
+    if (quoted.status === "quoted") {
+      const skipsConfirmation =
+        result.state.addressSource === "shared_location" ||
+        result.state.addressSource === "saved_confirmed";
+      result = skipsConfirmation
+        ? {
+            state: await confirmQuoteForState(null, result.state, quoted.quote, operations),
+            action: "none",
+            reply: deliveryQuoteReply(result.state, quoted.quote),
+          }
+        : {
+            state: withPendingDeliveryQuote(result.state, quoted.quote),
+            action: "send_address_confirmation",
+            reply: addressConfirmationReply(quoted.quote),
+          };
+    } else {
+      result = recoverDeliveryQuote(result.state, quoted.reason);
+    }
+  } else if (result.action === "confirm_delivery_quote") {
+    const quote = result.state.pendingDeliveryQuote;
+    result = quote
       ? {
-          state: withDeliveryQuote(result.state, quoted.quote),
+          state: await confirmQuoteForState(null, result.state, quote, operations),
           action: "none",
-          reply: deliveryQuoteReply(result.state, quoted.quote),
+          reply: deliveryQuoteReply(result.state, quote),
         }
-      : recoverDeliveryQuote(result.state, quoted.reason);
+      : recoverDeliveryQuote(result.state, "delivery_quote_confirmation_incomplete");
   }
   dryRunConversations.set(message.phone, result.state);
   summary.processed += 1;
@@ -221,7 +335,22 @@ async function processDryRunMessage(
   if (!operations.settings.auto_reply_enabled) return;
 
   try {
-    const sent = await sendReply(config, message.phone, result.reply);
+    let replyBody = result.reply;
+    if (result.action === "send_address_confirmation" && result.state.pendingDeliveryQuote) {
+      const quote = result.state.pendingDeliveryQuote;
+      try {
+        const location = await sendAddressLocation(config, message.phone, quote);
+        if (location) summary.repliesSent += 1;
+        else if (quote.latitude !== null && quote.longitude !== null) {
+          replyBody = `${replyBody}\n\nMapa: https://www.google.com/maps?q=${quote.latitude},${quote.longitude}`;
+        }
+      } catch {
+        if (quote.latitude !== null && quote.longitude !== null) {
+          replyBody = `${replyBody}\n\nMapa: https://www.google.com/maps?q=${quote.latitude},${quote.longitude}`;
+        }
+      }
+    }
+    const sent = await sendReply(config, message.phone, replyBody);
     if (sent) summary.repliesSent += 1;
     else summary.replyFailures += 1;
   } catch (error) {
@@ -251,11 +380,12 @@ async function processQueuedMessage(
       summary.processed += 1;
       return;
     }
-    const input = messageInput(message, state);
+    const preparedState = stateForInboundMessage(state, message);
+    const input = messageInput(message, preparedState);
     let result =
       input === null
-        ? unsupportedMessageHandoff(state)
-        : await interpretMessage(state, input, catalog, config);
+        ? unsupportedMessageHandoff(preparedState)
+        : await interpretMessage(preparedState, input, catalog, config);
     let createdOrder: Order | null = null;
     let customerReceived = false;
 
@@ -271,13 +401,43 @@ async function processQueuedMessage(
         address: result.state.address ?? "",
         config: operations,
       });
-      result = quoted.status === "quoted"
+      if (quoted.status === "quoted") {
+        const skipsConfirmation =
+          result.state.addressSource === "shared_location" ||
+          result.state.addressSource === "saved_confirmed";
+        result = skipsConfirmation
+          ? {
+              state: await confirmQuoteForState(
+                conversationId,
+                result.state,
+                quoted.quote,
+                operations
+              ),
+              action: "none",
+              reply: deliveryQuoteReply(result.state, quoted.quote),
+            }
+          : {
+              state: withPendingDeliveryQuote(result.state, quoted.quote),
+              action: "send_address_confirmation",
+              reply: addressConfirmationReply(quoted.quote),
+            };
+      } else {
+        result = recoverDeliveryQuote(result.state, quoted.reason);
+      }
+    } else if (result.action === "confirm_delivery_quote") {
+      const quote = result.state.pendingDeliveryQuote;
+      result = quote
         ? {
-            state: withDeliveryQuote(result.state, quoted.quote),
+            state: await confirmQuoteForState(
+              conversationId,
+              result.state,
+              quote,
+              operations
+            ),
             action: "none",
-            reply: deliveryQuoteReply(result.state, quoted.quote),
+            reply: deliveryQuoteReply(result.state, quote),
           }
-        : recoverDeliveryQuote(result.state, quoted.reason);
+        : recoverDeliveryQuote(result.state, "delivery_quote_confirmation_incomplete");
     } else if (result.action === "mark_customer_received") {
       customerReceived = true;
     }
@@ -329,8 +489,41 @@ async function processQueuedMessage(
     summary.processed += 1;
 
     if (operations.settings.auto_reply_enabled) {
+      let replyBody = result.reply;
+      if (result.action === "send_address_confirmation" && result.state.pendingDeliveryQuote) {
+        const quote = result.state.pendingDeliveryQuote;
+        try {
+          const location = await sendAddressLocation(config, message.phone, quote);
+          if (location) {
+            summary.repliesSent += 1;
+            try {
+              await recordOutboundMessage({
+                conversationId,
+                externalMessageId: location.messageId,
+                phone: message.phone,
+                body: quote.formattedAddress,
+                messageType: "location",
+                metadata: {
+                  latitude: quote.latitude,
+                  longitude: quote.longitude,
+                },
+              });
+            } catch {
+              console.warn(
+                "[WhatsApp Meta] La ubicación se envió, pero no pudo guardarse en el historial."
+              );
+            }
+          } else if (quote.latitude !== null && quote.longitude !== null) {
+            replyBody = `${replyBody}\n\nMapa: https://www.google.com/maps?q=${quote.latitude},${quote.longitude}`;
+          }
+        } catch {
+          if (quote.latitude !== null && quote.longitude !== null) {
+            replyBody = `${replyBody}\n\nMapa: https://www.google.com/maps?q=${quote.latitude},${quote.longitude}`;
+          }
+        }
+      }
       try {
-        const sent = await sendReply(config, message.phone, result.reply);
+        const sent = await sendReply(config, message.phone, replyBody);
         if (sent) {
           summary.repliesSent += 1;
           try {
@@ -338,7 +531,7 @@ async function processQueuedMessage(
               conversationId,
               externalMessageId: sent.messageId,
               phone: message.phone,
-              body: result.reply,
+              body: replyBody,
             });
           } catch {
             console.warn(
@@ -356,7 +549,7 @@ async function processQueuedMessage(
             conversationId,
             inboundMessageId: message.id,
             phone: message.phone,
-            body: result.reply,
+            body: replyBody,
             error: detail,
           });
         } catch {
@@ -368,6 +561,9 @@ async function processQueuedMessage(
       }
     }
 
+    if (result.state.stage === "handoff") {
+      await notifyWhatsappAttention(conversationId, `handoff:${conversationId}:${message.id}`);
+    }
     if (createdOrder) void notifyKitchen(createdOrder);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Error desconocido";

@@ -444,6 +444,9 @@ function CustomerDetail({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-heading text-xs font-bold">{address.label || "Domicilio"}</p>
                         {address.isDefault ? <span className="rounded-full bg-gold/15 px-2 py-0.5 font-heading text-[10px] font-bold text-gold">Principal</span> : null}
+                        <span className={`rounded-full px-2 py-0.5 font-heading text-[10px] font-bold ${address.confirmed ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+                          {address.confirmed ? "Confirmado" : "Por confirmar"}
+                        </span>
                       </div>
                       <p className="mt-1 font-body text-sm text-foreground">{address.addressText}</p>
                       {address.reference ? <p className="mt-1 font-body text-xs text-muted-foreground">Referencia: {address.reference}</p> : null}

@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { normalizeMetaWebhook } from "@/lib/whatsapp/meta-webhook";
-import { sendMetaTextMessage } from "@/lib/whatsapp/meta-provider";
+import { sendMetaLocationMessage, sendMetaTextMessage } from "@/lib/whatsapp/meta-provider";
 import { verifyMetaSignature } from "@/lib/whatsapp/meta-signature";
 
 test("valida la firma de Meta sobre el cuerpo crudo", () => {
@@ -113,6 +113,45 @@ test("el adaptador de Meta envía texto sin exponer el token en el resultado", a
     messaging_product: "whatsapp",
     to: "526440000000",
     type: "text",
+  });
+});
+
+test("el adaptador de Meta envía el punto nativo de la dirección candidata", async () => {
+  let requestInit: RequestInit | undefined;
+  const fetcher: typeof fetch = async (_input, init) => {
+    requestInit = init;
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.location-1" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  await sendMetaLocationMessage(
+    {
+      to: "526440000000",
+      latitude: 27.493,
+      longitude: -109.94,
+      name: "¿Es aquí?",
+      address: "C. Chihuahua 110, Centro, Ciudad Obregón",
+    },
+    {
+      graphApiVersion: "v25.0",
+      phoneNumberId: "phone-test",
+      accessToken: "temporary-test-token",
+    },
+    fetcher
+  );
+
+  expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+    messaging_product: "whatsapp",
+    to: "526440000000",
+    type: "location",
+    location: {
+      latitude: 27.493,
+      longitude: -109.94,
+      name: "¿Es aquí?",
+      address: "C. Chihuahua 110, Centro, Ciudad Obregón",
+    },
   });
 });
 

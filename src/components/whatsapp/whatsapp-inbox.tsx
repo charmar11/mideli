@@ -302,6 +302,8 @@ function OrderContext({
   const reference = order?.deliveryReference || conversation.context.addressReference;
   const paymentMethod = order?.paymentMethod || conversation.context.paymentMethod;
   const items = conversation.context.items;
+  const orderNotes = conversation.context.orderNotes;
+  const deliveryNotes = conversation.context.deliveryNotes;
   const total = order?.total ?? conversation.context.total;
   const mapsUrl = address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
@@ -359,12 +361,22 @@ function OrderContext({
           {items.length > 0 ? items.map((item, index) => (
             <div key={`${item.name}-${index}`} className="flex items-start gap-2 font-body text-xs">
               <span className="font-data font-bold text-brand">{item.quantity}x</span>
-              <span className="min-w-0 flex-1 text-cream">{item.name}</span>
+              <span className="min-w-0 flex-1 text-cream">
+                {item.name}
+                {item.notes ? (
+                  <span className="mt-0.5 block text-[11px] text-warning">Indicación: {item.notes}</span>
+                ) : null}
+              </span>
             </div>
           )) : (
             <p className="font-body text-xs text-muted-foreground">El carrito aún está vacío.</p>
           )}
         </div>
+        {orderNotes ? (
+          <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 font-body text-xs text-warning">
+            Indicación general: {orderNotes}
+          </p>
+        ) : null}
         <div className="mt-3 flex items-end justify-between rounded-xl bg-background px-3 py-2.5">
           <div>
             <p className="font-heading text-[10px] font-bold text-muted-foreground">TOTAL</p>
@@ -391,6 +403,14 @@ function OrderContext({
         </p>
         {reference ? (
           <p className="mt-1 font-body text-xs text-muted-foreground">Referencia: {reference}</p>
+        ) : null}
+        {deliveryNotes && !reference.includes(deliveryNotes) ? (
+          <p className="mt-1 font-body text-xs text-muted-foreground">Acceso: {deliveryNotes}</p>
+        ) : null}
+        {address && !order ? (
+          <p className={`mt-2 inline-flex rounded-full px-2 py-1 font-heading text-[10px] font-bold ${conversation.context.addressConfirmed ? "bg-success/12 text-success" : "bg-warning/12 text-warning"}`}>
+            {conversation.context.addressConfirmed ? "Domicilio confirmado" : "Domicilio por confirmar"}
+          </p>
         ) : null}
         <p className="mt-2 font-body text-xs text-muted-foreground">
           Pago: {paymentMethod || "por definir"}
@@ -749,7 +769,12 @@ export function WhatsappInbox({ data, focusConversationId = null }: Props) {
       ? focusConversationId
       : data.conversations[0]?.id ?? null
   );
-  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(() =>
+    Boolean(
+      focusConversationId &&
+      data.conversations.some((item) => item.id === focusConversationId)
+    )
+  );
   const [messages, setMessages] = useState<WhatsappAdminMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");

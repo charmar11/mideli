@@ -11,6 +11,7 @@ import {
   quantityFromText,
 } from "./normalize";
 import { isExplicitDeliveryReceipt } from "./delivery-lifecycle";
+import { detectConversationNote } from "./conversation-notes";
 import type {
   ConversationCatalog,
   ConversationCatalogItem,
@@ -62,6 +63,8 @@ function withServiceType(
       ...state,
       serviceType,
       deliveryQuote: null,
+      pendingDeliveryQuote: null,
+      addressConfirmed: false,
       total: itemsSubtotal(state.cart),
     };
   }
@@ -71,7 +74,11 @@ function withServiceType(
     address: null,
     addressReference: "",
     addressReferenceCollected: false,
+    addressSource: null,
+    addressConfirmed: false,
+    addressConfirmationAttempts: 0,
     deliveryQuote: null,
+    pendingDeliveryQuote: null,
     total: itemsSubtotal(state.cart),
   };
 }
@@ -145,7 +152,8 @@ function lineDescription(line: ConversationCartLine) {
     : options.length === 1
       ? ` de ${options[0]}`
       : ` (${options.join(", ")})`;
-  return `${line.quantity} ${line.name}${configuration}`;
+  const note = line.notes.trim() ? `\n  Indicación: ${line.notes.trim()}` : "";
+  return `${line.quantity} ${line.name}${configuration}${note}`;
 }
 
 function cartBreakdown(cart: ConversationCartLine[]) {
@@ -219,9 +227,26 @@ export function withDeliveryQuote(
   return {
     ...state,
     deliveryQuote,
+    pendingDeliveryQuote: null,
+    address: deliveryQuote.formattedAddress || state.address,
+    addressConfirmed: true,
     deliveryQuoteAttempts: 0,
     total: orderTotal(state.cart, deliveryQuote),
     stage: "awaiting_payment",
+  };
+}
+
+export function withPendingDeliveryQuote(
+  state: ConversationState,
+  deliveryQuote: ConversationDeliveryQuote
+): ConversationState {
+  return {
+    ...state,
+    deliveryQuote: null,
+    pendingDeliveryQuote: deliveryQuote,
+    addressConfirmed: false,
+    total: itemsSubtotal(state.cart),
+    stage: "awaiting_address_confirmation",
   };
 }
 
@@ -260,7 +285,10 @@ export function recoverDeliveryQuote(
       ...state,
       stage: "awaiting_address",
       address: null,
+      addressSource: null,
+      addressConfirmed: false,
       deliveryQuote: null,
+      pendingDeliveryQuote: null,
       deliveryQuoteAttempts: attempts,
     },
     "📍 No pude ubicar esa dirección con suficiente precisión. Envíamela con calle, número y colonia, o comparte tu ubicación desde WhatsApp 😊"
@@ -283,6 +311,7 @@ function isDoneIntent(text: string) {
 
 function isConfirmation(text: string) {
   if (["si", "correcto", "adelante", "de acuerdo"].includes(text)) return true;
+  if (/^si(?:,)?\s+(?:es|esta)\s+(?:ahi|alli|aqui|correcto)$/.test(text)) return true;
   return /^(?:si\s+)?confirm(?:o|ar)(?:\s+(?:el|mi)\s+pedido)?$/.test(text);
 }
 
@@ -566,7 +595,174 @@ function cartSummary(state: ConversationState) {
       ? `\n📍 ${state.address}${state.addressReference ? `, ${state.addressReference}` : ""}\nEnvío: $${state.deliveryQuote?.totalFee ?? 0}`
       : "\nPara recoger en Mideli";
   const payment = state.payment ? `\nPago: ${state.payment.method}` : "";
-  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido? 😊`;
+  const orderNotes = state.orderNotes.trim()
+    ? `\nIndicaciones generales: ${state.orderNotes.trim()}`
+    : "";
+  const deliveryNotes = state.serviceType === "domicilio" && state.deliveryNotes.trim()
+    ? `\nAcceso: ${state.deliveryNotes.trim()}`
+    : "";
+  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${orderNotes}${deliveryNotes}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido? 😊\nSi necesitas agregar una indicación, puedes escribirla antes de confirmar.`;
+}
+
+function appendNote(existing: string, note: string) {
+  const clean = note.trim().replace(/\s+/g, " ").slice(0, 500);
+  if (!clean) return existing;
+  const current = existing.trim();
+  if (!current) return clean;
+  if (normalizeText(current).includes(normalizeText(clean))) return current;
+  return `${current}; ${clean}`.slice(0, 500);
+}
+
+function noteFollowUp(state: ConversationState, intro: string) {
+  if (state.stage === "awaiting_confirmation") {
+    return `${intro}\n\n${cartSummary(state)}`;
+  }
+  if (state.stage === "awaiting_payment") {
+    return `${intro}\n\n${paymentQuestion(state)}`;
+  }
+  if (state.stage === "awaiting_beverage") {
+    return `${intro}\n\n🥤 ¿Deseas agregar alguna bebida?`;
+  }
+  if (state.stage === "awaiting_fulfillment") {
+    return `${intro}\n\n📍 ¿Tu pedido será para recoger o a domicilio?`;
+  }
+  return cartUpdatedReply(state, intro);
+}
+
+function applyNoteToState(
+  state: ConversationState,
+  input: {
+    kind: "delivery" | "order" | "product";
+    text: string;
+    lineIds?: string[];
+  }
+) {
+  if (input.kind === "delivery") {
+    const next = { ...state, deliveryNotes: appendNote(state.deliveryNotes, input.text) };
+    return result(next, noteFollowUp(next, "🔐 *Indicación de acceso guardada*"));
+  }
+  if (input.kind === "order") {
+    const next = { ...state, orderNotes: appendNote(state.orderNotes, input.text) };
+    return result(next, noteFollowUp(next, "📝 *Indicación general guardada*"));
+  }
+
+  const lineIds = new Set(input.lineIds ?? []);
+  if (lineIds.size === 0) return null;
+  const cart = state.cart.map((line) =>
+    lineIds.has(line.id) ? { ...line, notes: appendNote(line.notes, input.text) } : line
+  );
+  const next = withCart(state, cart);
+  return result(next, noteFollowUp(next, "📝 *Indicación de preparación guardada*"));
+}
+
+function noteTargetPrompt(state: ConversationState, lineIds: string[]) {
+  const candidates = state.cart.filter((line) => lineIds.includes(line.id));
+  const unique = [...new Map(candidates.map((line) => [line.menuItemId, line])).values()];
+  const options = unique
+    .map((line, index) => `${index + 1}. ${lineDescription(line)}`)
+    .join("\n");
+  return `Quiero anotarlo en el lugar correcto 😊\n\n¿Para cuál producto es la indicación?\n\n${options}\n${unique.length > 1 ? `${unique.length + 1}. Para todo el pedido` : ""}`.trim();
+}
+
+function handleDetectedNote(
+  state: ConversationState,
+  message: string
+): ConversationResult | null {
+  const detected = detectConversationNote(state, message);
+  if (!detected) return null;
+  if (detected.kind !== "product") return applyNoteToState(state, detected);
+
+  const candidates = state.cart.filter((line) => detected.candidateLineIds.includes(line.id));
+  const productIds = new Set(candidates.map((line) => line.menuItemId));
+  if (productIds.size <= 1) {
+    return applyNoteToState(state, {
+      ...detected,
+      lineIds: detected.candidateLineIds,
+    });
+  }
+
+  return result(
+    {
+      ...state,
+      stage: "awaiting_note_target",
+      pendingNote: {
+        text: detected.text,
+        candidateLineIds: detected.candidateLineIds,
+        attempts: 0,
+        resumeStage: state.stage,
+      },
+    },
+    noteTargetPrompt(state, detected.candidateLineIds)
+  );
+}
+
+function handlePendingNoteTarget(
+  state: ConversationState,
+  message: string
+): ConversationResult {
+  const pending = state.pendingNote;
+  if (!pending) return result({ ...state, stage: "ordering" }, "¿Qué deseas agregar?");
+  const candidates = state.cart.filter((line) => pending.candidateLineIds.includes(line.id));
+  const unique = [...new Map(candidates.map((line) => [line.menuItemId, line])).values()];
+  const text = normalizeText(message);
+  const numeric = Number.parseInt(text, 10);
+  const selected = Number.isInteger(numeric) && numeric >= 1 && numeric <= unique.length
+    ? unique[numeric - 1]
+    : unique.find((line) => includesPhrase(text, normalizeText(line.name)));
+  const resumeState = {
+    ...state,
+    stage: pending.resumeStage,
+    pendingNote: null,
+  };
+
+  if (selected) {
+    return applyNoteToState(resumeState, {
+      kind: "product",
+      text: pending.text,
+      lineIds: candidates
+        .filter((line) => line.menuItemId === selected.menuItemId)
+        .map((line) => line.id),
+    }) ?? result(resumeState, "No pude guardar la indicación.");
+  }
+  if (
+    numeric === unique.length + 1 ||
+    ["todo", "pedido", "general", "para todo"].some((phrase) => includesPhrase(text, phrase))
+  ) {
+    return applyNoteToState(resumeState, {
+      kind: "order",
+      text: pending.text,
+    }) ?? result(resumeState, "No pude guardar la indicación.");
+  }
+
+  if (pending.attempts >= 1) {
+    return result(
+      { ...state, stage: "handoff", pendingNote: null },
+      "Quiero asegurarme de anotar bien la indicación. Una persona del equipo continuará contigo.",
+      "handoff"
+    );
+  }
+  const next = { ...state, pendingNote: { ...pending, attempts: pending.attempts + 1 } };
+  return result(next, noteTargetPrompt(next, pending.candidateLineIds));
+}
+
+export function applyValidatedNote(
+  state: ConversationState,
+  input: {
+    kind: "delivery" | "order" | "product";
+    text: string;
+    productId?: string | null;
+  }
+) {
+  const clean = input.text.trim();
+  if (!clean || clean.length > 500) return null;
+  if (input.kind === "product") {
+    if (!input.productId) return null;
+    const lineIds = state.cart
+      .filter((line) => line.menuItemId === input.productId)
+      .map((line) => line.id);
+    return applyNoteToState(state, { kind: "product", text: clean, lineIds });
+  }
+  return applyNoteToState(state, { kind: input.kind, text: clean });
 }
 
 function resumeAfterBeverageSelection(
@@ -612,10 +808,17 @@ export function createConversation(phone: string): ConversationState {
     address: null,
     addressReference: "",
     addressReferenceCollected: false,
+    addressSource: null,
+    addressConfirmed: false,
+    addressConfirmationAttempts: 0,
     deliveryQuote: null,
+    pendingDeliveryQuote: null,
     deliveryQuoteAttempts: 0,
     savedAddress: null,
     payment: null,
+    orderNotes: "",
+    deliveryNotes: "",
+    pendingNote: null,
     beveragesOffered: false,
     catalogPage: 0,
     selectedCategoryId: null,
@@ -640,8 +843,15 @@ export function hydrateConversation(
       value.addressReferenceCollected || value.addressReference?.trim()
     ),
     deliveryQuote: value.deliveryQuote ?? null,
+    pendingDeliveryQuote: value.pendingDeliveryQuote ?? null,
+    addressSource: value.addressSource ?? null,
+    addressConfirmed: value.addressConfirmed ?? Boolean(value.deliveryQuote),
+    addressConfirmationAttempts: value.addressConfirmationAttempts ?? 0,
     deliveryQuoteAttempts: value.deliveryQuoteAttempts ?? 0,
     savedAddress: value.savedAddress ?? null,
+    orderNotes: value.orderNotes ?? "",
+    deliveryNotes: value.deliveryNotes ?? "",
+    pendingNote: value.pendingNote ?? null,
     beveragesOffered: value.beveragesOffered ?? false,
     catalogPage: value.catalogPage ?? 0,
     selectedCategoryId: value.selectedCategoryId ?? null,
@@ -1111,7 +1321,13 @@ function deliveryAddressPrompt(state: ConversationState) {
 function continueAfterBeverages(state: ConversationState) {
   if (state.serviceType === "domicilio") {
     return result(
-      { ...state, stage: "awaiting_address", deliveryQuote: null },
+      {
+        ...state,
+        stage: "awaiting_address",
+        deliveryQuote: null,
+        pendingDeliveryQuote: null,
+        addressConfirmed: false,
+      },
       deliveryAddressPrompt(state)
     );
   }
@@ -1458,6 +1674,11 @@ function handleAddress(state: ConversationState, message: string) {
         address: state.savedAddress.address,
         addressReference: state.savedAddress.reference,
         addressReferenceCollected: true,
+        addressSource: state.savedAddress.confirmed
+          ? "saved_confirmed"
+          : "saved_unconfirmed",
+        addressConfirmed: false,
+        pendingDeliveryQuote: null,
         stage: "awaiting_delivery_quote",
       },
       "Estoy actualizando la cobertura y el costo de envío para ese domicilio.",
@@ -1475,7 +1696,14 @@ function handleAddress(state: ConversationState, message: string) {
   }
   if (state.addressReferenceCollected) {
     return result(
-      { ...state, address: message.trim(), stage: "awaiting_delivery_quote" },
+      {
+        ...state,
+        address: message.trim(),
+        addressSource: state.addressSource === "shared_location" ? "shared_location" : "text",
+        addressConfirmed: false,
+        pendingDeliveryQuote: null,
+        stage: "awaiting_delivery_quote",
+      },
       "🛵 Estoy validando el domicilio corregido y calculando el envío 😊",
       "request_delivery_quote"
     );
@@ -1486,9 +1714,77 @@ function handleAddress(state: ConversationState, message: string) {
       address: message.trim(),
       addressReference: "",
       addressReferenceCollected: false,
+      addressSource: state.addressSource === "shared_location" ? "shared_location" : "text",
+      addressConfirmed: false,
+      pendingDeliveryQuote: null,
       stage: "awaiting_address_reference",
     },
     "🏠 ¿Hay alguna referencia que ayude a encontrar el domicilio? Si no, escribe *omitir*."
+  );
+}
+
+function handleAddressConfirmation(state: ConversationState, message: string) {
+  const text = normalizeText(message);
+  if (isConfirmation(text) && state.pendingDeliveryQuote) {
+    return result(
+      state,
+      "🛵 Perfecto, estoy confirmando la cobertura y el costo de envío 😊",
+      "confirm_delivery_quote"
+    );
+  }
+
+  if (isNegative(text)) {
+    const attempts = state.addressConfirmationAttempts + 1;
+    if (attempts >= 2) {
+      return result(
+        {
+          ...state,
+          stage: "handoff",
+          pendingDeliveryQuote: null,
+          addressConfirmed: false,
+          addressConfirmationAttempts: attempts,
+        },
+        "Quiero asegurarme de enviar tu pedido al lugar correcto. Una persona del equipo continuará contigo 😊",
+        "handoff"
+      );
+    }
+    return result(
+      {
+        ...state,
+        stage: "awaiting_address",
+        address: null,
+        addressReference: "",
+        addressReferenceCollected: false,
+        addressSource: null,
+        addressConfirmed: false,
+        pendingDeliveryQuote: null,
+        payment: null,
+        addressConfirmationAttempts: attempts,
+      },
+      "Gracias por avisarme 😊 Envíame la dirección corregida o comparte tu ubicación desde WhatsApp."
+    );
+  }
+
+  if (message.trim().length >= 8) {
+    return handleAddress(
+      {
+        ...state,
+        stage: "awaiting_address",
+        address: null,
+        addressReference: "",
+        addressReferenceCollected: false,
+        addressSource: "text",
+        addressConfirmed: false,
+        pendingDeliveryQuote: null,
+        payment: null,
+      },
+      message
+    );
+  }
+
+  return result(
+    state,
+    "📍 ¿El punto del mapa es correcto? Responde *sí* o envía otra dirección o ubicación."
   );
 }
 
@@ -1550,6 +1846,15 @@ function handleConfirmation(
 ) {
   const text = normalizeText(message);
   if (isConfirmation(text)) {
+    if (
+      state.serviceType === "domicilio" &&
+      (!state.addressConfirmed || !state.deliveryQuote)
+    ) {
+      return result(
+        { ...state, stage: "awaiting_address" },
+        "📍 Antes de confirmar necesito validar el punto exacto de entrega. Envíame la dirección o comparte tu ubicación."
+      );
+    }
     return result(
       { ...state, stage: "confirmed" },
       "✅ ¡Perfecto! Estoy confirmando tu pedido con el equipo 😊",
@@ -1593,6 +1898,7 @@ function handleLateConversationChange(
     "awaiting_address",
     "awaiting_address_reference",
     "awaiting_delivery_quote",
+    "awaiting_address_confirmation",
     "awaiting_payment",
     "awaiting_cash_tendered",
     "awaiting_confirmation",
@@ -1619,6 +1925,9 @@ function handleLateConversationChange(
         address: null,
         addressReference: "",
         addressReferenceCollected: false,
+        addressSource: null,
+        addressConfirmed: false,
+        pendingDeliveryQuote: null,
         payment: null,
         stage: "awaiting_address",
       },
@@ -1693,6 +2002,23 @@ export function handleConversationMessage(
     );
   }
 
+  if (state.stage === "awaiting_note_target") {
+    return handlePendingNoteTarget(state, message);
+  }
+
+  const noteStages: ConversationState["stage"][] = [
+    "ordering",
+    "browsing_catalog",
+    "awaiting_beverage",
+    "awaiting_fulfillment",
+    "awaiting_payment",
+    "awaiting_confirmation",
+  ];
+  if (noteStages.includes(state.stage)) {
+    const note = handleDetectedNote(state, message);
+    if (note) return note;
+  }
+
   const lateChange = handleLateConversationChange(state, message, catalog);
   if (lateChange) return lateChange;
 
@@ -1705,6 +2031,9 @@ export function handleConversationMessage(
   if (state.stage === "awaiting_address_reference") return handleAddressReference(state, message);
   if (state.stage === "awaiting_delivery_quote") {
     return result(state, "Sigo validando el domicilio. Si tarda demasiado, una persona te ayudará.");
+  }
+  if (state.stage === "awaiting_address_confirmation") {
+    return handleAddressConfirmation(state, message);
   }
   if (state.stage === "awaiting_payment") return handlePayment(state, message);
   if (state.stage === "awaiting_cash_tendered") return handleCashTendered(state);

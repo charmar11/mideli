@@ -11,6 +11,14 @@ export type MetaTextMessage = {
   body: string;
 };
 
+export type MetaLocationMessage = {
+  to: string;
+  latitude: number;
+  longitude: number;
+  name?: string;
+  address?: string;
+};
+
 function metaErrorInfo(payload: unknown) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { detail: "", isTransient: false };
@@ -42,16 +50,14 @@ function normalizeMetaRecipient(value: string) {
   return /^521\d{10}$/.test(phone) ? `52${phone.slice(3)}` : phone;
 }
 
-export async function sendMetaTextMessage(
-  message: MetaTextMessage,
+async function sendMetaMessage(
+  toValue: string,
+  payload: Record<string, unknown>,
   config: MetaProviderConfig,
   fetcher: typeof fetch = fetch
 ) {
-  const to = normalizeMetaRecipient(message.to);
-  const body = message.body.trim();
+  const to = normalizeMetaRecipient(toValue);
   if (!to) throw new Error("Falta el destinatario de WhatsApp");
-  if (!body) throw new Error("El mensaje de WhatsApp está vacío");
-  if (body.length > 4096) throw new Error("El mensaje de WhatsApp es demasiado largo");
   if (!config.graphApiVersion || !config.phoneNumberId || !config.accessToken) {
     throw new Error("Falta la configuración privada de Meta");
   }
@@ -67,8 +73,7 @@ export async function sendMetaTextMessage(
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to,
-      type: "text",
-      text: { preview_url: false, body },
+      ...payload,
     }),
   } satisfies RequestInit;
 
@@ -106,4 +111,53 @@ export async function sendMetaTextMessage(
   }
 
   throw new Error("No se pudo enviar el mensaje a Meta");
+}
+
+export async function sendMetaTextMessage(
+  message: MetaTextMessage,
+  config: MetaProviderConfig,
+  fetcher: typeof fetch = fetch
+) {
+  const body = message.body.trim();
+  if (!body) throw new Error("El mensaje de WhatsApp está vacío");
+  if (body.length > 4096) throw new Error("El mensaje de WhatsApp es demasiado largo");
+  return sendMetaMessage(
+    message.to,
+    { type: "text", text: { preview_url: false, body } },
+    config,
+    fetcher
+  );
+}
+
+export async function sendMetaLocationMessage(
+  message: MetaLocationMessage,
+  config: MetaProviderConfig,
+  fetcher: typeof fetch = fetch
+) {
+  if (
+    !Number.isFinite(message.latitude) ||
+    !Number.isFinite(message.longitude) ||
+    message.latitude < -90 ||
+    message.latitude > 90 ||
+    message.longitude < -180 ||
+    message.longitude > 180
+  ) {
+    throw new Error("La ubicación de WhatsApp no es válida");
+  }
+  const name = message.name?.trim().slice(0, 1000);
+  const address = message.address?.trim().slice(0, 1000);
+  return sendMetaMessage(
+    message.to,
+    {
+      type: "location",
+      location: {
+        latitude: message.latitude,
+        longitude: message.longitude,
+        ...(name ? { name } : {}),
+        ...(address ? { address } : {}),
+      },
+    },
+    config,
+    fetcher
+  );
 }
