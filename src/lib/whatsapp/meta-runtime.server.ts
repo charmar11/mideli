@@ -58,7 +58,15 @@ async function interpretMessage(
         model: config.geminiModel,
       })
     : null;
-  return handleHybridConversationMessage({ state, message, catalog, interpreter });
+  return handleHybridConversationMessage({
+    state,
+    message,
+    catalog,
+    interpreter,
+    onDiagnostic: (event) => {
+      console.info(`[WhatsApp Gemini] ${JSON.stringify(event)}`);
+    },
+  });
 }
 
 function deliveryQuoteReply(

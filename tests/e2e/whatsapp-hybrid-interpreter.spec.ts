@@ -38,6 +38,7 @@ const catalog = buildConversationCatalog([
 ] as MenuItem[]);
 
 test("Gemini puede desambiguar dos unidades configuradas en una sola frase", async () => {
+  const diagnostics: Array<{ outcome: string; operationCount?: number }> = [];
   const interpreter: SemanticInterpreter = async () => ({
     intent: "cart_operations",
     confidence: 0.98,
@@ -52,6 +53,7 @@ test("Gemini puede desambiguar dos unidades configuradas en una sola frase", asy
     message: "Y sería un california de carne y otro de pollo",
     catalog,
     interpreter,
+    onDiagnostic: (event) => diagnostics.push(event),
   });
 
   expect(result.state.cart).toHaveLength(2);
@@ -62,6 +64,9 @@ test("Gemini puede desambiguar dos unidades configuradas en una sola frase", asy
   expect(result.state.total).toBe(250);
   expect(result.reply).toContain("1 California de Res");
   expect(result.reply).toContain("1 California de Pollo");
+  expect(diagnostics).toEqual([
+    expect.objectContaining({ outcome: "applied", operationCount: 2 }),
+  ]);
 });
 
 test("rechaza identificadores inventados por Gemini y conserva el carrito", async () => {
@@ -104,6 +109,7 @@ test("si Gemini falla el motor local responde y no pierde el carrito", async () 
 });
 
 test("si Gemini falla en una distribución compleja no acepta un pedido parcial", async () => {
+  const diagnostics: Array<{ outcome: string; reason?: string }> = [];
   const interpreter: SemanticInterpreter = async () => {
     throw new Error("timeout");
   };
@@ -113,11 +119,38 @@ test("si Gemini falla en una distribución compleja no acepta un pedido parcial"
     message: "Un California de carne y otro de pollo",
     catalog,
     interpreter,
+    onDiagnostic: (event) => diagnostics.push(event),
   });
 
   expect(result.state.cart).toEqual([]);
   expect(result.state.ambiguityCount).toBe(0);
   expect(result.reply).toContain("confirmar cuál producto");
+  expect(diagnostics).toEqual([
+    expect.objectContaining({ outcome: "clarification", reason: "timeout" }),
+  ]);
+});
+
+test("el diagnóstico no contiene el mensaje, teléfono, carrito ni secretos", async () => {
+  const diagnostics: unknown[] = [];
+  const interpreter: SemanticInterpreter = async () => ({
+    intent: "unknown",
+    confidence: 0.1,
+    operations: [],
+  });
+
+  await handleHybridConversationMessage({
+    state: createConversation("5216440000000"),
+    message: "Ponme dos especiales de la casa",
+    catalog,
+    interpreter,
+    onDiagnostic: (event) => diagnostics.push(event),
+  });
+
+  const serialized = JSON.stringify(diagnostics);
+  expect(serialized).not.toContain("5216440000000");
+  expect(serialized).not.toContain("especiales de la casa");
+  expect(serialized).not.toContain("productId");
+  expect(serialized).not.toContain("api");
 });
 
 test("no consulta Gemini cuando el mensaje contiene una dirección", async () => {

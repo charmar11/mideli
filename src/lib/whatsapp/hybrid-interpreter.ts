@@ -24,6 +24,34 @@ export type SemanticInterpreter = (input: {
   catalog: ConversationCatalog;
 }) => Promise<SemanticInterpretation>;
 
+export type SemanticDiagnostic = {
+  outcome: "applied" | "local_fallback" | "clarification";
+  durationMs: number;
+  intent?: SemanticInterpretation["intent"];
+  operationCount?: number;
+  reason?: "low_confidence_or_invalid" | "timeout" | "quota" | "auth" | "provider_error";
+};
+
+function emitDiagnostic(
+  listener: ((event: SemanticDiagnostic) => void) | undefined,
+  event: SemanticDiagnostic
+) {
+  try {
+    listener?.(event);
+  } catch {
+    // La observabilidad nunca debe interrumpir una conversación.
+  }
+}
+
+function semanticErrorReason(error: unknown): SemanticDiagnostic["reason"] {
+  if (error instanceof DOMException && error.name === "AbortError") return "timeout";
+  const code = error instanceof Error ? error.message : "";
+  if (code === "gemini_http_429") return "quota";
+  if (code === "gemini_http_401" || code === "gemini_http_403") return "auth";
+  if (code.includes("abort") || code.includes("timeout")) return "timeout";
+  return "provider_error";
+}
+
 function semanticStage(state: ConversationState) {
   return state.stage === "ordering" || state.stage === "browsing_catalog";
 }
@@ -113,6 +141,7 @@ export async function handleHybridConversationMessage(input: {
   message: string;
   catalog: ConversationCatalog;
   interpreter?: SemanticInterpreter | null;
+  onDiagnostic?: (event: SemanticDiagnostic) => void;
 }): Promise<ConversationResult> {
   const local = handleConversationMessage(input.state, input.message, input.catalog);
   if (
@@ -126,6 +155,7 @@ export async function handleHybridConversationMessage(input: {
   const shouldInterpret = likelyComplexOrder(input.message) || localMisunderstood(input.state, local);
   if (!shouldInterpret) return local;
 
+  const startedAt = Date.now();
   try {
     const interpretation = await input.interpreter({
       state: input.state,
@@ -133,13 +163,31 @@ export async function handleHybridConversationMessage(input: {
       catalog: input.catalog,
     });
     const applied = applySemanticResult(input.state, interpretation, input.catalog);
-    if (applied) return applied;
-    return localLooksComplete(input.state, local, input.message)
-      ? local
-      : semanticClarification(input.state);
-  } catch {
-    return localLooksComplete(input.state, local, input.message)
-      ? local
-      : semanticClarification(input.state);
+    if (applied) {
+      emitDiagnostic(input.onDiagnostic, {
+        outcome: "applied",
+        durationMs: Date.now() - startedAt,
+        intent: interpretation.intent,
+        operationCount: interpretation.operations.length,
+      });
+      return applied;
+    }
+    const useLocal = localLooksComplete(input.state, local, input.message);
+    emitDiagnostic(input.onDiagnostic, {
+      outcome: useLocal ? "local_fallback" : "clarification",
+      durationMs: Date.now() - startedAt,
+      intent: interpretation.intent,
+      operationCount: interpretation.operations.length,
+      reason: "low_confidence_or_invalid",
+    });
+    return useLocal ? local : semanticClarification(input.state);
+  } catch (error) {
+    const useLocal = localLooksComplete(input.state, local, input.message);
+    emitDiagnostic(input.onDiagnostic, {
+      outcome: useLocal ? "local_fallback" : "clarification",
+      durationMs: Date.now() - startedAt,
+      reason: semanticErrorReason(error),
+    });
+    return useLocal ? local : semanticClarification(input.state);
   }
 }
