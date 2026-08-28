@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { MenuItem, Order } from "@/types/database";
 import { buildConversationCatalog } from "./catalog";
+import { addressConfirmationReply, deliveryQuoteReply } from "./customer-messages";
+import { safeErrorDetail } from "./error-detail";
 import {
   createConversation,
   handleConversationMessage,
@@ -78,25 +80,6 @@ async function interpretMessage(
       console.info(`[WhatsApp Gemini] ${JSON.stringify(event)}`);
     },
   });
-}
-
-function deliveryQuoteReply(
-  state: ConversationState,
-  quote: ConversationDeliveryQuote
-) {
-  const distanceKm = Math.round((quote.distanceMeters / 1000) * 10) / 10;
-  const surcharge = quote.surcharge > 0
-    ? `\n🏘️ Recargo de zona: $${quote.surcharge}`
-    : "";
-  const total = state.total + quote.totalFee;
-  const customerAddress = state.address?.startsWith("Ubicación compartida:")
-    ? quote.formattedAddress
-    : state.address || quote.formattedAddress;
-  return `🛵 *¡Sí llegamos hasta tu domicilio!*\n\n📍 ${customerAddress}\n📏 Distancia: ${distanceKm} km\n💰 Tarifa base: $${quote.baseFee}${surcharge}\n🛵 Envío total: *$${quote.totalFee}*\n🧾 Total con envío: *$${total}*\n\n¿Pagarás en efectivo o por transferencia? 😊`;
-}
-
-function addressConfirmationReply(quote: ConversationDeliveryQuote) {
-  return `📍 *Encontré este domicilio:*\n${quote.formattedAddress}\n\n¿Es aquí? Responde *sí* o envía otra dirección o ubicación.`;
 }
 
 function stateForInboundMessage(
@@ -227,7 +210,7 @@ async function sendReply(
         providerConfig
       );
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Error desconocido";
+      const detail = safeErrorDetail(error);
       console.warn(`[WhatsApp Meta] El control interactivo falló; se enviará texto: ${detail}`);
     }
   }
@@ -355,7 +338,7 @@ async function processDryRunMessage(
         ? {
             state: await confirmQuoteForState(null, result.state, quoted.quote, operations),
             action: "none",
-            reply: deliveryQuoteReply(result.state, quoted.quote),
+            reply: deliveryQuoteReply(result.state.total, quoted.quote),
           }
         : {
             state: withPendingDeliveryQuote(result.state, quoted.quote),
@@ -371,7 +354,7 @@ async function processDryRunMessage(
       ? {
           state: await confirmQuoteForState(null, result.state, quote, operations),
           action: "none",
-          reply: deliveryQuoteReply(result.state, quote),
+          reply: deliveryQuoteReply(result.state.total, quote),
         }
       : recoverDeliveryQuote(result.state, "delivery_quote_confirmation_incomplete");
   }
@@ -401,7 +384,7 @@ async function processDryRunMessage(
     else summary.replyFailures += 1;
   } catch (error) {
     summary.replyFailures += 1;
-    const detail = error instanceof Error ? error.message : "Error desconocido";
+    const detail = safeErrorDetail(error);
     console.warn(`[WhatsApp Meta] No se pudo enviar la respuesta: ${detail}`);
   }
 }
@@ -466,7 +449,7 @@ async function processQueuedMessage(
                 operations
               ),
               action: "none",
-              reply: deliveryQuoteReply(result.state, quoted.quote),
+              reply: deliveryQuoteReply(result.state.total, quoted.quote),
             }
           : {
               state: withPendingDeliveryQuote(result.state, quoted.quote),
@@ -487,7 +470,7 @@ async function processQueuedMessage(
               operations
             ),
             action: "none",
-            reply: deliveryQuoteReply(result.state, quote),
+            reply: deliveryQuoteReply(result.state.total, quote),
           }
         : recoverDeliveryQuote(result.state, "delivery_quote_confirmation_incomplete");
     } else if (result.action === "mark_customer_received") {
@@ -601,7 +584,7 @@ async function processQueuedMessage(
         }
       } catch (error) {
         summary.replyFailures += 1;
-        const detail = error instanceof Error ? error.message : "Error desconocido";
+        const detail = safeErrorDetail(error);
         try {
           await recordOutboundFailure({
             conversationId,
@@ -624,7 +607,7 @@ async function processQueuedMessage(
     }
     if (createdOrder) void notifyKitchen(createdOrder);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Error desconocido";
+    const detail = safeErrorDetail(error);
     try {
       await markInboundMessage(message.id, "failed", detail);
     } catch {
@@ -720,7 +703,7 @@ export async function processMetaWebhook(
       }
     } catch (error) {
       summary.processingFailures += 1;
-      const detail = error instanceof Error ? error.message : "Error desconocido";
+      const detail = safeErrorDetail(error);
       console.error(`[WhatsApp Meta] Falló un mensaje permitido: ${detail}`);
     }
   }

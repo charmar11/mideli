@@ -10,6 +10,8 @@ import {
 } from "@/lib/whatsapp/conversation-engine";
 import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
 import { normalizePhone, normalizeText, phoneAliases } from "@/lib/whatsapp/normalize";
+import { deliveryQuoteReply } from "@/lib/whatsapp/customer-messages";
+import { safeErrorDetail } from "@/lib/whatsapp/error-detail";
 import type { MenuItem } from "@/types/database";
 
 const now = "2026-08-25T00:00:00.000Z";
@@ -1346,6 +1348,97 @@ test("pregunta una sola vez cuando una indicación puede pertenecer a dos produc
   expect(selected.state.stage).toBe("ordering");
   expect(selected.state.cart.find((line) => line.id === "line-boneless")?.notes).toContain("salsa aparte");
   expect(selected.state.cart.find((line) => line.id === "line-california")?.notes).toBe("");
+});
+
+test("ignora un botón viejo de nota durante la confirmación del domicilio", () => {
+  const state = withPendingDeliveryQuote({
+    ...createConversation("5216440000000"),
+    stage: "awaiting_delivery_quote" as const,
+    serviceType: "domicilio" as const,
+    address: "Sinagogas 1230, San Xavier",
+    addressReferenceCollected: true,
+    addressSource: "text" as const,
+    cart: [{
+      id: "line-1",
+      menuItemId: "california",
+      categoryId: "sushis",
+      name: "California",
+      quantity: 1,
+      unitPrice: 125,
+      selectedModifiers: [],
+      notes: "",
+    }],
+    total: 125,
+  }, {
+    id: "quote-1",
+    formattedAddress: "Sinagogas 1230, Misión de San Xavier, Ciudad Obregón",
+    colony: "Misión de San Xavier",
+    latitude: 27.452762,
+    longitude: -109.9273349,
+    distanceMeters: 6600,
+    baseFee: 45,
+    surcharge: 0,
+    totalFee: 45,
+  });
+
+  const result = handleConversationMessage(state, "cart:note", catalog);
+
+  expect(result.state.stage).toBe("awaiting_address_confirmation");
+  expect(result.state.pendingDeliveryQuote?.id).toBe("quote-1");
+  expect(result.state.guidedNote).toBeNull();
+  expect(result.reply).toContain("Sinagogas 1230, Misión de San Xavier");
+});
+
+test("no guarda etiquetas genéricas como indicaciones", () => {
+  const base = {
+    ...createConversation("5216440000000"),
+    stage: "ordering" as const,
+    orderNotes: "Nota",
+    cart: [{
+      id: "line-1",
+      menuItemId: "california",
+      categoryId: "sushis",
+      name: "California",
+      quantity: 1,
+      unitPrice: 125,
+      selectedModifiers: [],
+      notes: "",
+    }],
+    total: 125,
+  };
+  let result = handleConversationMessage(base, "cart:note", catalog);
+  result = handleConversationMessage(result.state, "note:scope:order", catalog);
+  result = handleConversationMessage(result.state, "Nota", catalog);
+
+  expect(result.state.stage).toBe("awaiting_note_text");
+  expect(result.state.orderNotes).toBe("Nota");
+
+  result = handleConversationMessage(result.state, "Sin verdura", catalog);
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.orderNotes).toBe("Sin verdura");
+});
+
+test("muestra el domicilio canónico de Maps en la cotización", () => {
+  const reply = deliveryQuoteReply(250, {
+    id: "quote-1",
+    formattedAddress: "Sinagogas 1230, Misión de San Xavier, Ciudad Obregón",
+    colony: "Misión de San Xavier",
+    latitude: 27.452762,
+    longitude: -109.9273349,
+    distanceMeters: 6600,
+    baseFee: 45,
+    surcharge: 0,
+    totalFee: 45,
+  });
+
+  expect(reply).toContain("Sinagogas 1230, Misión de San Xavier");
+  expect(reply).toContain("Total con envío: *$295*");
+});
+
+test("extrae un diagnóstico seguro de errores estructurados", () => {
+  expect(safeErrorDetail({ code: "23514", message: "stage constraint failed" }))
+    .toBe("23514: stage constraint failed");
+  expect(safeErrorDetail({ access_token: "secreto" })).toBe("Error desconocido");
 });
 
 test("cierra el seguimiento solo cuando el cliente confirma una entrega real", () => {

@@ -660,10 +660,22 @@ function cartSummary(state: ConversationState) {
 function appendNote(existing: string, note: string) {
   const clean = note.trim().replace(/\s+/g, " ").slice(0, 500);
   if (!clean) return existing;
-  const current = existing.trim();
+  const current = isGenericNoteLabel(existing) ? "" : existing.trim();
   if (!current) return clean;
   if (normalizeText(current).includes(normalizeText(clean))) return current;
   return `${current}; ${clean}`.slice(0, 500);
+}
+
+function isGenericNoteLabel(value: string) {
+  return new Set([
+    "nota",
+    "anadir nota",
+    "agregar nota",
+    "indicacion",
+    "anadir indicacion",
+    "agregar indicacion",
+    "observacion",
+  ]).has(normalizeText(value));
 }
 
 function noteFollowUp(state: ConversationState, intro: string) {
@@ -2490,8 +2502,11 @@ function handleGuidedNoteText(state: ConversationState, message: string) {
   const guided = state.guidedNote;
   const note = message.trim().replace(/\s+/g, " ");
   if (!guided) return returnToSummary(state);
-  if (note.length < 2 || note.length > 500) {
-    return result(state, "Escribe una indicación de hasta 500 caracteres.");
+  if (note.length < 2 || note.length > 500 || isGenericNoteLabel(note)) {
+    return result(
+      state,
+      "📝 Escribe la indicación concreta. Por ejemplo: *sin verdura*, *mitad BBQ* o *PIN 4821*."
+    );
   }
   if (guided.scope === "order") {
     const next = { ...state, orderNotes: appendNote(state.orderNotes, note) };
@@ -2673,6 +2688,154 @@ function handleLateConversationChange(
   );
 }
 
+function isKnownInteractiveCommand(command: string) {
+  return [
+    "cmd:start",
+    "cmd:menu",
+    "cmd:human",
+    "human_help",
+    "cart:add",
+    "cart:note",
+    "cart:finish",
+    "beverage:show",
+    "beverage:skip",
+    "beverage:back",
+    "fulfillment:pickup",
+    "fulfillment:delivery",
+    "address:reuse",
+    "address:new",
+    "address:skip_reference",
+    "address:confirm",
+    "address:change",
+    "payment:cash",
+    "payment:card",
+    "payment:transfer",
+    "confirmation:confirm",
+    "confirmation:edit",
+    "confirmation:note",
+    "modify_order",
+    "edit:summary",
+    "note:cancel",
+    "show_beverages",
+    "skip_beverage",
+    "pickup",
+    "delivery",
+    "confirm_address",
+    "change_address",
+    "cash",
+    "transfer",
+    "confirm_order",
+  ].includes(command) || [
+    "category:",
+    "catalog:",
+    "product:",
+    "modifier:",
+    "edit:action:",
+    "edit:item:",
+    "edit:quantity:",
+    "edit:group:",
+    "edit:option:",
+    "edit:modifier:",
+    "note:scope:",
+    "note:item:",
+    "note:quantity:",
+  ].some((prefix) => command.startsWith(prefix));
+}
+
+function interactiveCommandAllowed(state: ConversationState, command: string) {
+  if (command === "cmd:human" || command === "human_help") return true;
+  if (command === "cmd:start") {
+    return ["ordering", "confirmed", "cancelled"].includes(state.stage);
+  }
+  if (command === "cmd:menu" || command === "cart:add") {
+    return ["ordering", "browsing_catalog"].includes(state.stage);
+  }
+  if (command === "cart:note" || command === "cart:finish") {
+    return state.stage === "ordering";
+  }
+  if (
+    command.startsWith("category:") ||
+    command.startsWith("catalog:") ||
+    command.startsWith("product:")
+  ) {
+    return state.stage === "browsing_catalog";
+  }
+  if (command.startsWith("modifier:")) return state.stage === "awaiting_modifiers";
+  if (["beverage:show", "beverage:skip", "beverage:back", "show_beverages", "skip_beverage"].includes(command)) {
+    return state.stage === "awaiting_beverage";
+  }
+  if (["fulfillment:pickup", "fulfillment:delivery", "pickup", "delivery"].includes(command)) {
+    return state.stage === "awaiting_fulfillment";
+  }
+  if (["address:reuse", "address:new"].includes(command)) {
+    return state.stage === "awaiting_address";
+  }
+  if (command === "address:skip_reference") {
+    return state.stage === "awaiting_address_reference";
+  }
+  if (["address:confirm", "address:change", "confirm_address", "change_address"].includes(command)) {
+    return state.stage === "awaiting_address_confirmation";
+  }
+  if (["payment:cash", "payment:card", "payment:transfer", "cash", "transfer"].includes(command)) {
+    return state.stage === "awaiting_payment";
+  }
+  if (["confirmation:confirm", "confirmation:edit", "confirmation:note", "modify_order", "confirm_order"].includes(command)) {
+    return state.stage === "awaiting_confirmation";
+  }
+  if (command.startsWith("edit:action:")) return state.stage === "awaiting_edit_action";
+  if (command.startsWith("edit:item:")) return state.stage === "awaiting_edit_item";
+  if (command.startsWith("edit:quantity:")) return state.stage === "awaiting_edit_quantity";
+  if (command.startsWith("edit:group:")) return state.stage === "awaiting_edit_modifier_group";
+  if (command.startsWith("edit:option:")) return state.stage === "awaiting_edit_modifier_option";
+  if (command.startsWith("edit:modifier:")) return state.stage === "awaiting_edit_modifier_more";
+  if (command === "edit:summary") {
+    return state.stage.startsWith("awaiting_edit_") || state.stage.startsWith("awaiting_note_");
+  }
+  if (command.startsWith("note:scope:")) return state.stage === "awaiting_note_scope";
+  if (command.startsWith("note:item:")) return state.stage === "awaiting_note_item";
+  if (command.startsWith("note:quantity:")) return state.stage === "awaiting_note_quantity_scope";
+  if (command === "note:cancel") return state.stage.startsWith("awaiting_note_");
+  return true;
+}
+
+function currentStepReply(state: ConversationState, catalog: ConversationCatalog) {
+  if (state.stage === "ordering") return cartUpdatedReply(state);
+  if (state.stage === "browsing_catalog") {
+    return state.selectedCategoryId
+      ? productMessage(state, catalog)
+      : categoryMessage(catalog, state.catalogPage);
+  }
+  if (state.stage === "awaiting_modifiers") {
+    return "Elige una de las opciones actuales para continuar 😊";
+  }
+  if (state.stage === "awaiting_beverage") return "🥤 ¿Deseas agregar alguna bebida?";
+  if (state.stage === "awaiting_fulfillment") return "📍 ¿Tu pedido será para recoger o a domicilio?";
+  if (state.stage === "awaiting_address") return deliveryAddressPrompt(state);
+  if (state.stage === "awaiting_address_reference") {
+    return "🏠 ¿Hay alguna referencia que ayude a encontrar el domicilio? Si no, elige *Sin referencia*.";
+  }
+  if (state.stage === "awaiting_delivery_quote") {
+    return "📍 Sigo validando el domicilio. En un momento continuamos.";
+  }
+  if (state.stage === "awaiting_address_confirmation") {
+    const address = state.pendingDeliveryQuote?.formattedAddress ?? state.address ?? "el domicilio encontrado";
+    return `📍 *Encontré este domicilio:*\n${address}\n\n¿Es aquí? Responde *sí* o envía otra dirección o ubicación.`;
+  }
+  if (state.stage === "awaiting_payment") return paymentQuestion(state);
+  if (state.stage === "awaiting_cash_tendered") {
+    return `💵 El total es *$${state.total}*. ¿Con cuánto pagarás?`;
+  }
+  if (state.stage === "awaiting_confirmation") return cartSummary(state);
+  if (state.stage === "awaiting_edit_action") return editActionPrompt();
+  if (state.stage === "awaiting_note_scope") {
+    return "📝 *¿Dónde quieres guardar la indicación?*\n\n1. A un producto\n2. A todo el pedido\n3. Para la entrega";
+  }
+  if (state.stage === "awaiting_note_text") {
+    return "📝 Escribe la indicación concreta para continuar.";
+  }
+  return "Continuemos con la opción actual 😊";
+}
+
 export function handleConversationMessage(
   rawState: ConversationState,
   message: string,
@@ -2688,6 +2851,9 @@ export function handleConversationMessage(
       "handoff"
     );
   }
+  if (isKnownInteractiveCommand(command) && !interactiveCommandAllowed(state, command)) {
+    return result(state, currentStepReply(state, catalog));
+  }
   if (command === "cmd:menu" || command === "cart:add") {
     const next: ConversationState = {
       ...state,
@@ -2699,9 +2865,6 @@ export function handleConversationMessage(
     return result(next, categoryMessage(catalog, 0));
   }
   if (command === "cart:note" || command === "confirmation:note") {
-    if (command === "confirmation:note" && state.stage !== "awaiting_confirmation") {
-      return handleConversationMessage(state, "menu", catalog);
-    }
     return beginGuidedNote(
       state,
       state.stage === "awaiting_confirmation" ? "awaiting_confirmation" : "ordering"
