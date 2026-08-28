@@ -64,7 +64,15 @@ export type SemanticDiagnostic = {
   stage?: ConversationState["stage"];
   intent?: SemanticInterpretation["intent"];
   operationCount?: number;
-  reason?: "low_confidence_or_invalid" | "timeout" | "quota" | "auth" | "provider_error";
+  reason?:
+    | "low_confidence_or_invalid"
+    | "timeout"
+    | "quota"
+    | "auth"
+    | "model_unavailable"
+    | "invalid_request"
+    | "invalid_response"
+    | "provider_error";
 };
 
 function emitDiagnostic(
@@ -81,8 +89,17 @@ function emitDiagnostic(
 function semanticErrorReason(error: unknown): SemanticDiagnostic["reason"] {
   if (error instanceof DOMException && error.name === "AbortError") return "timeout";
   const code = error instanceof Error ? error.message : "";
-  if (code === "gemini_http_429") return "quota";
-  if (code === "gemini_http_401" || code === "gemini_http_403") return "auth";
+  if (code === "gemini_quota" || code === "gemini_http_429") return "quota";
+  if (
+    code === "gemini_auth" ||
+    code === "gemini_http_401" ||
+    code === "gemini_http_403"
+  ) return "auth";
+  if (code === "gemini_model_unavailable") return "model_unavailable";
+  if (code === "gemini_invalid_request") return "invalid_request";
+  if (code === "gemini_invalid_response" || code.startsWith("invalid_semantic_")) {
+    return "invalid_response";
+  }
   if (code.includes("abort") || code.includes("timeout")) return "timeout";
   return "provider_error";
 }

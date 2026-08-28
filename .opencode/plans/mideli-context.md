@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-08-27
+Actualizado: 2026-08-28
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -215,6 +215,7 @@ La sección `/dashboard/whatsapp` funciona como una bandeja operativa para owner
 - Las decisiones breves usan botones nativos cuando caben en tres opciones: bebida, tipo de entrega, confirmación del domicilio, método de pago y confirmación final. El catálogo y las variaciones amplias conservan texto natural y numeración.
 - El bot reconoce indicaciones naturales de preparación, notas generales y datos de acceso. Las notas de producto llegan a la comanda; las generales se guardan en el pedido; los PIN y accesos privados se reservan para entrega y no aparecen en avisos Push.
 - Cada dispositivo puede activar o pausar `Chats por atender`. El primer relevo humano del ciclo genera un Push idempotente y abre directamente la conversación correspondiente.
+- El intérprete semántico usa `gemini-3.1-flash-lite` de forma predeterminada y conserva `WHATSAPP_GEMINI_MODEL` como anulación. Mideli clasifica credencial, cuota, modelo, solicitud incompatible, timeout y respuesta inválida sin mostrar datos del proveedor; solo reintenta una vez fallos transitorios dentro de un presupuesto de tres segundos.
 
 ### Imágenes de productos
 

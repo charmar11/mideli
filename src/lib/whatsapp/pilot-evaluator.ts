@@ -83,6 +83,9 @@ export function semanticDiagnosticDetail(diagnostics: SemanticDiagnostic[]) {
     auth: "Gemini rechazó la credencial configurada",
     quota: "Gemini alcanzó su cuota disponible",
     timeout: "Gemini excedió el tiempo de respuesta",
+    model_unavailable: "El modelo configurado de Gemini no está disponible",
+    invalid_request: "Gemini recibió una configuración incompatible",
+    invalid_response: "Gemini devolvió una respuesta con formato inválido",
     provider_error: "Gemini no pudo procesar la solicitud",
     low_confidence_or_invalid: "Gemini devolvió una interpretación insegura",
   };

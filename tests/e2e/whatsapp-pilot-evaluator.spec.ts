@@ -7,6 +7,11 @@ import {
   type WhatsappPilotEvaluatorDependencies,
 } from "@/lib/whatsapp/pilot-evaluator";
 import type { SemanticInterpreter } from "@/lib/whatsapp/hybrid-interpreter";
+import {
+  DEFAULT_GEMINI_MODEL,
+  classifyGeminiHttpFailure,
+  geminiRetryDelayMs,
+} from "@/lib/whatsapp/gemini-policy";
 import type { MenuItem } from "@/types/database";
 
 const now = "2026-08-28T00:00:00.000Z";
@@ -222,4 +227,58 @@ test("expone autenticación de Gemini en los escenarios afectados", async () => 
     critical: true,
     detail: "Gemini rechazó la credencial configurada",
   });
+});
+
+test("usa Gemini 3.1 Flash-Lite como modelo gratuito predeterminado", () => {
+  expect(DEFAULT_GEMINI_MODEL).toBe("gemini-3.1-flash-lite");
+});
+
+test("clasifica errores de Gemini sin exponer el cuerpo del proveedor", () => {
+  expect(
+    classifyGeminiHttpFailure(400, {
+      error: {
+        details: [{ reason: "API_KEY_INVALID" }],
+      },
+    })
+  ).toBe("auth");
+  expect(classifyGeminiHttpFailure(400, { error: { status: "INVALID_ARGUMENT" } }))
+    .toBe("invalid_request");
+  expect(classifyGeminiHttpFailure(404, { error: { status: "NOT_FOUND" } }))
+    .toBe("model_unavailable");
+  expect(classifyGeminiHttpFailure(429, { error: { status: "RESOURCE_EXHAUSTED" } }))
+    .toBe("quota");
+  expect(classifyGeminiHttpFailure(503, { error: { status: "UNAVAILABLE" } }))
+    .toBe("provider_error");
+});
+
+test("reintenta una vez solo los fallos temporales dentro del presupuesto", () => {
+  expect(geminiRetryDelayMs({ status: 429, retryAfter: null })).toBe(350);
+  expect(geminiRetryDelayMs({ status: 503, retryAfter: null })).toBe(350);
+  expect(geminiRetryDelayMs({ status: 429, retryAfter: "1" })).toBe(1000);
+  expect(geminiRetryDelayMs({ status: 429, retryAfter: "30" })).toBeNull();
+  expect(geminiRetryDelayMs({ status: 400, retryAfter: null })).toBeNull();
+  expect(geminiRetryDelayMs({ status: 403, retryAfter: null })).toBeNull();
+});
+
+test("muestra causas diferenciadas para configuración incompatible", () => {
+  expect(
+    semanticDiagnosticDetail([
+      {
+        outcome: "clarification",
+        durationMs: 80,
+        providerDurationMs: 75,
+        reason: "invalid_request",
+      },
+    ])
+  ).toBe("Gemini recibió una configuración incompatible");
+  expect(
+    semanticDiagnosticDetail([
+      {
+        outcome: "clarification",
+        durationMs: 80,
+        providerDurationMs: 75,
+        reason: "model_unavailable",
+      },
+    ])
+  ).toBe("El modelo configurado de Gemini no está disponible");
 });

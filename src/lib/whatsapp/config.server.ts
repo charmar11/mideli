@@ -1,6 +1,7 @@
 import "server-only";
 
 import { phoneAliases } from "./normalize";
+import { DEFAULT_GEMINI_MODEL } from "./gemini-policy";
 
 function enabled(value: string | undefined) {
   return value === "true";
@@ -31,6 +32,6 @@ export function readWhatsappServerConfig() {
     geminiInterpreterEnabled:
       process.env.WHATSAPP_GEMINI_INTERPRETER_ENABLED !== "false" && Boolean(geminiApiKey),
     geminiApiKey,
-    geminiModel: process.env.WHATSAPP_GEMINI_MODEL || "gemini-2.5-flash-lite",
+    geminiModel: process.env.WHATSAPP_GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
   } as const;
 }

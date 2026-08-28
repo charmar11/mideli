@@ -6,13 +6,93 @@ import type {
   SemanticInterpreter,
 } from "./hybrid-interpreter";
 import { geminiResponseSchema } from "./gemini-schema";
+import {
+  classifyGeminiHttpFailure,
+  geminiFailureCode,
+  geminiRetryDelayMs,
+} from "./gemini-policy";
 
-const REQUEST_TIMEOUT_MS = 2_500;
+const REQUEST_TIMEOUT_MS = 3_000;
 
 type GeminiConfig = {
   apiKey: string;
   model: string;
 };
+
+async function responsePayload(response: Response) {
+  try {
+    return await response.json() as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function waitForRetry(delayMs: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function requestGemini(input: {
+  apiKey: string;
+  model: string;
+  payload: unknown;
+  signal: AbortSignal;
+}) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.model)}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": input.apiKey,
+          },
+          body: JSON.stringify(input.payload),
+          signal: input.signal,
+        }
+      );
+    } catch (error) {
+      if (input.signal.aborted) throw new Error("gemini_timeout");
+      if (attempt === 0) {
+        await waitForRetry(350, input.signal);
+        continue;
+      }
+      throw new Error("gemini_provider_error", { cause: error });
+    }
+
+    if (response.ok) return response;
+
+    const payload = await responsePayload(response);
+    const reason = classifyGeminiHttpFailure(response.status, payload);
+    const retryDelay = attempt === 0
+      ? geminiRetryDelayMs({
+          status: response.status,
+          retryAfter: response.headers.get("retry-after"),
+        })
+      : null;
+    if (retryDelay !== null) {
+      await waitForRetry(retryDelay, input.signal);
+      continue;
+    }
+    throw new Error(geminiFailureCode(reason));
+  }
+  throw new Error("gemini_provider_error");
+}
 
 function payloadForInterpreter(
   input: Parameters<SemanticInterpreter>[0]
@@ -146,38 +226,40 @@ export function createGeminiSemanticInterpreter(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": config.apiKey,
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: "user",
-                parts: [{ text: JSON.stringify(payloadForInterpreter(input)) }],
-              },
-            ],
-            generationConfig: {
-              temperature: 0,
-              maxOutputTokens: 1200,
-              responseMimeType: "application/json",
-              responseJsonSchema: geminiResponseSchema(),
+      const response = await requestGemini({
+        apiKey: config.apiKey,
+        model: config.model,
+        payload: {
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: JSON.stringify(payloadForInterpreter(input)) }],
             },
-          }),
-          signal: controller.signal,
-        }
-      );
-      if (!response.ok) throw new Error(`gemini_http_${response.status}`);
-      const body = await response.json() as {
+          ],
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 1200,
+            responseMimeType: "application/json",
+            responseJsonSchema: geminiResponseSchema(),
+          },
+        },
+        signal: controller.signal,
+      });
+      let body: {
         candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
       };
+      try {
+        body = await response.json() as typeof body;
+      } catch {
+        throw new Error("gemini_invalid_response");
+      }
       const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error("gemini_empty_response");
-      return parseInterpretation(JSON.parse(text));
+      if (!text) throw new Error("gemini_invalid_response");
+      try {
+        return parseInterpretation(JSON.parse(text));
+      } catch {
+        throw new Error("gemini_invalid_response");
+      }
     } finally {
       clearTimeout(timeout);
     }
