@@ -7,8 +7,12 @@ import {
   type GoogleAddressComponent,
   type GoogleGeocodingResult,
 } from "./address-confidence";
+import {
+  resolveDrivingDistance,
+  type GoogleRouteCoordinates,
+} from "./google-route-distance";
 
-type Coordinates = { latitude: number; longitude: number };
+type Coordinates = GoogleRouteCoordinates;
 
 export type GeocodedDestination = Coordinates & {
   formattedAddress: string;
@@ -153,7 +157,5 @@ export async function computeDrivingDistance(
   const payload = (await response.json()) as {
     routes?: Array<{ distanceMeters?: number }>;
   };
-  const distanceMeters = payload.routes?.[0]?.distanceMeters;
-  if (!Number.isFinite(distanceMeters)) throw new Error("route_not_found");
-  return Math.round(Number(distanceMeters));
+  return resolveDrivingDistance(origin, destination, payload);
 }

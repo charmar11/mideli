@@ -68,12 +68,30 @@ export function mapsProbeAddress(input: {
   longitude: number | null;
   fallbackAddress: string;
 }) {
+  const fallbackAddress = input.fallbackAddress.trim();
+  if (fallbackAddress) return fallbackAddress;
   if (Number.isFinite(input.latitude) && Number.isFinite(input.longitude)) {
-    const latitude = (Number(input.latitude) + 0.006).toFixed(6);
-    const longitude = (Number(input.longitude) + 0.006).toFixed(6);
+    const latitude = Number(input.latitude).toFixed(6);
+    const longitude = Number(input.longitude).toFixed(6);
     return `Ubicación compartida: ${latitude},${longitude}`;
   }
-  return input.fallbackAddress.trim();
+  return "";
+}
+
+function mapsDiagnosticDetail(reason: string) {
+  const details: Record<string, string> = {
+    delivery_quotes_disabled: "La cotización de envíos está desactivada",
+    store_origin_not_configured: "Falta configurar el origen del local",
+    google_maps_not_configured: "Falta configurar Google Maps",
+    google_geocoding_failed: "Google Geocoding rechazó la consulta",
+    google_routes_failed: "Google Routes rechazó la consulta",
+    address_not_found: "Google Maps no encontró el domicilio de prueba",
+    address_low_confidence: "Google Maps encontró el domicilio con baja precisión",
+    route_not_found: "Google Maps no devolvió una ruta válida",
+    delivery_distance_out_of_range: "El domicilio quedó fuera del rango configurado",
+    delivery_rate_not_found: "No existe una tarifa para la distancia calculada",
+  };
+  return details[reason] ?? "Maps requiere revisión de configuración";
 }
 
 export function semanticDiagnosticDetail(diagnostics: SemanticDiagnostic[]) {
@@ -594,9 +612,11 @@ function scenarios(): ScenarioDefinition[] {
       run: async (context) => {
         if (!context.mapsValidAddress.trim()) return review("No hay dirección del local configurada");
         const result = await context.quoteDelivery(context.mapsValidAddress);
-        return result.status === "quoted" && result.quote.distanceMeters >= 0 && result.quote.totalFee >= 0
+        if (result.status !== "quoted") return review(mapsDiagnosticDetail(result.reason));
+
+        return result.quote.distanceMeters >= 0 && result.quote.totalFee >= 0
           ? passed("Maps devolvió ruta y tarifa sin persistir datos")
-          : review("Maps solicitó revisión para la dirección válida");
+          : review("Maps devolvió una cotización inválida");
       },
     },
     {

@@ -32,6 +32,8 @@ Solo los errores temporales se reintentarán una vez: límite por minuto, timeou
 
 Si Gemini no está disponible, Mideli conservará el comportamiento seguro actual: utilizar el resultado local cuando esté completo o pedir una aclaración sin modificar parcialmente el pedido.
 
+La verificación real de producción detectó que el endpoint de `gemini-3.1-flash-lite` rechaza el esquema cuando contiene `maxItems`, `minimum` o `maximum`, aunque acepta el mismo esquema sin esas restricciones. Mideli no enviará esos tres atributos a Google. Los límites de confianza, acciones, cantidad y opciones seguirán aplicándose después de recibir la respuesta y antes de modificar el carrito.
+
 ## Evaluador temporal
 
 El evaluador ya ejecuta cinco bloques consecutivos y cada escenario de un bloque en serie. Se conservará este comportamiento porque evita ráfagas innecesarias. No se añadirá una cola global ni persistencia nueva.

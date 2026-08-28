@@ -7,6 +7,9 @@ import type {
 } from "./hybrid-interpreter";
 import { geminiResponseSchema } from "./gemini-schema";
 import {
+  MAX_GEMINI_ACTIONS,
+  MAX_GEMINI_OPTION_IDS,
+  MAX_GEMINI_QUANTITY,
   classifyGeminiHttpFailure,
   geminiFailureCode,
   geminiRetryDelayMs,
@@ -151,7 +154,9 @@ function parseInterpretation(value: unknown): SemanticInterpretation {
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
     throw new Error("invalid_semantic_confidence");
   }
-  if (!Array.isArray(record.actions)) throw new Error("invalid_semantic_actions");
+  if (!Array.isArray(record.actions) || record.actions.length > MAX_GEMINI_ACTIONS) {
+    throw new Error("invalid_semantic_actions");
+  }
   const actions: SemanticAction[] = record.actions.map((action) => {
     if (!action || typeof action !== "object" || Array.isArray(action)) {
       throw new Error("invalid_semantic_action");
@@ -164,7 +169,9 @@ function parseInterpretation(value: unknown): SemanticInterpretation {
         typeof candidate.productId !== "string" ||
         !Number.isInteger(candidate.quantity) ||
         Number(candidate.quantity) < 1 ||
+        Number(candidate.quantity) > MAX_GEMINI_QUANTITY ||
         !Array.isArray(candidate.optionIds) ||
+        candidate.optionIds.length > MAX_GEMINI_OPTION_IDS ||
         !candidate.optionIds.every((optionId) => typeof optionId === "string")
       ) {
         throw new Error("invalid_semantic_cart_action");

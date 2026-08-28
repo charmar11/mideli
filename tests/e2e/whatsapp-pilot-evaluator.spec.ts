@@ -12,6 +12,8 @@ import {
   classifyGeminiHttpFailure,
   geminiRetryDelayMs,
 } from "@/lib/whatsapp/gemini-policy";
+import { geminiResponseSchema } from "@/lib/whatsapp/gemini-schema";
+import { resolveDrivingDistance } from "@/lib/whatsapp/google-route-distance";
 import type { MenuItem } from "@/types/database";
 
 const now = "2026-08-28T00:00:00.000Z";
@@ -181,16 +183,38 @@ test("rechaza bloques fuera del rango permitido", async () => {
   ).rejects.toThrow("invalid_pilot_batch");
 });
 
-test("genera una ubicación de Maps cercana sin reutilizar un domicilio", () => {
+test("usa la dirección configurada del local para la prueba válida de Maps", () => {
   const value = mapsProbeAddress({
     latitude: 27.503311,
     longitude: -109.936335,
     fallbackAddress: "Dirección del local",
   });
 
-  expect(value).toMatch(/^Ubicación compartida:/);
-  expect(value).not.toContain("Dirección del local");
-  expect(value).not.toContain("27.503311,-109.936335");
+  expect(value).toBe("Dirección del local");
+});
+
+test("acepta distancia cero solo cuando la ruta contiene puntos próximos", () => {
+  expect(
+    resolveDrivingDistance(
+      { latitude: 27.503311, longitude: -109.936335 },
+      { latitude: 27.50332, longitude: -109.93634 },
+      { routes: [{}] }
+    )
+  ).toBe(0);
+  expect(
+    resolveDrivingDistance(
+      { latitude: 27.503311, longitude: -109.936335 },
+      { latitude: 27.51, longitude: -109.93 },
+      { routes: [{ distanceMeters: 1253 }] }
+    )
+  ).toBe(1253);
+  expect(() =>
+    resolveDrivingDistance(
+      { latitude: 27.503311, longitude: -109.936335 },
+      { latitude: 27.51, longitude: -109.93 },
+      { routes: [{}] }
+    )
+  ).toThrow("route_not_found");
 });
 
 test("traduce fallos de Gemini sin exponer contenido ni credenciales", () => {
@@ -281,4 +305,11 @@ test("muestra causas diferenciadas para configuración incompatible", () => {
       },
     ])
   ).toBe("El modelo configurado de Gemini no está disponible");
+});
+
+test("el esquema de Gemini delega los límites numéricos a la validación local", () => {
+  const serialized = JSON.stringify(geminiResponseSchema());
+  expect(serialized).not.toContain('"minimum"');
+  expect(serialized).not.toContain('"maximum"');
+  expect(serialized).not.toContain('"maxItems"');
 });

@@ -4,10 +4,9 @@ export function geminiResponseSchema() {
     additionalProperties: false,
     required: ["confidence", "actions"],
     properties: {
-      confidence: { type: "number", minimum: 0, maximum: 1 },
+      confidence: { type: "number" },
       actions: {
         type: "array",
-        maxItems: 16,
         items: {
           type: "object",
           additionalProperties: false,
@@ -38,10 +37,9 @@ export function geminiResponseSchema() {
               enum: ["add", "remove", "set_quantity", "none"],
             },
             productId: { type: "string" },
-            quantity: { type: "integer", minimum: 0, maximum: 20 },
+            quantity: { type: "integer" },
             optionIds: {
               type: "array",
-              maxItems: 12,
               items: { type: "string" },
             },
             noteKind: {
