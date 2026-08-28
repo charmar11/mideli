@@ -1,0 +1,176 @@
+import { expect, test } from "@playwright/test";
+import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
+import {
+  runWhatsappPilotBatch,
+  type WhatsappPilotEvaluatorDependencies,
+} from "@/lib/whatsapp/pilot-evaluator";
+import type { SemanticInterpreter } from "@/lib/whatsapp/hybrid-interpreter";
+import type { MenuItem } from "@/types/database";
+
+const now = "2026-08-28T00:00:00.000Z";
+const catalog = buildConversationCatalog([
+  {
+    id: "simple",
+    category_id: "food",
+    name: "Hamburguesa Sencilla",
+    description: "Incluye papas.",
+    price: 135,
+    is_active: true,
+    whatsapp_enabled: true,
+    sort_order: 1,
+    image_url: "",
+    created_at: now,
+    updated_at: now,
+    categories: { id: "food", name: "Hamburguesas", sort_order: 1, is_active: true },
+    modifiers: [],
+  },
+  {
+    id: "double",
+    category_id: "food",
+    name: "Hamburguesa Doble",
+    description: "Incluye papas.",
+    price: 160,
+    is_active: true,
+    whatsapp_enabled: true,
+    sort_order: 2,
+    image_url: "",
+    created_at: now,
+    updated_at: now,
+    categories: { id: "food", name: "Hamburguesas", sort_order: 1, is_active: true },
+    modifiers: [],
+  },
+  {
+    id: "california",
+    category_id: "sushi",
+    name: "California",
+    description: "Res, pollo o camarón.",
+    price: 125,
+    is_active: true,
+    whatsapp_enabled: true,
+    sort_order: 1,
+    image_url: "",
+    created_at: now,
+    updated_at: now,
+    categories: { id: "sushi", name: "Sushis", sort_order: 2, is_active: true },
+    modifiers: [{
+      id: "protein",
+      name: "Tipo",
+      required: true,
+      selection_mode: "single",
+      options: [
+        { id: "beef", name: "Res", price: 0 },
+        { id: "chicken", name: "Pollo", price: 0 },
+      ],
+    }],
+  },
+  {
+    id: "drink",
+    category_id: "drinks",
+    name: "Té Helado",
+    description: "",
+    price: 40,
+    is_active: true,
+    whatsapp_enabled: true,
+    sort_order: 1,
+    image_url: "",
+    created_at: now,
+    updated_at: now,
+    categories: { id: "drinks", name: "Bebidas", sort_order: 3, is_active: true },
+    modifiers: [],
+  },
+] as unknown as MenuItem[]);
+
+const interpreter: SemanticInterpreter = async ({ message }) => {
+  const normalized = message.toLocaleLowerCase("es-MX");
+  if (normalized.includes("combo lunar")) {
+    return { intent: "unknown", confidence: 0.1, operations: [], actions: [{ kind: "unknown" }] };
+  }
+  if (normalized.includes("no era")) {
+    return {
+      intent: "cart_operations",
+      confidence: 0.99,
+      operations: [],
+      actions: [
+        { kind: "cart_operation", operationKind: "remove", productId: "california", quantity: 1, optionIds: [] },
+        { kind: "cart_operation", operationKind: "add", productId: "california", quantity: 1, optionIds: ["chicken"] },
+      ],
+    };
+  }
+  if (normalized.includes("cambia hamburguesa")) {
+    return {
+      intent: "cart_operations",
+      confidence: 0.99,
+      operations: [],
+      actions: [
+        { kind: "cart_operation", operationKind: "remove", productId: "simple", quantity: 1, optionIds: [] },
+        { kind: "cart_operation", operationKind: "add", productId: "double", quantity: 1, optionIds: [] },
+      ],
+    };
+  }
+  if (normalized.includes("otro")) {
+    return {
+      intent: "cart_operations",
+      confidence: 0.99,
+      operations: [],
+      actions: [
+        { kind: "cart_operation", operationKind: "add", productId: "california", quantity: 1, optionIds: ["beef"] },
+        { kind: "cart_operation", operationKind: "add", productId: "california", quantity: 1, optionIds: ["chicken"] },
+      ],
+    };
+  }
+  if (normalized.includes("hamburguesa sencilla")) {
+    return {
+      intent: "cart_operations",
+      confidence: 0.99,
+      operations: [],
+      actions: [{ kind: "cart_operation", operationKind: "add", productId: "simple", quantity: 1, optionIds: [] }],
+    };
+  }
+  return { intent: "unknown", confidence: 0.1, operations: [], actions: [{ kind: "unknown" }] };
+};
+
+function dependencies(): WhatsappPilotEvaluatorDependencies {
+  return {
+    catalog,
+    interpreter,
+    mapsValidAddress: "Dirección configurada del local",
+    quoteDelivery: async (address) =>
+      address.startsWith("Ciudad Obregón")
+        ? { status: "needs_handoff", reason: "address_number_required" }
+        : {
+            status: "quoted",
+            quote: {
+              id: null,
+              formattedAddress: "Domicilio validado",
+              colony: "Centro",
+              latitude: 27.48,
+              longitude: -109.93,
+              distanceMeters: 100,
+              baseFee: 30,
+              surcharge: 0,
+              totalFee: 30,
+            },
+          },
+  };
+}
+
+test("ejecuta 25 escenarios aislados en cinco bloques sin fallos críticos", async () => {
+  const results = [];
+  for (let batchIndex = 0; batchIndex < 5; batchIndex += 1) {
+    const batch = await runWhatsappPilotBatch({ batchIndex, dependencies: dependencies() });
+    expect(batch.results).toHaveLength(5);
+    results.push(...batch.results);
+  }
+
+  expect(results).toHaveLength(25);
+  expect(new Set(results.map((item) => item.id)).size).toBe(25);
+  expect(results.filter((item) => item.critical)).toEqual([]);
+  expect(results.filter((item) => item.status !== "passed")).toEqual([]);
+});
+
+test("rechaza bloques fuera del rango permitido", async () => {
+  await expect(
+    runWhatsappPilotBatch({ batchIndex: 5, dependencies: dependencies() })
+  ).rejects.toThrow("invalid_pilot_batch");
+});
+

@@ -42,6 +42,7 @@ import type { WhatsappControlData } from "@/lib/whatsapp/admin-types";
 import type { WhatsappChannelSettings } from "@/types/database";
 import { WhatsappCustomers } from "./whatsapp-customers";
 import { WhatsappInbox } from "./whatsapp-inbox";
+import { WhatsappPilotEvaluator } from "./whatsapp-pilot-evaluator";
 
 type ControlTab =
   | "overview"
@@ -303,6 +304,11 @@ function Diagnostics({ data, admin }: { data: WhatsappControlData; admin: boolea
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+      {admin ? (
+        <div className="xl:col-span-2">
+          <WhatsappPilotEvaluator />
+        </div>
+      ) : null}
       <Panel>
         <div className="border-b border-border p-4">
           <h2 className="font-heading text-lg font-bold">Estado técnico del canal</h2>

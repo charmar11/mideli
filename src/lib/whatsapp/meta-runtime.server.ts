@@ -2,9 +2,9 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { MenuItem, Order } from "@/types/database";
-import { buildConversationCatalog } from "./catalog";
+import type { Order } from "@/types/database";
 import { answerBusinessQuestion } from "./business-answers";
+import { loadWhatsappCatalog } from "./catalog.server";
 import { addressConfirmationReply, deliveryQuoteReply } from "./customer-messages";
 import { safeErrorDetail } from "./error-detail";
 import {
@@ -147,31 +147,6 @@ function trimDryRunMessageIds() {
   if (dryRunMessageIds.size <= MAX_DRY_RUN_MESSAGES) return;
   const oldest = dryRunMessageIds.values().next().value;
   if (oldest) dryRunMessageIds.delete(oldest);
-}
-
-async function loadCatalog(): Promise<ConversationCatalog> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("menu_items")
-    .select(
-      "id,category_id,name,description,price,is_active,whatsapp_enabled,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(id,name,sort_order,is_active)"
-    )
-    .eq("is_active", true)
-    .eq("categories.is_active", true)
-    .order("sort_order", { ascending: true });
-  if (!error) return buildConversationCatalog((data ?? []) as unknown as MenuItem[]);
-
-  // Compatibilidad durante el piloto antes de aplicar la migración pendiente.
-  const fallback = await admin
-    .from("menu_items")
-    .select(
-      "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(id,name,sort_order,is_active)"
-    )
-    .eq("is_active", true)
-    .eq("categories.is_active", true)
-    .order("sort_order", { ascending: true });
-  if (fallback.error) throw fallback.error;
-  return buildConversationCatalog((fallback.data ?? []) as unknown as MenuItem[]);
 }
 
 function messageInput(message: NormalizedMetaMessage, state: ConversationState) {
@@ -757,7 +732,7 @@ export async function processMetaWebhook(
   if (webhook.messages.length === 0) return summary;
 
   const [catalog, operations] = await Promise.all([
-    loadCatalog(),
+    loadWhatsappCatalog(),
     loadWhatsappOperationsConfig(),
   ]);
   if (!operations.settings.receive_enabled) return summary;

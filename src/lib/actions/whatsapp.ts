@@ -13,6 +13,8 @@ import type {
   WhatsappCustomerDirectory,
   WhatsappInboxSnapshot,
 } from "@/lib/whatsapp/admin-types";
+import type { WhatsappPilotBatchResult } from "@/lib/whatsapp/pilot-evaluator-types";
+import { runWhatsappPilotBatchOnServer } from "@/lib/whatsapp/pilot-evaluator.server";
 import { readWhatsappServerConfig } from "@/lib/whatsapp/config.server";
 import {
   loadWhatsappCustomerDetail,
@@ -63,6 +65,18 @@ function conversationStateAtStage(value: unknown, stage: "ordering" | "handoff")
     ? (value as Record<string, unknown>)
     : {};
   return { ...state, stage, unknownCount: 0 };
+}
+
+export async function runWhatsappPilotBatchAction(
+  batchIndex: number
+): Promise<WhatsappActionResult<WhatsappPilotBatchResult>> {
+  try {
+    await requireChannelUser(true);
+    const data = await runWhatsappPilotBatchOnServer(batchIndex);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
 }
 
 function conversationContext(value: unknown): WhatsappAdminConversation["context"] {
