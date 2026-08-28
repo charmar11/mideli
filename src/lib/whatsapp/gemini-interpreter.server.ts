@@ -5,6 +5,7 @@ import type {
   SemanticInterpretation,
   SemanticInterpreter,
 } from "./hybrid-interpreter";
+import { selectGeminiCatalogItems } from "./gemini-catalog-context";
 import { geminiResponseSchema } from "./gemini-schema";
 import {
   MAX_GEMINI_ACTIONS,
@@ -100,6 +101,13 @@ async function requestGemini(input: {
 function payloadForInterpreter(
   input: Parameters<SemanticInterpreter>[0]
 ) {
+  const catalogItems = selectGeminiCatalogItems({
+    message: input.message,
+    catalog: input.catalog,
+    cartProductIds: input.state.cart.map((line) => line.menuItemId),
+    selectedCategoryId: input.state.selectedCategoryId,
+  });
+
   return {
     instruction: [
       "Interpreta únicamente una instrucción de carrito para un restaurante mexicano.",
@@ -128,7 +136,7 @@ function payloadForInterpreter(
       })),
     },
     customerMessage: input.message,
-    catalog: input.catalog.items.map((item) => ({
+    catalog: catalogItems.map((item) => ({
       productId: item.id,
       name: item.name,
       description: item.description,

@@ -34,6 +34,8 @@ Si Gemini no está disponible, Mideli conservará el comportamiento seguro actua
 
 La verificación real de producción detectó que el endpoint de `gemini-3.1-flash-lite` rechaza el esquema cuando contiene `maxItems`, `minimum` o `maximum`, aunque acepta el mismo esquema sin esas restricciones. Mideli no enviará esos tres atributos a Google. Los límites de confianza, acciones, cantidad y opciones seguirán aplicándose después de recibir la respuesta y antes de modificar el carrito.
 
+El contexto del catálogo también se reduce antes de cada solicitud. Se envían únicamente productos mencionados, productos que ya están en el carrito o, si el cliente navega una categoría sin mencionar un nombre, un máximo de doce productos de esa categoría. Esto evita consumir tiempo y cuota serializando el menú completo en instrucciones que solo afectan uno o dos platillos.
+
 ## Evaluador temporal
 
 El evaluador ya ejecuta cinco bloques consecutivos y cada escenario de un bloque en serie. Se conservará este comportamiento porque evita ráfagas innecesarias. No se añadirá una cola global ni persistencia nueva.

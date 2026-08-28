@@ -13,6 +13,7 @@ import {
   geminiRetryDelayMs,
 } from "@/lib/whatsapp/gemini-policy";
 import { geminiResponseSchema } from "@/lib/whatsapp/gemini-schema";
+import { selectGeminiCatalogItems } from "@/lib/whatsapp/gemini-catalog-context";
 import { resolveDrivingDistance } from "@/lib/whatsapp/google-route-distance";
 import type { MenuItem } from "@/types/database";
 
@@ -312,4 +313,26 @@ test("el esquema de Gemini delega los límites numéricos a la validación local
   expect(serialized).not.toContain('"minimum"');
   expect(serialized).not.toContain('"maximum"');
   expect(serialized).not.toContain('"maxItems"');
+});
+
+test("Gemini recibe solo el producto mencionado en vez del catálogo completo", () => {
+  const selected = selectGeminiCatalogItems({
+    message: "Quiero un California de Res y otro de Pollo",
+    catalog,
+    cartProductIds: [],
+    selectedCategoryId: null,
+  });
+
+  expect(selected.map((item) => item.id)).toEqual(["california"]);
+});
+
+test("Gemini conserva el producto del carrito al interpretar un reemplazo", () => {
+  const selected = selectGeminiCatalogItems({
+    message: "cambia la hamburguesa sencilla por hamburguesa doble",
+    catalog,
+    cartProductIds: ["simple"],
+    selectedCategoryId: null,
+  });
+
+  expect(selected.map((item) => item.id)).toEqual(["simple", "double"]);
 });
