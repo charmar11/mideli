@@ -5,6 +5,7 @@ import type {
   SemanticInterpretation,
   SemanticInterpreter,
 } from "./hybrid-interpreter";
+import { geminiResponseSchema } from "./gemini-schema";
 
 const REQUEST_TIMEOUT_MS = 2_500;
 
@@ -12,64 +13,6 @@ type GeminiConfig = {
   apiKey: string;
   model: string;
 };
-
-function responseSchema() {
-  return {
-    type: "object",
-    additionalProperties: false,
-    required: ["confidence", "actions"],
-    properties: {
-      confidence: { type: "number", minimum: 0, maximum: 1 },
-      actions: {
-        type: "array",
-        maxItems: 16,
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: [
-            "kind",
-            "operationKind",
-            "productId",
-            "quantity",
-            "optionIds",
-            "noteKind",
-            "text",
-          ],
-          properties: {
-            kind: {
-              type: "string",
-              enum: [
-                "cart_operation",
-                "note",
-                "finish_order",
-                "continue_order",
-                "show_menu",
-                "request_human",
-                "unknown",
-              ],
-            },
-            operationKind: {
-              type: "string",
-              enum: ["add", "remove", "set_quantity", "none"],
-            },
-            productId: { type: "string" },
-            quantity: { type: "integer", minimum: 0, maximum: 20 },
-            optionIds: {
-              type: "array",
-              maxItems: 12,
-              items: { type: "string" },
-            },
-            noteKind: {
-              type: "string",
-              enum: ["delivery", "order", "product", "none"],
-            },
-            text: { type: "string", maxLength: 500 },
-          },
-        },
-      },
-    },
-  };
-}
 
 function payloadForInterpreter(
   input: Parameters<SemanticInterpreter>[0]
@@ -222,7 +165,7 @@ export function createGeminiSemanticInterpreter(
               temperature: 0,
               maxOutputTokens: 1200,
               responseMimeType: "application/json",
-              responseJsonSchema: responseSchema(),
+              responseJsonSchema: geminiResponseSchema(),
             },
           }),
           signal: controller.signal,
