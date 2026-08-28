@@ -90,6 +90,69 @@ const catalog = buildConversationCatalog([
   },
 ] as unknown as MenuItem[]);
 
+const catalogWithMultiGroupProductFirst = buildConversationCatalog([
+  {
+    id: "boneless",
+    category_id: "wings",
+    name: "Boneless",
+    description: "10 a 12 piezas.",
+    price: 159,
+    is_active: true,
+    whatsapp_enabled: true,
+    sort_order: 1,
+    image_url: "",
+    created_at: now,
+    updated_at: now,
+    categories: { id: "wings", name: "Boneless y Alitas", sort_order: 1, is_active: true },
+    modifiers: [
+      {
+        id: "presentation",
+        name: "Presentación",
+        required: true,
+        selection_mode: "single",
+        options: [
+          { id: "with-fries", name: "Con papas", price: 30 },
+          { id: "without-fries", name: "Sin papas", price: 0 },
+        ],
+      },
+      {
+        id: "flavor",
+        name: "Sabor",
+        required: true,
+        selection_mode: "single",
+        options: [
+          { id: "bbq", name: "BBQ", price: 0 },
+          { id: "buffalo", name: "Buffalo", price: 0 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "california-single-group",
+    category_id: "sushi",
+    name: "California",
+    description: "Res o pollo.",
+    price: 125,
+    is_active: true,
+    whatsapp_enabled: true,
+    sort_order: 2,
+    image_url: "",
+    created_at: now,
+    updated_at: now,
+    categories: { id: "sushi", name: "Sushis", sort_order: 2, is_active: true },
+    modifiers: [{
+      id: "protein-single-group",
+      name: "Tipo",
+      required: true,
+      selection_mode: "single",
+      options: [
+        { id: "beef-single-group", name: "Res", price: 0 },
+        { id: "chicken-single-group", name: "Pollo", price: 0 },
+      ],
+    }],
+  },
+] as unknown as MenuItem[]);
+
 const interpreter: SemanticInterpreter = async ({ message }) => {
   const normalized = message.toLocaleLowerCase("es-MX");
   if (normalized.includes("combo lunar")) {
@@ -176,6 +239,21 @@ test("ejecuta 25 escenarios aislados en cinco bloques sin fallos críticos", asy
   expect(new Set(results.map((item) => item.id)).size).toBe(25);
   expect(results.filter((item) => item.critical)).toEqual([]);
   expect(results.filter((item) => item.status !== "passed")).toEqual([]);
+});
+
+test("el piloto usa un producto compatible aunque otro tenga varios grupos obligatorios", async () => {
+  const customDependencies = dependencies();
+  customDependencies.catalog = catalogWithMultiGroupProductFirst;
+  customDependencies.interpreter = null;
+
+  const batch = await runWhatsappPilotBatch({ batchIndex: 1, dependencies: customDependencies });
+  const split = batch.results.find((item) => item.id === "split-options");
+
+  expect(split).toMatchObject({
+    status: "passed",
+    critical: false,
+    detail: "Mideli aplicó dos configuraciones válidas",
+  });
 });
 
 test("rechaza bloques fuera del rango permitido", async () => {

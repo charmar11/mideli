@@ -134,9 +134,10 @@ function fixtureUnavailable(name: string) {
 }
 
 function requiredSingleGroup(item: ConversationCatalogItem) {
-  return item.modifiers.find(
+  const groups = item.modifiers.filter(
     (group) => group.required && group.selection_mode !== "multiple" && group.options.length >= 2
   );
+  return groups.length === 1 ? groups[0] : null;
 }
 
 function buildFixtures(catalog: ConversationCatalog): Fixtures {
