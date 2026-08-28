@@ -159,3 +159,11 @@ La herramienta se implementará en módulos aislados para poder retirarla sin af
 
 No se crearán tablas, columnas, variables ni dependencias que deban limpiarse. Las pruebas permanentes del motor conversacional seguirán existiendo porque protegen la operación, pero el evaluador ejecutable no quedará incluido en Mideli.
 
+## Ajuste posterior a la primera ejecución
+
+La primera evaluación real confirmó dos necesidades de diagnóstico:
+
+- los escenarios de Gemini mostrarán una causa sanitizada (`autenticación`, `cuota`, `tiempo de espera`, `respuesta inválida` o `proveedor`) en lugar de un fallo genérico;
+- la prueba válida de Maps utilizará un punto sintético cercano al origen configurado, no el mismo domicilio del local, porque Google puede omitir la distancia cuando origen y destino coinciden.
+
+El punto sintético se genera únicamente en memoria desplazando las coordenadas del local. No representa a un cliente, no aparece en el reporte y no se persiste. La dirección incompleta continúa siendo la segunda comprobación negativa.

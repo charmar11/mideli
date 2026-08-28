@@ -7,7 +7,7 @@ import {
   loadWhatsappOperationsConfig,
   quoteWhatsappDelivery,
 } from "./operations.server";
-import { runWhatsappPilotBatch } from "./pilot-evaluator";
+import { mapsProbeAddress, runWhatsappPilotBatch } from "./pilot-evaluator";
 
 export async function runWhatsappPilotBatchOnServer(batchIndex: number) {
   const [catalog, operations] = await Promise.all([
@@ -27,7 +27,11 @@ export async function runWhatsappPilotBatchOnServer(batchIndex: number) {
     dependencies: {
       catalog,
       interpreter,
-      mapsValidAddress: operations.settings.store_address,
+      mapsValidAddress: mapsProbeAddress({
+        latitude: operations.settings.store_latitude,
+        longitude: operations.settings.store_longitude,
+        fallbackAddress: operations.settings.store_address,
+      }),
       quoteDelivery: (address) =>
         quoteWhatsappDelivery({
           conversationId: null,

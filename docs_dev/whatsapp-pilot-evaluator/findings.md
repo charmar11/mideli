@@ -10,3 +10,5 @@
 - El listado inicial tenía 27 escenarios con un límite de 25; se eliminaron dos comprobaciones redundantes para asegurar que las dos pruebas de Maps sí se ejecuten.
 - La suite completa de WhatsApp contiene 111 pruebas y pasó después de integrar el evaluador.
 - El evaluador usa el catálogo real, pero crea estados únicamente en memoria. Maps recibe `conversationId: null`, por lo que no persiste cotizaciones.
+- Gemini respondió HTTP 400 con la clave local y la categoría segura fue `auth`; los dos escenarios bloqueados dependen de una respuesta semántica válida.
+- Google geocodificó correctamente el domicilio del local, pero Routes omitió `distanceMeters` al calcular origen y destino idénticos. Fue un defecto del escenario, no de la geocodificación operativa.

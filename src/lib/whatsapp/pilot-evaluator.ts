@@ -63,6 +63,39 @@ type ScenarioOutcome = {
   critical?: boolean;
 };
 
+export function mapsProbeAddress(input: {
+  latitude: number | null;
+  longitude: number | null;
+  fallbackAddress: string;
+}) {
+  if (Number.isFinite(input.latitude) && Number.isFinite(input.longitude)) {
+    const latitude = (Number(input.latitude) + 0.006).toFixed(6);
+    const longitude = (Number(input.longitude) + 0.006).toFixed(6);
+    return `Ubicación compartida: ${latitude},${longitude}`;
+  }
+  return input.fallbackAddress.trim();
+}
+
+export function semanticDiagnosticDetail(diagnostics: SemanticDiagnostic[]) {
+  const diagnostic = [...diagnostics].reverse().find((item) => item.reason);
+  if (!diagnostic?.reason) return null;
+  const details: Record<NonNullable<SemanticDiagnostic["reason"]>, string> = {
+    auth: "Gemini rechazó la credencial configurada",
+    quota: "Gemini alcanzó su cuota disponible",
+    timeout: "Gemini excedió el tiempo de respuesta",
+    provider_error: "Gemini no pudo procesar la solicitud",
+    low_confidence_or_invalid: "Gemini devolvió una interpretación insegura",
+  };
+  return details[diagnostic.reason];
+}
+
+function semanticProviderFailureDetail(diagnostics: SemanticDiagnostic[]) {
+  const reason = [...diagnostics].reverse().find((item) => item.reason)?.reason;
+  return reason && reason !== "low_confidence_or_invalid"
+    ? semanticDiagnosticDetail(diagnostics)
+    : null;
+}
+
 function passed(detail = "Contrato cumplido"): ScenarioOutcome {
   return { status: "passed", detail };
 }
@@ -240,7 +273,11 @@ function scenarios(): ScenarioDefinition[] {
           options.includes(context.fixtures.secondOption) &&
           applied
           ? passed("Gemini aplicó dos configuraciones válidas")
-          : failed("No separó correctamente las dos configuraciones", true);
+          : failed(
+              semanticDiagnosticDetail(diagnostics) ??
+                "No separó correctamente las dos configuraciones",
+              true
+            );
       },
     },
     {
@@ -253,17 +290,24 @@ function scenarios(): ScenarioDefinition[] {
         if (!item) return fixtureUnavailable("un producto configurable");
         const state = addConfigured(context, context.fixtures.firstOption);
         if (!state) return fixtureUnavailable("una variación inicial");
-        const { result } = await hybrid(
+        const { result, diagnostics } = await hybrid(
           context,
           state,
           `no era ${context.fixtures.firstOption}, era ${context.fixtures.secondOption}`
         );
         const options = configuredOptions(result.state, item.id);
-        return hasItem(result.state, item.id, 1) &&
+        const correct = hasItem(result.state, item.id, 1) &&
           options.length === 1 &&
-          options[0] === context.fixtures.secondOption
+          options[0] === context.fixtures.secondOption;
+        const providerIssue = semanticProviderFailureDetail(diagnostics);
+        if (correct && providerIssue) return review(providerIssue);
+        return correct
           ? passed()
-          : failed("La corrección duplicó o conservó la opción anterior", true);
+          : failed(
+              semanticDiagnosticDetail(diagnostics) ??
+                "La corrección duplicó o conservó la opción anterior",
+              true
+            );
       },
     },
     {
@@ -289,10 +333,20 @@ function scenarios(): ScenarioDefinition[] {
         const second = context.fixtures.secondSimple;
         const state = addSimple(context);
         if (!first || !second || !state) return fixtureUnavailable("dos productos sencillos");
-        const { result } = await hybrid(context, state, `cambia ${first.name} por ${second.name}`);
-        return !hasItem(result.state, first.id) && hasItem(result.state, second.id, 1)
+        const { result, diagnostics } = await hybrid(
+          context,
+          state,
+          `cambia ${first.name} por ${second.name}`
+        );
+        const correct = !hasItem(result.state, first.id) && hasItem(result.state, second.id, 1);
+        const providerIssue = semanticProviderFailureDetail(diagnostics);
+        if (correct && providerIssue) return review(providerIssue);
+        return correct
           ? passed()
-          : failed("El reemplazo dejó un producto incorrecto", true);
+          : failed(
+              semanticDiagnosticDetail(diagnostics) ?? "El reemplazo dejó un producto incorrecto",
+              true
+            );
       },
     },
     {
@@ -426,16 +480,21 @@ function scenarios(): ScenarioDefinition[] {
       run: async (context) => {
         const item = context.fixtures.simple;
         if (!item) return fixtureUnavailable("un producto sencillo");
-        const { result } = await hybrid(
+        const { result, diagnostics } = await hybrid(
           context,
           createConversation("pilot"),
           `Una ${item.name}, sería todo para recoger y pago en efectivo`
         );
-        return hasItem(result.state, item.id, 1) &&
+        const correct = hasItem(result.state, item.id, 1) &&
           result.state.serviceType === "para_llevar" &&
-          result.state.pendingPaymentMethod === "efectivo"
+          result.state.pendingPaymentMethod === "efectivo";
+        return correct
           ? passed()
-          : failed("Perdió producto, entrega o pago de la instrucción múltiple", true);
+          : failed(
+              semanticDiagnosticDetail(diagnostics) ??
+                "Perdió producto, entrega o pago de la instrucción múltiple",
+              true
+            );
       },
     },
     {
@@ -496,10 +555,20 @@ function scenarios(): ScenarioDefinition[] {
       dependency: "gemini",
       run: async (context) => {
         const initial = createConversation("pilot");
-        const { result } = await hybrid(context, initial, "quiero el combo lunar secreto");
-        return result.state.cart.length === 0 && result.action !== "request_order_creation"
+        const { result, diagnostics } = await hybrid(
+          context,
+          initial,
+          "quiero el combo lunar secreto"
+        );
+        const safe = result.state.cart.length === 0 && result.action !== "request_order_creation";
+        const providerIssue = semanticProviderFailureDetail(diagnostics);
+        if (safe && providerIssue) return review(providerIssue);
+        return safe
           ? passed()
-          : failed("Una frase desconocida alteró el pedido", true);
+          : failed(
+              semanticDiagnosticDetail(diagnostics) ?? "Una frase desconocida alteró el pedido",
+              true
+            );
       },
     },
     {

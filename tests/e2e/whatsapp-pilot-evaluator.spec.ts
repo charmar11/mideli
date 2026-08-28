@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
 import {
+  mapsProbeAddress,
   runWhatsappPilotBatch,
+  semanticDiagnosticDetail,
   type WhatsappPilotEvaluatorDependencies,
 } from "@/lib/whatsapp/pilot-evaluator";
 import type { SemanticInterpreter } from "@/lib/whatsapp/hybrid-interpreter";
@@ -174,3 +176,50 @@ test("rechaza bloques fuera del rango permitido", async () => {
   ).rejects.toThrow("invalid_pilot_batch");
 });
 
+test("genera una ubicación de Maps cercana sin reutilizar un domicilio", () => {
+  const value = mapsProbeAddress({
+    latitude: 27.503311,
+    longitude: -109.936335,
+    fallbackAddress: "Dirección del local",
+  });
+
+  expect(value).toMatch(/^Ubicación compartida:/);
+  expect(value).not.toContain("Dirección del local");
+  expect(value).not.toContain("27.503311,-109.936335");
+});
+
+test("traduce fallos de Gemini sin exponer contenido ni credenciales", () => {
+  expect(
+    semanticDiagnosticDetail([
+      {
+        outcome: "clarification",
+        durationMs: 120,
+        providerDurationMs: 118,
+        reason: "auth",
+      },
+    ])
+  ).toBe("Gemini rechazó la credencial configurada");
+});
+
+test("expone autenticación de Gemini en los escenarios afectados", async () => {
+  const broken = dependencies();
+  broken.interpreter = async () => {
+    throw new Error("gemini_http_401");
+  };
+
+  const splitBatch = await runWhatsappPilotBatch({ batchIndex: 1, dependencies: broken });
+  const paymentBatch = await runWhatsappPilotBatch({ batchIndex: 3, dependencies: broken });
+  const split = splitBatch.results.find((item) => item.id === "split-options");
+  const payment = paymentBatch.results.find((item) => item.id === "early-payment");
+
+  expect(split).toMatchObject({
+    status: "failed",
+    critical: true,
+    detail: "Gemini rechazó la credencial configurada",
+  });
+  expect(payment).toMatchObject({
+    status: "failed",
+    critical: true,
+    detail: "Gemini rechazó la credencial configurada",
+  });
+});
