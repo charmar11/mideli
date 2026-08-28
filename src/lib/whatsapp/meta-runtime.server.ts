@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { MenuItem, Order } from "@/types/database";
 import { buildConversationCatalog } from "./catalog";
+import { answerBusinessQuestion } from "./business-answers";
 import { addressConfirmationReply, deliveryQuoteReply } from "./customer-messages";
 import { safeErrorDetail } from "./error-detail";
 import {
   createConversation,
+  conversationSummaryReply,
   handleConversationMessage,
   recoverDeliveryQuote,
   reconcileCartWithCatalog,
@@ -17,6 +19,7 @@ import {
 } from "./conversation-engine";
 import { createGeminiSemanticInterpreter } from "./gemini-interpreter.server";
 import { handleHybridConversationMessage } from "./hybrid-interpreter";
+import { respectHumanHandoffSetting } from "./handoff-policy";
 import type { readWhatsappServerConfig } from "./config.server";
 import type { NormalizedMetaMessage, NormalizedMetaWebhook } from "./meta-webhook";
 import {
@@ -62,24 +65,45 @@ async function interpretMessage(
   message: string,
   catalog: ConversationCatalog,
   config: WhatsappConfig,
+  operations: WhatsappOperationsConfig,
   deterministic = false
 ) {
-  if (deterministic) return handleConversationMessage(state, message, catalog);
+  const businessAnswer = answerBusinessQuestion(message, {
+    timezone: operations.settings.timezone,
+    storeAddress: operations.settings.store_address,
+    hours: operations.hours.map((rule) => ({
+      dayOfWeek: rule.day_of_week,
+      isOpen: rule.is_open,
+      opensAt: rule.opens_at,
+      closesAt: rule.closes_at,
+    })),
+  });
+  if (businessAnswer) {
+    return { state, reply: businessAnswer, action: "none" as const };
+  }
+  const localResult = deterministic
+    ? handleConversationMessage(state, message, catalog)
+    : null;
   const interpreter = config.geminiInterpreterEnabled
     ? createGeminiSemanticInterpreter({
         apiKey: config.geminiApiKey,
         model: config.geminiModel,
       })
     : null;
-  return handleHybridConversationMessage({
+  const result = localResult ?? await handleHybridConversationMessage({
+      state,
+      message,
+      catalog,
+      interpreter,
+      onDiagnostic: (event) => {
+        console.info(`[WhatsApp Gemini] ${JSON.stringify(event)}`);
+      },
+    });
+  return respectHumanHandoffSetting(
+    result,
     state,
-    message,
-    catalog,
-    interpreter,
-    onDiagnostic: (event) => {
-      console.info(`[WhatsApp Gemini] ${JSON.stringify(event)}`);
-    },
-  });
+    operations.settings.human_handoff_enabled
+  );
 }
 
 function stateForInboundMessage(
@@ -178,12 +202,26 @@ function dryRunResult(result: ConversationResult) {
   };
 }
 
+async function measuredMetaSend<T>(kind: "text" | "buttons" | "list", send: () => Promise<T>) {
+  const startedAt = Date.now();
+  try {
+    return await send();
+  } finally {
+    console.info(JSON.stringify({
+      event: "whatsapp_reply",
+      kind,
+      durationMs: Date.now() - startedAt,
+    }));
+  }
+}
+
 async function sendReply(
   config: WhatsappConfig,
   phone: string,
   body: string,
   state: ConversationState,
-  catalog: ConversationCatalog
+  catalog: ConversationCatalog,
+  humanHandoffEnabled: boolean
 ) {
   if (!config.accessToken || !config.phoneNumberId) return null;
   const providerConfig = {
@@ -191,30 +229,36 @@ async function sendReply(
     phoneNumberId: config.phoneNumberId,
     accessToken: config.accessToken,
   };
-  const interaction = interactionForState(state, catalog);
+  const interaction = interactionForState(state, catalog, { humanHandoffEnabled });
   if (interaction && body.length <= 1024) {
     try {
       if (interaction.kind === "buttons") {
-        return await sendMetaReplyButtonsMessage(
-          { to: phone, body, buttons: interaction.buttons },
-          providerConfig
+        return await measuredMetaSend("buttons", () =>
+          sendMetaReplyButtonsMessage(
+            { to: phone, body, buttons: interaction.buttons },
+            providerConfig
+          )
         );
       }
-      return await sendMetaListMessage(
-        {
-          to: phone,
-          body,
-          buttonText: interaction.buttonText,
-          sections: interaction.sections,
-        },
-        providerConfig
+      return await measuredMetaSend("list", () =>
+        sendMetaListMessage(
+          {
+            to: phone,
+            body,
+            buttonText: interaction.buttonText,
+            sections: interaction.sections,
+          },
+          providerConfig
+        )
       );
     } catch (error) {
       const detail = safeErrorDetail(error);
       console.warn(`[WhatsApp Meta] El control interactivo falló; se enviará texto: ${detail}`);
     }
   }
-  return sendMetaTextMessage({ to: phone, body }, providerConfig);
+  return measuredMetaSend("text", () =>
+    sendMetaTextMessage({ to: phone, body }, providerConfig)
+  );
 }
 
 async function sendAddressLocation(
@@ -270,6 +314,32 @@ async function confirmQuoteForState(
   return withDeliveryQuote(state, quote);
 }
 
+async function confirmedDeliveryQuoteResult(
+  conversationId: string | null,
+  state: ConversationState,
+  quote: ConversationDeliveryQuote,
+  operations: WhatsappOperationsConfig
+): Promise<ConversationResult> {
+  const confirmedState = await confirmQuoteForState(
+    conversationId,
+    state,
+    quote,
+    operations
+  );
+  const quoteReply = deliveryQuoteReply(
+    state.total,
+    quote,
+    confirmedState.payment?.method
+  );
+  return {
+    state: confirmedState,
+    action: "none",
+    reply: confirmedState.stage === "awaiting_confirmation"
+      ? `${quoteReply}\n\n${conversationSummaryReply(confirmedState)}`
+      : quoteReply,
+  };
+}
+
 async function notifyKitchen(order: Order) {
   const admin = createAdminClient();
   const { error } = await admin.functions.invoke("send-order-notification", {
@@ -315,6 +385,7 @@ async function processDryRunMessage(
           input.text,
           catalog,
           config,
+          operations,
           input.deterministic
         )
   );
@@ -335,11 +406,7 @@ async function processDryRunMessage(
         result.state.addressSource === "shared_location" ||
         result.state.addressSource === "saved_confirmed";
       result = skipsConfirmation
-        ? {
-            state: await confirmQuoteForState(null, result.state, quoted.quote, operations),
-            action: "none",
-            reply: deliveryQuoteReply(result.state.total, quoted.quote),
-          }
+        ? await confirmedDeliveryQuoteResult(null, result.state, quoted.quote, operations)
         : {
             state: withPendingDeliveryQuote(result.state, quoted.quote),
             action: "send_address_confirmation",
@@ -351,11 +418,7 @@ async function processDryRunMessage(
   } else if (result.action === "confirm_delivery_quote") {
     const quote = result.state.pendingDeliveryQuote;
     result = quote
-      ? {
-          state: await confirmQuoteForState(null, result.state, quote, operations),
-          action: "none",
-          reply: deliveryQuoteReply(result.state.total, quote),
-        }
+      ? await confirmedDeliveryQuoteResult(null, result.state, quote, operations)
       : recoverDeliveryQuote(result.state, "delivery_quote_confirmation_incomplete");
   }
   dryRunConversations.set(message.phone, result.state);
@@ -379,7 +442,14 @@ async function processDryRunMessage(
         }
       }
     }
-    const sent = await sendReply(config, message.phone, replyBody, result.state, catalog);
+    const sent = await sendReply(
+      config,
+      message.phone,
+      replyBody,
+      result.state,
+      catalog,
+      operations.settings.human_handoff_enabled
+    );
     if (sent) summary.repliesSent += 1;
     else summary.replyFailures += 1;
   } catch (error) {
@@ -400,7 +470,7 @@ async function processQueuedMessage(
   summary: MetaProcessingSummary
 ) {
   try {
-    if (state.stage === "handoff") {
+    if (state.stage === "handoff" && operations.settings.human_handoff_enabled) {
       await commitConversationMessage(conversationId, owner, message.id, {
         state,
         action: "none",
@@ -408,6 +478,9 @@ async function processQueuedMessage(
       });
       summary.processed += 1;
       return;
+    }
+    if (state.stage === "handoff") {
+      state = { ...state, stage: "ordering" };
     }
     const preparedState = stateForInboundMessage(state, message);
     const input = messageInput(message, preparedState);
@@ -419,6 +492,7 @@ async function processQueuedMessage(
             input.text,
             catalog,
             config,
+            operations,
             input.deterministic
           );
     let createdOrder: Order | null = null;
@@ -441,16 +515,12 @@ async function processQueuedMessage(
           result.state.addressSource === "shared_location" ||
           result.state.addressSource === "saved_confirmed";
         result = skipsConfirmation
-          ? {
-              state: await confirmQuoteForState(
-                conversationId,
-                result.state,
-                quoted.quote,
-                operations
-              ),
-              action: "none",
-              reply: deliveryQuoteReply(result.state.total, quoted.quote),
-            }
+          ? await confirmedDeliveryQuoteResult(
+              conversationId,
+              result.state,
+              quoted.quote,
+              operations
+            )
           : {
               state: withPendingDeliveryQuote(result.state, quoted.quote),
               action: "send_address_confirmation",
@@ -462,16 +532,12 @@ async function processQueuedMessage(
     } else if (result.action === "confirm_delivery_quote") {
       const quote = result.state.pendingDeliveryQuote;
       result = quote
-        ? {
-            state: await confirmQuoteForState(
-              conversationId,
-              result.state,
-              quote,
-              operations
-            ),
-            action: "none",
-            reply: deliveryQuoteReply(result.state.total, quote),
-          }
+        ? await confirmedDeliveryQuoteResult(
+            conversationId,
+            result.state,
+            quote,
+            operations
+          )
         : recoverDeliveryQuote(result.state, "delivery_quote_confirmation_incomplete");
     } else if (result.action === "mark_customer_received") {
       customerReceived = true;
@@ -563,7 +629,8 @@ async function processQueuedMessage(
           message.phone,
           replyBody,
           result.state,
-          catalog
+          catalog,
+          operations.settings.human_handoff_enabled
         );
         if (sent) {
           summary.repliesSent += 1;

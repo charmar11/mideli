@@ -117,8 +117,10 @@ function noteItemRows(state: ConversationState) {
 
 export function interactionForState(
   state: ConversationState,
-  catalog: ConversationCatalog
+  catalog: ConversationCatalog,
+  options: { humanHandoffEnabled?: boolean } = {}
 ): WhatsappInteraction | null {
+  const humanHandoffEnabled = options.humanHandoffEnabled ?? true;
   if (state.stage === "ordering") {
     return state.cart.length === 0
       ? {
@@ -126,7 +128,9 @@ export function interactionForState(
           buttons: [
             { id: "cmd:start", title: "Hacer pedido" },
             { id: "cmd:menu", title: "Ver menú" },
-            { id: "cmd:human", title: "Hablar con alguien" },
+            ...(humanHandoffEnabled
+              ? [{ id: "cmd:human", title: "Hablar con alguien" }]
+              : []),
           ],
         }
       : {
@@ -246,7 +250,9 @@ export function interactionForState(
       buttons: [
         { id: "address:confirm", title: "Sí, es aquí" },
         { id: "address:change", title: "Cambiar dirección" },
-        { id: "cmd:human", title: "Hablar con alguien" },
+        ...(humanHandoffEnabled
+          ? [{ id: "cmd:human", title: "Hablar con alguien" }]
+          : []),
       ],
     };
   }
@@ -410,7 +416,9 @@ export function interactionForState(
       kind: "buttons",
       buttons: [
         { id: "cmd:start", title: "Nuevo pedido" },
-        { id: "cmd:human", title: "Necesito ayuda" },
+        ...(humanHandoffEnabled
+          ? [{ id: "cmd:human", title: "Necesito ayuda" }]
+          : []),
       ],
     };
   }

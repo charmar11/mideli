@@ -14,6 +14,10 @@
 - El sistema ya valida IDs de catálogo y opciones antes de aplicar resultados de Gemini.
 - El webhook ya tiene deduplicación y bloqueo por conversación; debe conservarse.
 - La suite actual cubre conversaciones, Gemini, operaciones, bandeja, clientes, ciclo de reparto y webhook.
+- El checkpoint previo a esta fase es `checkpoint-before-universal-whatsapp-2026-08-27`.
+- La línea base completa aprobó 324 pruebas en 21.9 segundos.
+- La detención operativa ya existe mediante `receive_enabled` y `auto_reply_enabled`; ambas banderas son respetadas por el runtime.
+- Las conversaciones reales compartidas por el usuario ya aportan regresiones anonimizables para navegación, notas, domicilio, pago y confirmación.
 
 ## Riesgos principales
 
@@ -44,3 +48,16 @@
 - No cambiar esquema remoto sin una migración nueva y dry-run.
 - No habilitar creación de pedidos durante pruebas exploratorias.
 - No desplegar si falla una invariante crítica aunque el porcentaje global sea alto.
+
+## Resultado de implementación
+
+- El intérprete acepta un plan tipado de hasta 16 acciones y conserva compatibilidad con el contrato anterior.
+- Los productos y opciones siguen validados contra IDs reales antes de tocar el carrito.
+- Servicio, pago y cierre se extraen localmente; Gemini recibe una versión sin esos datos.
+- El pago expresado anticipadamente queda pendiente y se aplica al llegar a su etapa.
+- Las respuestas que citan un prompt anterior se reducen a la respuesta nueva sin modificar direcciones multilínea.
+- Las preguntas de precio, ingredientes y disponibilidad no agregan productos.
+- Horario, pagos, cobertura y ubicación se contestan sin Gemini y desde configuración.
+- La atención humana desactivada elimina botones, transferencia y Push de atención.
+- La suite final aprobó 366 pruebas en escritorio, tablet y móvil.
+- El corpus dedicado aprobó más de 500 mensajes y 100 conversaciones completas.

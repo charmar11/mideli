@@ -926,7 +926,7 @@ test("pregunta por variaciones requeridas y completa la misma línea", () => {
   expect(second.state.total).toBe(189);
 });
 
-test("no inventa productos y transfiere después de dos mensajes sin coincidencias", () => {
+test("no inventa productos y ofrece atención solo después de tres mensajes sin coincidencias", () => {
   const first = handleConversationMessage(
     createConversation("5216440000000"),
     "Quiero una pizza familiar",
@@ -940,9 +940,12 @@ test("no inventa productos y transfiere después de dos mensajes sin coincidenci
     "Entonces una lasaña",
     catalog
   );
-  expect(second.action).toBe("handoff");
-  expect(second.state.stage).toBe("handoff");
-  expect(second.state.cart).toHaveLength(0);
+  expect(second.action).toBe("none");
+  expect(second.state.stage).toBe("ordering");
+  const third = handleConversationMessage(second.state, "Mejor una pizza", catalog);
+  expect(third.action).toBe("handoff");
+  expect(third.state.stage).toBe("handoff");
+  expect(third.state.cart).toHaveLength(0);
 });
 
 test("completa domicilio, efectivo y solicita crear solo después de confirmar", () => {
@@ -1149,12 +1152,12 @@ test("retira un producto desactivado antes de crear el pedido y exige reconfirma
   expect(reconciliation.state.total).toBe(159);
 });
 
-test("un archivo no compatible pasa la conversación a atención humana", () => {
+test("un archivo no compatible conserva la conversación y explica los formatos admitidos", () => {
   const result = unsupportedMessageHandoff(createConversation("5216440000000"));
 
-  expect(result.action).toBe("handoff");
-  expect(result.state.stage).toBe("handoff");
-  expect(result.reply).toContain("persona del equipo");
+  expect(result.action).toBe("none");
+  expect(result.state.stage).toBe("ordering");
+  expect(result.reply).toContain("texto, botones y ubicaciones");
 });
 
 test("tolera plural y un error ortográfico claro sin ampliar el catálogo", () => {

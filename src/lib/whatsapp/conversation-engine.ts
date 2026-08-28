@@ -13,6 +13,7 @@ import {
 } from "./normalize";
 import { isExplicitDeliveryReceipt } from "./delivery-lifecycle";
 import { detectConversationNote } from "./conversation-notes";
+import { customerReplyText } from "./customer-input";
 import type {
   ConversationCatalog,
   ConversationCatalogItem,
@@ -64,6 +65,9 @@ function withServiceType(
     return {
       ...state,
       serviceType,
+      payment: null,
+      pendingPaymentMethod:
+        state.pendingPaymentMethod === "tarjeta" ? null : state.pendingPaymentMethod,
       deliveryQuote: null,
       pendingDeliveryQuote: null,
       addressConfirmed: false,
@@ -216,9 +220,8 @@ export function unsupportedMessageHandoff(
   state: ConversationState
 ): ConversationResult {
   return result(
-    { ...state, stage: "handoff" },
-    "Recibí un archivo que necesito revisar personalmente. Una persona del equipo continuará contigo.",
-    "handoff"
+    state,
+    "Por ahora puedo leer texto, botones y ubicaciones de WhatsApp. Escríbeme lo importante del archivo y continuamos sin perder tu pedido 😊"
   );
 }
 
@@ -226,6 +229,7 @@ export function withDeliveryQuote(
   state: ConversationState,
   deliveryQuote: ConversationDeliveryQuote
 ): ConversationState {
+  const pendingMethod = state.pendingPaymentMethod;
   return {
     ...state,
     deliveryQuote,
@@ -234,7 +238,9 @@ export function withDeliveryQuote(
     addressConfirmed: true,
     deliveryQuoteAttempts: 0,
     total: orderTotal(state.cart, deliveryQuote),
-    stage: "awaiting_payment",
+    payment: pendingMethod ? { method: pendingMethod, cashTendered: null } : state.payment,
+    pendingPaymentMethod: null,
+    stage: pendingMethod ? "awaiting_confirmation" : "awaiting_payment",
   };
 }
 
@@ -350,13 +356,24 @@ function semanticMessageForCommand(message: string) {
 }
 
 function isDoneIntent(text: string) {
-  return ["ya es todo", "eso es todo", "seria todo", "terminar", "listo", "nada mas"].some(
+  return [
+    "ya es todo",
+    "eso es todo",
+    "seria todo",
+    "seria todo gracias",
+    "terminar",
+    "terminamos",
+    "finalizar",
+    "listo",
+    "nada mas",
+    "con eso",
+  ].some(
     (phrase) => text === phrase || includesPhrase(text, phrase)
   );
 }
 
 function isConfirmation(text: string) {
-  if (["si", "correcto", "adelante", "de acuerdo"].includes(text)) return true;
+  if (["si", "sip", "simon", "correcto", "adelante", "de acuerdo", "confirmado"].includes(text)) return true;
   if (/^si(?:,)?\s+(?:es|esta)\s+(?:ahi|alli|aqui|correcto)$/.test(text)) return true;
   return /^(?:si\s+)?confirm(?:o|ar)(?:\s+(?:el|mi)\s+pedido)?$/.test(text);
 }
@@ -378,11 +395,28 @@ function acceptsCurrentCart(text: string) {
 }
 
 function isNegative(text: string) {
-  return ["no", "no gracias", "ninguna", "sin bebida"].includes(text);
+  return [
+    "no",
+    "no gracias",
+    "no por favor",
+    "ninguna",
+    "ninguno",
+    "ninguna gracias",
+    "sin bebida",
+    "sin bebidas",
+    "no quiero",
+  ].includes(text);
 }
 
 function requestsHuman(text: string) {
-  return ["humano", "asesor", "persona", "hablar con alguien", "atencion humana"].some(
+  return [
+    "humano",
+    "asesor",
+    "hablar con alguien",
+    "hablar con una persona",
+    "quiero hablar con alguien",
+    "atencion humana",
+  ].some(
     (phrase) => includesPhrase(text, phrase)
   );
 }
@@ -799,7 +833,7 @@ function handlePendingNoteTarget(
     }) ?? result(resumeState, "No pude guardar la indicación.");
   }
 
-  if (pending.attempts >= 1) {
+  if (pending.attempts >= 2) {
     return result(
       { ...state, stage: "handoff", pendingNote: null },
       "Quiero asegurarme de anotar bien la indicación. Una persona del equipo continuará contigo.",
@@ -881,6 +915,7 @@ export function createConversation(phone: string): ConversationState {
     deliveryQuoteAttempts: 0,
     savedAddress: null,
     payment: null,
+    pendingPaymentMethod: null,
     orderNotes: "",
     deliveryNotes: "",
     pendingNote: null,
@@ -916,6 +951,7 @@ export function hydrateConversation(
     addressConfirmationAttempts: value.addressConfirmationAttempts ?? 0,
     deliveryQuoteAttempts: value.deliveryQuoteAttempts ?? 0,
     savedAddress: value.savedAddress ?? null,
+    pendingPaymentMethod: value.pendingPaymentMethod ?? null,
     orderNotes: value.orderNotes ?? "",
     deliveryNotes: value.deliveryNotes ?? "",
     pendingNote: value.pendingNote ?? null,
@@ -985,6 +1021,43 @@ function selectedPageItems(state: ConversationState, catalog: ConversationCatalo
   const items = catalogItemsForSelection(state, catalog);
   const start = Math.max(0, state.catalogPage) * DEFAULT_PAGE_SIZE;
   return items.slice(start, start + DEFAULT_PAGE_SIZE);
+}
+
+function catalogQuestionReply(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+): ConversationResult | null {
+  const text = normalizeText(message);
+  if (
+    state.cart.length > 0 &&
+    /\b(cuanto llevo|cuanto es|cual es el total|total del pedido|como va mi pedido)\b/.test(text)
+  ) {
+    return result(
+      state,
+      `🧾 Llevas:\n\n${cartBreakdown(state.cart)}\n\nTotal actual: *$${state.total}* 😊`
+    );
+  }
+
+  if (!/\b(cuanto cuesta|que cuesta|precio|que lleva|que contiene|ingredientes|tienen|tienes|hay|disponible|venden)\b/.test(text)) {
+    return null;
+  }
+  const direct = findCatalogProducts(message, catalog);
+  const contextual = direct.length === 0 && state.selectedCategoryId
+    ? findCatalogProductsInCategory(message, catalog, state.selectedCategoryId)
+    : [];
+  const matches = direct.length > 0 ? direct : contextual;
+  const unique = [...new Map(matches.map((match) => [match.item.id, match.item])).values()];
+  if (unique.length !== 1) return null;
+  const item = unique[0];
+  const description = item.description.trim() ? `\n${item.description.trim()}` : "";
+  const options = item.modifiers
+    .map((group) => `${group.name}: ${group.options.map((option) => option.name).join(", ")}`)
+    .join("\n");
+  return result(
+    state,
+    `✅ *${item.name}* está disponible · *$${item.price}*${description}${options ? `\n${options}` : ""}\n\nSi lo deseas, dime cuántos agregamos 😊`
+  );
 }
 
 function categoryFromText(text: string, catalog: ConversationCatalog) {
@@ -1206,11 +1279,22 @@ function removeProductQuantity(
 function replacementParts(text: string) {
   const delimiter = " por ";
   const index = text.indexOf(delimiter);
-  if (index < 0) return null;
-  return {
-    source: text.slice(0, index).trim(),
-    target: text.slice(index + delimiter.length).trim(),
-  };
+  if (index >= 0) {
+    return {
+      source: text.slice(0, index).trim(),
+      target: text.slice(index + delimiter.length).trim(),
+    };
+  }
+  const correction = text.match(/^(?:no\s+era|no\s+es)\s+(.+?)(?:,|\s)+(?:era|es|mejor)\s+(.+)$/);
+  if (correction) return { source: correction[1].trim(), target: correction[2].trim() };
+  const preference = text.match(/^mejor\s+(.+?)\s+en\s+vez\s+de\s+(.+)$/);
+  return preference
+    ? { source: preference[2].trim(), target: preference[1].trim() }
+    : null;
+}
+
+function isReplacementIntent(text: string) {
+  return /^(cambia|cambiar|cambiame|reemplaza|reemplazar|no era|no es|mejor)\b/.test(text);
 }
 
 function handleProductReplacement(
@@ -1219,7 +1303,7 @@ function handleProductReplacement(
   catalog: ConversationCatalog
 ): ConversationResult | null {
   const text = normalizeText(message);
-  if (!/^(cambia|cambiar|cambiame|reemplaza|reemplazar)\b/.test(text)) return null;
+  if (!isReplacementIntent(text)) return null;
   const parts = replacementParts(text);
   if (!parts) return null;
   const source = findCatalogProducts(parts.source, catalog)[0];
@@ -1284,7 +1368,7 @@ function handleModifierReplacement(
   catalog: ConversationCatalog
 ): ConversationResult | null {
   const text = normalizeText(message);
-  if (!/^(cambia|cambiar|cambiame|reemplaza|reemplazar)\b/.test(text)) return null;
+  if (!isReplacementIntent(text)) return null;
   const parts = replacementParts(text);
   if (!parts) return null;
   const state = explodeConfiguredLines(rawState);
@@ -1406,6 +1490,8 @@ function handleBrowsingCatalog(
   }
 
   const text = normalizeText(message);
+  const question = catalogQuestionReply(state, message, catalog);
+  if (question) return question;
   const requestedService = serviceTypeFromText(text);
   if (includesPhrase(text, "volver")) {
     const next = { ...state, selectedCategoryId: null, catalogPage: 0 };
@@ -1499,6 +1585,12 @@ function continueAfterBeverages(state: ConversationState) {
     );
   }
   if (state.serviceType === "para_llevar") {
+    if (state.pendingPaymentMethod) {
+      return handlePayment(
+        { ...state, stage: "awaiting_payment" },
+        state.pendingPaymentMethod
+      );
+    }
     return result(
       { ...state, stage: "awaiting_payment" },
       `🛍️ Perfecto, será para recoger. ${paymentQuestion(state)}`
@@ -1516,6 +1608,8 @@ function handleOrdering(
   catalog: ConversationCatalog
 ) {
   const text = normalizeText(message);
+  const question = catalogQuestionReply(state, message, catalog);
+  if (question) return question;
   const requestedService = serviceTypeFromText(text);
   if (
     state.cart.length === 0 &&
@@ -1706,7 +1800,7 @@ function handleOrdering(
   }
 
   const ambiguityCount = state.ambiguityCount + 1;
-  if (ambiguityCount >= 2) {
+  if (ambiguityCount >= 3) {
     return result(
       { ...state, stage: "handoff", ambiguityCount },
       "Quiero ayudarte sin hacerte perder tiempo 😊 Una persona del equipo continuará contigo.",
@@ -1918,7 +2012,7 @@ function handleAddressConfirmation(state: ConversationState, message: string) {
 
   if (isNegative(text)) {
     const attempts = state.addressConfirmationAttempts + 1;
-    if (attempts >= 2) {
+    if (attempts >= 3) {
       return result(
         {
           ...state,
@@ -2008,6 +2102,7 @@ function handlePayment(state: ConversationState, message: string) {
   const nextState: ConversationState = {
     ...state,
     payment: { method, cashTendered: null },
+    pendingPaymentMethod: null,
     stage: "awaiting_confirmation",
     editContext: null,
   };
@@ -2836,12 +2931,17 @@ function currentStepReply(state: ConversationState, catalog: ConversationCatalog
   return "Continuemos con la opción actual 😊";
 }
 
+export function conversationSummaryReply(state: ConversationState) {
+  return cartSummary(state);
+}
+
 export function handleConversationMessage(
   rawState: ConversationState,
   message: string,
   catalog: ConversationCatalog
 ): ConversationResult {
   const state = hydrateConversation(rawState, rawState.phone);
+  message = customerReplyText(message);
   const command = message.trim();
 
   if (command === "cmd:human" || command === "human_help") {
@@ -2996,7 +3096,10 @@ export function handleConversationMessage(
     if (requestsNewOrder(text)) {
       return handleOrdering(createConversation(state.phone), "hola", catalog);
     }
-    return result(state, "Tu pedido ya fue confirmado. Si necesitas ayuda, escribe humano.");
+    return result(
+      state,
+      "✅ Tu pedido ya está confirmado. Te avisaremos por aquí cuando cambie su estado 😊"
+    );
   }
   if (requestsNewOrder(text)) {
     return handleOrdering(createConversation(state.phone), "hola", catalog);

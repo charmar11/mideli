@@ -2,7 +2,8 @@ import type { ConversationDeliveryQuote } from "./types";
 
 export function deliveryQuoteReply(
   subtotal: number,
-  quote: ConversationDeliveryQuote
+  quote: ConversationDeliveryQuote,
+  paymentMethod?: string | null
 ) {
   const distanceKm = Math.round((quote.distanceMeters / 1000) * 10) / 10;
   const surcharge = quote.surcharge > 0
@@ -10,7 +11,10 @@ export function deliveryQuoteReply(
     : "";
   const total = subtotal + quote.totalFee;
 
-  return `🛵 *¡Sí llegamos hasta tu domicilio!*\n\n📍 ${quote.formattedAddress}\n📏 Distancia: ${distanceKm} km\n💰 Tarifa base: $${quote.baseFee}${surcharge}\n🛵 Envío total: *$${quote.totalFee}*\n🧾 Total con envío: *$${total}*\n\n¿Pagarás en efectivo o por transferencia? 😊`;
+  const nextStep = paymentMethod
+    ? `Pago anotado: *${paymentMethod}*.\n\nRevisa el resumen para confirmar 😊`
+    : "¿Pagarás en efectivo o por transferencia? 😊";
+  return `🛵 *¡Sí llegamos hasta tu domicilio!*\n\n📍 ${quote.formattedAddress}\n📏 Distancia: ${distanceKm} km\n💰 Tarifa base: $${quote.baseFee}${surcharge}\n🛵 Envío total: *$${quote.totalFee}*\n🧾 Total con envío: *$${total}*\n\n${nextStep}`;
 }
 
 export function addressConfirmationReply(quote: ConversationDeliveryQuote) {

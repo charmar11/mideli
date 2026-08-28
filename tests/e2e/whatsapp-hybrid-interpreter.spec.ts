@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
-import { createConversation } from "@/lib/whatsapp/conversation-engine";
+import {
+  createConversation,
+  handleConversationMessage,
+  withDeliveryQuote,
+} from "@/lib/whatsapp/conversation-engine";
 import {
   handleHybridConversationMessage,
   type SemanticInterpreter,
@@ -172,4 +176,52 @@ test("no consulta Gemini cuando el mensaje contiene una dirección", async () =>
   });
 
   expect(calls).toBe(0);
+});
+
+test("conserva producto, cierre, domicilio y pago expresados en un solo mensaje", async () => {
+  const interpreter: SemanticInterpreter = async ({ message }) => {
+    expect(message).toBe("Dos California de res");
+    return {
+      intent: "cart_operations",
+      confidence: 0.99,
+      operations: [],
+      actions: [{
+        kind: "cart_operation",
+        operationKind: "add",
+        productId: "california",
+        quantity: 2,
+        optionIds: ["res"],
+      }],
+    };
+  };
+
+  const result = await handleHybridConversationMessage({
+    state: createConversation("5216440000000"),
+    message: "Dos California de res, sería todo a domicilio y pago transferencia",
+    catalog,
+    interpreter,
+  });
+
+  expect(result.state.cart).toHaveLength(2);
+  expect(result.state.serviceType).toBe("domicilio");
+  expect(result.state.pendingPaymentMethod).toBe("transferencia");
+  expect(result.state.stage).toBe("awaiting_beverage");
+
+  const addressState = handleConversationMessage(result.state, "no gracias", catalog).state;
+  const quoted = withDeliveryQuote(
+    { ...addressState, address: "Calle Prueba 123", addressConfirmed: true },
+    {
+      id: "quote-1",
+      formattedAddress: "Calle Prueba 123, Centro",
+      colony: "Centro",
+      latitude: 27.48,
+      longitude: -109.93,
+      distanceMeters: 2_000,
+      baseFee: 30,
+      surcharge: 0,
+      totalFee: 30,
+    }
+  );
+  expect(quoted.payment?.method).toBe("transferencia");
+  expect(quoted.stage).toBe("awaiting_confirmation");
 });

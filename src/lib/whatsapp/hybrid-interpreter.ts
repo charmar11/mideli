@@ -8,10 +8,34 @@ import { normalizeText } from "./normalize";
 import { containsSensitiveAccessData } from "./conversation-notes";
 import type {
   ConversationCatalog,
+  ConversationPaymentMethod,
   ConversationResult,
   ConversationServiceType,
   ConversationState,
 } from "./types";
+
+export type SemanticAction =
+  | {
+      kind: "cart_operation";
+      operationKind: ValidatedCartOperation["kind"];
+      productId: string;
+      quantity: number;
+      optionIds: string[];
+    }
+  | {
+      kind: "note";
+      noteKind: "delivery" | "order" | "product";
+      text: string;
+      productId: string | null;
+    }
+  | { kind: "set_service"; serviceType: ConversationServiceType }
+  | { kind: "set_payment"; method: ConversationPaymentMethod }
+  | { kind: "finish_order" }
+  | { kind: "continue_order" }
+  | { kind: "confirm_order" }
+  | { kind: "show_menu" }
+  | { kind: "request_human" }
+  | { kind: "unknown" };
 
 export type SemanticInterpretation = {
   intent: "cart_operations" | "note" | "finish_order" | "continue_order" | "unknown";
@@ -23,6 +47,7 @@ export type SemanticInterpretation = {
     text: string;
     productId: string | null;
   } | null;
+  actions?: SemanticAction[];
 };
 
 export type SemanticInterpreter = (input: {
@@ -32,8 +57,11 @@ export type SemanticInterpreter = (input: {
 }) => Promise<SemanticInterpretation>;
 
 export type SemanticDiagnostic = {
-  outcome: "applied" | "local_fallback" | "clarification";
+  outcome: "local_fast_path" | "applied" | "local_fallback" | "clarification";
   durationMs: number;
+  localDurationMs?: number;
+  providerDurationMs?: number;
+  stage?: ConversationState["stage"];
   intent?: SemanticInterpretation["intent"];
   operationCount?: number;
   reason?: "low_confidence_or_invalid" | "timeout" | "quota" | "auth" | "provider_error";
@@ -80,8 +108,18 @@ function containsPrivateCustomerData(message: string) {
     (/\b(calle|avenida|colonia|fraccionamiento|privada|boulevard|blvd|numero|num)\b/.test(text) &&
       /\b\d{1,6}\b/.test(text)) ||
     /\b(me llamo|mi nombre es|soy el cliente|soy la cliente)\b/.test(text) ||
-    /\b(efectivo|tarjeta|transferencia|clabe|cuenta bancaria)\b/.test(text)
+    /\b(clabe|cuenta bancaria|numero de cuenta)\b/.test(text)
   );
+}
+
+function semanticCustomerMessage(message: string) {
+  return message
+    .replace(/\b(?:(?:pago|pagaria|pagare|voy\s+a\s+pagar)\s+)?(?:en|por|con)?\s*(?:efectivo|transferencia|transfer|tarjeta)\b/gi, " ")
+    .replace(/\b(?:a\s+domicilio|para\s+llevar|para\s+recoger|paso\s+por)\b/gi, " ")
+    .replace(/\b(?:ser[ií]a\s+todo|eso\s+es\s+todo|ya\s+es\s+todo|nada\s+m[aá]s)\b/gi, " ")
+    .replace(/[,.]\s*(?:y\s*)?$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function likelyComplexOrder(message: string) {
@@ -96,6 +134,74 @@ function likelyComplexOrder(message: string) {
 function likelyNaturalNote(message: string) {
   const text = normalizeText(message);
   return /\b(sin|mitad|aparte|separado|separada|bien cocido|poco|extra|indicacion|nota)\b/.test(text);
+}
+
+function deterministicActions(message: string, state: ConversationState): SemanticAction[] {
+  const text = normalizeText(message);
+  const actions: SemanticAction[] = [];
+  if (/\b(domicilio|entrega|envio)\b/.test(text)) {
+    actions.push({ kind: "set_service", serviceType: "domicilio" });
+  } else if (/\b(recoger|para llevar|paso por)\b/.test(text)) {
+    actions.push({ kind: "set_service", serviceType: "para_llevar" });
+  }
+  if (/\b(efectivo)\b/.test(text)) {
+    actions.push({ kind: "set_payment", method: "efectivo" });
+  } else if (/\b(transferencia|transfer)\b/.test(text)) {
+    actions.push({ kind: "set_payment", method: "transferencia" });
+  } else if (/\b(tarjeta)\b/.test(text)) {
+    actions.push({ kind: "set_payment", method: "tarjeta" });
+  }
+  if (/\b(seria todo|eso es todo|ya es todo|nada mas|terminar|finalizar)\b/.test(text)) {
+    actions.push({ kind: "finish_order" });
+  }
+  if (
+    state.stage === "awaiting_confirmation" &&
+    /^(?:si\s+)?confirm(?:o|ar)(?:\s+(?:el|mi)\s+pedido)?$/.test(text)
+  ) {
+    actions.push({ kind: "confirm_order" });
+  }
+  return actions;
+}
+
+function actionsForInterpretation(interpretation: SemanticInterpretation): SemanticAction[] {
+  if (interpretation.actions) return interpretation.actions;
+  if (interpretation.intent === "cart_operations") {
+    return interpretation.operations.map((operation) => ({
+      kind: "cart_operation" as const,
+      operationKind: operation.kind,
+      productId: operation.productId,
+      quantity: operation.quantity,
+      optionIds: operation.optionIds,
+    }));
+  }
+  if (interpretation.intent === "note" && interpretation.note) {
+    return [{
+      kind: "note",
+      noteKind: interpretation.note.kind,
+      text: interpretation.note.text,
+      productId: interpretation.note.productId,
+    }];
+  }
+  if (interpretation.intent === "finish_order") return [{ kind: "finish_order" }];
+  if (interpretation.intent === "continue_order") return [{ kind: "continue_order" }];
+  return [{ kind: "unknown" }];
+}
+
+function mergeSemanticActions(
+  interpretation: SemanticInterpretation,
+  deterministic: SemanticAction[]
+) {
+  const inferred = actionsForInterpretation(interpretation).filter(
+    (action) => action.kind !== "unknown"
+  );
+  const kinds = new Set<SemanticAction["kind"]>(
+    inferred.map((action) => action.kind)
+  );
+  return [
+    ...inferred.filter((action) => action.kind === "cart_operation" || action.kind === "note"),
+    ...deterministic.filter((action) => !kinds.has(action.kind)),
+    ...inferred.filter((action) => action.kind !== "cart_operation" && action.kind !== "note"),
+  ].slice(0, 16);
 }
 
 function localMisunderstood(
@@ -142,27 +248,93 @@ function semanticClarification(state: ConversationState) {
 function applySemanticResult(
   state: ConversationState,
   interpretation: SemanticInterpretation,
-  catalog: ConversationCatalog
+  catalog: ConversationCatalog,
+  extractedActions: SemanticAction[] = []
 ) {
   if (!Number.isFinite(interpretation.confidence) || interpretation.confidence < 0.65) {
     return null;
   }
-  if (interpretation.intent === "finish_order") {
-    return handleConversationMessage(state, "sería todo", catalog);
+  const actions = mergeSemanticActions(interpretation, extractedActions);
+  if (actions.length === 0) return null;
+  const cartOperations = actions
+    .filter((action): action is Extract<SemanticAction, { kind: "cart_operation" }> =>
+      action.kind === "cart_operation"
+    )
+    .map((action) => ({
+      kind: action.operationKind,
+      productId: action.productId,
+      quantity: action.quantity,
+      optionIds: action.optionIds,
+    }));
+  let current = state;
+  let latest: ConversationResult | null = null;
+  if (cartOperations.length > 0) {
+    latest = applyValidatedCartOperations(current, cartOperations, catalog);
+    if (!latest) return null;
+    current = latest.state;
+    if (current.stage === "awaiting_modifiers") return latest;
   }
-  if (interpretation.intent === "continue_order") {
-    return handleConversationMessage(state, "sí", catalog);
+  for (const action of actions) {
+    if (action.kind === "cart_operation") continue;
+    if (action.kind === "note") {
+      latest = applyValidatedNote(current, {
+        kind: action.noteKind,
+        text: action.text,
+        productId: action.productId,
+      });
+      if (!latest) return null;
+      current = latest.state;
+      continue;
+    }
+    if (action.kind === "set_service") {
+      latest = handleConversationMessage(
+        { ...current, stage: "ordering" },
+        action.serviceType === "domicilio" ? "a domicilio" : "para recoger",
+        catalog
+      );
+      current = latest.state;
+      continue;
+    }
+    if (action.kind === "set_payment") {
+      if (action.method === "tarjeta" && current.serviceType === "domicilio") return null;
+      current = { ...current, pendingPaymentMethod: action.method };
+      if (current.stage === "awaiting_payment") {
+        latest = handleConversationMessage(current, action.method, catalog);
+        current = latest.state;
+      }
+      continue;
+    }
+    if (action.kind === "finish_order") {
+      latest = handleConversationMessage(
+        { ...current, stage: "ordering" },
+        "sería todo",
+        catalog
+      );
+      current = latest.state;
+      continue;
+    }
+    if (action.kind === "continue_order") {
+      latest = handleConversationMessage(current, "sí", catalog);
+      current = latest.state;
+      continue;
+    }
+    if (action.kind === "show_menu") {
+      latest = handleConversationMessage(current, "cmd:menu", catalog);
+      current = latest.state;
+      continue;
+    }
+    if (action.kind === "request_human") {
+      latest = handleConversationMessage(current, "cmd:human", catalog);
+      current = latest.state;
+      continue;
+    }
+    if (action.kind === "confirm_order") {
+      if (current.stage !== "awaiting_confirmation") return null;
+      latest = handleConversationMessage(current, "confirmo", catalog);
+      current = latest.state;
+    }
   }
-  if (interpretation.intent === "note" && interpretation.note) {
-    return applyValidatedNote(state, interpretation.note);
-  }
-  if (interpretation.intent !== "cart_operations") return null;
-  return applyValidatedCartOperations(
-    state,
-    interpretation.operations,
-    catalog,
-    interpretation.serviceType ?? null
-  );
+  return latest ?? null;
 }
 
 export async function handleHybridConversationMessage(input: {
@@ -172,12 +344,22 @@ export async function handleHybridConversationMessage(input: {
   interpreter?: SemanticInterpreter | null;
   onDiagnostic?: (event: SemanticDiagnostic) => void;
 }): Promise<ConversationResult> {
+  const totalStartedAt = Date.now();
+  const localStartedAt = Date.now();
   const local = handleConversationMessage(input.state, input.message, input.catalog);
+  const localDurationMs = Date.now() - localStartedAt;
+  const extractedActions = deterministicActions(input.message, input.state);
   if (
     !input.interpreter ||
     !semanticStage(input.state) ||
     containsPrivateCustomerData(input.message)
   ) {
+    emitDiagnostic(input.onDiagnostic, {
+      outcome: "local_fast_path",
+      durationMs: Date.now() - totalStartedAt,
+      localDurationMs,
+      stage: input.state.stage,
+    });
     return local;
   }
 
@@ -185,20 +367,36 @@ export async function handleHybridConversationMessage(input: {
     likelyComplexOrder(input.message) ||
     likelyNaturalNote(input.message) ||
     localMisunderstood(input.state, local);
-  if (!shouldInterpret) return local;
+  if (!shouldInterpret) {
+    emitDiagnostic(input.onDiagnostic, {
+      outcome: "local_fast_path",
+      durationMs: Date.now() - totalStartedAt,
+      localDurationMs,
+      stage: input.state.stage,
+    });
+    return local;
+  }
 
   const startedAt = Date.now();
   try {
     const interpretation = await input.interpreter({
       state: input.state,
-      message: input.message,
+      message: semanticCustomerMessage(input.message) || input.message,
       catalog: input.catalog,
     });
-    const applied = applySemanticResult(input.state, interpretation, input.catalog);
+    const applied = applySemanticResult(
+      input.state,
+      interpretation,
+      input.catalog,
+      extractedActions
+    );
     if (applied) {
       emitDiagnostic(input.onDiagnostic, {
         outcome: "applied",
-        durationMs: Date.now() - startedAt,
+        durationMs: Date.now() - totalStartedAt,
+        localDurationMs,
+        providerDurationMs: Date.now() - startedAt,
+        stage: input.state.stage,
         intent: interpretation.intent,
         operationCount: interpretation.operations.length,
       });
@@ -207,7 +405,10 @@ export async function handleHybridConversationMessage(input: {
     const useLocal = localLooksComplete(input.state, local, input.message);
     emitDiagnostic(input.onDiagnostic, {
       outcome: useLocal ? "local_fallback" : "clarification",
-      durationMs: Date.now() - startedAt,
+      durationMs: Date.now() - totalStartedAt,
+      localDurationMs,
+      providerDurationMs: Date.now() - startedAt,
+      stage: input.state.stage,
       intent: interpretation.intent,
       operationCount: interpretation.operations.length,
       reason: "low_confidence_or_invalid",
@@ -217,7 +418,10 @@ export async function handleHybridConversationMessage(input: {
     const useLocal = localLooksComplete(input.state, local, input.message);
     emitDiagnostic(input.onDiagnostic, {
       outcome: useLocal ? "local_fallback" : "clarification",
-      durationMs: Date.now() - startedAt,
+      durationMs: Date.now() - totalStartedAt,
+      localDurationMs,
+      providerDurationMs: Date.now() - startedAt,
+      stage: input.state.stage,
       reason: semanticErrorReason(error),
     });
     return useLocal ? local : semanticClarification(input.state);

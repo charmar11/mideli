@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "playwright test",
+    "test:whatsapp-language": "playwright test tests/e2e/whatsapp-language-evaluation.spec.ts --project=desktop",
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {

@@ -49,6 +49,8 @@ export type ConversationPayment = {
   cashTendered: number | null;
 };
 
+export type ConversationPaymentMethod = ConversationPayment["method"];
+
 export type ConversationDeliveryQuote = {
   id: string | null;
   formattedAddress: string;
@@ -150,6 +152,7 @@ export type ConversationState = {
   deliveryQuoteAttempts: number;
   savedAddress: ConversationSavedAddress | null;
   payment: ConversationPayment | null;
+  pendingPaymentMethod: ConversationPaymentMethod | null;
   orderNotes: string;
   deliveryNotes: string;
   pendingNote: ConversationPendingNote | null;
