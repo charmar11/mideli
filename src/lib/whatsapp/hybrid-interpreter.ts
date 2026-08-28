@@ -4,7 +4,8 @@ import {
   handleConversationMessage,
   type ValidatedCartOperation,
 } from "./conversation-engine";
-import { normalizeText } from "./normalize";
+import { findCatalogProducts } from "./catalog";
+import { includesPhrase, normalizeText } from "./normalize";
 import { containsSensitiveAccessData } from "./conversation-notes";
 import type {
   ConversationCatalog,
@@ -151,6 +152,59 @@ function likelyComplexOrder(message: string) {
 function likelyNaturalNote(message: string) {
   const text = normalizeText(message);
   return /\b(sin|mitad|aparte|separado|separada|bien cocido|poco|extra|indicacion|nota)\b/.test(text);
+}
+
+function optionAliases(name: string) {
+  const normalized = normalizeText(name);
+  return normalized === "res" ? [normalized, "carne"] : [normalized];
+}
+
+function deterministicDistributedOptions(
+  state: ConversationState,
+  message: string,
+  catalog: ConversationCatalog
+) {
+  const text = normalizeText(message);
+  if (!/\b(otro|otra|otros|otras)\b/.test(text)) return null;
+  const productMatches = findCatalogProducts(message, catalog);
+  if (productMatches.length !== 1) return null;
+  const productMatch = productMatches[0];
+  const requiredGroups = productMatch.item.modifiers.filter(
+    (group) => group.required && (group.selection_mode ?? "single") === "single"
+  );
+  if (requiredGroups.length !== 1) return null;
+  const group = requiredGroups[0];
+  const optionMatches = group.options
+    .flatMap((option) =>
+      optionAliases(option.name)
+        .filter((alias) => includesPhrase(text, alias))
+        .map((alias) => ({ option, alias, index: ` ${text} `.indexOf(` ${alias} `) }))
+    )
+    .filter((match, index, matches) =>
+      matches.findIndex((candidate) => candidate.option.id === match.option.id) === index
+    )
+    .sort((left, right) => left.index - right.index);
+  if (optionMatches.length < 2 || optionMatches.some((match) => !match.option.id)) return null;
+
+  const quantity = Math.max(productMatch.quantity, optionMatches.length);
+  const pending = applyValidatedCartOperations(
+    state,
+    [{ kind: "add", productId: productMatch.item.id, quantity, optionIds: [] }],
+    catalog
+  );
+  if (!pending || pending.state.stage !== "awaiting_modifiers") return null;
+
+  let canonicalMessage = text;
+  for (const match of optionMatches) {
+    const canonical = normalizeText(match.option.name);
+    if (match.alias !== canonical) {
+      canonicalMessage = ` ${canonicalMessage} `
+        .replace(` ${match.alias} `, ` ${canonical} `)
+        .trim();
+    }
+  }
+  const completed = handleConversationMessage(pending.state, canonicalMessage, catalog);
+  return completed.state.stage === "awaiting_modifiers" ? null : completed;
 }
 
 function deterministicActions(message: string, state: ConversationState): SemanticAction[] {
@@ -362,10 +416,24 @@ export async function handleHybridConversationMessage(input: {
   onDiagnostic?: (event: SemanticDiagnostic) => void;
 }): Promise<ConversationResult> {
   const totalStartedAt = Date.now();
+  const distributed = deterministicDistributedOptions(
+    input.state,
+    input.message,
+    input.catalog
+  );
+  const extractedActions = deterministicActions(input.message, input.state);
+  if (distributed && extractedActions.length === 0) {
+    emitDiagnostic(input.onDiagnostic, {
+      outcome: "local_fast_path",
+      durationMs: Date.now() - totalStartedAt,
+      localDurationMs: Date.now() - totalStartedAt,
+      stage: input.state.stage,
+    });
+    return distributed;
+  }
   const localStartedAt = Date.now();
   const local = handleConversationMessage(input.state, input.message, input.catalog);
   const localDurationMs = Date.now() - localStartedAt;
-  const extractedActions = deterministicActions(input.message, input.state);
   if (
     !input.interpreter ||
     !semanticStage(input.state) ||

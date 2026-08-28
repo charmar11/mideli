@@ -36,6 +36,8 @@ La verificación real de producción detectó que el endpoint de `gemini-3.1-fla
 
 El contexto del catálogo también se reduce antes de cada solicitud. Se envían únicamente productos mencionados, productos que ya están en el carrito o, si el cliente navega una categoría sin mencionar un nombre, un máximo de doce productos de esa categoría. Esto evita consumir tiempo y cuota serializando el menú completo en instrucciones que solo afectan uno o dos platillos.
 
+Las distribuciones explícitas de un producto con una variación obligatoria y opciones distintas se resuelven mediante el motor local. Frases como `un California de res y otro de pollo` crean dos líneas independientes sin consultar Gemini. Esto evita que una salida válida en formato, pero con referencias incorrectas, altere el pedido.
+
 ## Evaluador temporal
 
 El evaluador ya ejecuta cinco bloques consecutivos y cada escenario de un bloque en serie. Se conservará este comportamiento porque evita ráfagas innecesarias. No se añadirá una cola global ni persistencia nueva.

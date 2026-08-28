@@ -41,16 +41,20 @@ const catalog = buildConversationCatalog([
   },
 ] as unknown as MenuItem[]);
 
-test("Gemini puede desambiguar dos unidades configuradas en una sola frase", async () => {
+test("el motor local separa dos unidades configuradas aunque Gemini responda mal", async () => {
   const diagnostics: Array<{ outcome: string; operationCount?: number }> = [];
-  const interpreter: SemanticInterpreter = async () => ({
-    intent: "cart_operations",
-    confidence: 0.98,
-    operations: [
-      { kind: "add", productId: "california", quantity: 1, optionIds: ["res"] },
-      { kind: "add", productId: "california", quantity: 1, optionIds: ["pollo"] },
-    ],
-  });
+  let calls = 0;
+  const interpreter: SemanticInterpreter = async () => {
+    calls += 1;
+    return {
+      intent: "cart_operations",
+      confidence: 1,
+      operations: [
+        { kind: "add", productId: "california", quantity: 1, optionIds: ["res"] },
+        { kind: "add", productId: "producto-inventado", quantity: 1, optionIds: [] },
+      ],
+    };
+  };
 
   const result = await handleHybridConversationMessage({
     state: createConversation("5216440000000"),
@@ -68,8 +72,9 @@ test("Gemini puede desambiguar dos unidades configuradas en una sola frase", asy
   expect(result.state.total).toBe(250);
   expect(result.reply).toContain("1 California de Res");
   expect(result.reply).toContain("1 California de Pollo");
+  expect(calls).toBe(0);
   expect(diagnostics).toEqual([
-    expect.objectContaining({ outcome: "applied", operationCount: 2 }),
+    expect.objectContaining({ outcome: "local_fast_path" }),
   ]);
 });
 
@@ -112,9 +117,11 @@ test("si Gemini falla el motor local responde y no pierde el carrito", async () 
   expect(result.reply).toContain("Elige");
 });
 
-test("si Gemini falla en una distribución compleja no acepta un pedido parcial", async () => {
+test("una distribución explícita no depende de Gemini", async () => {
   const diagnostics: Array<{ outcome: string; reason?: string }> = [];
+  let calls = 0;
   const interpreter: SemanticInterpreter = async () => {
+    calls += 1;
     throw new Error("timeout");
   };
 
@@ -126,11 +133,14 @@ test("si Gemini falla en una distribución compleja no acepta un pedido parcial"
     onDiagnostic: (event) => diagnostics.push(event),
   });
 
-  expect(result.state.cart).toEqual([]);
-  expect(result.state.ambiguityCount).toBe(0);
-  expect(result.reply).toContain("confirmar cuál producto");
+  expect(result.state.cart).toHaveLength(2);
+  expect(result.state.cart.map((line) => line.selectedModifiers[0]?.optionName)).toEqual([
+    "Res",
+    "Pollo",
+  ]);
+  expect(calls).toBe(0);
   expect(diagnostics).toEqual([
-    expect.objectContaining({ outcome: "clarification", reason: "timeout" }),
+    expect.objectContaining({ outcome: "local_fast_path" }),
   ]);
 });
 

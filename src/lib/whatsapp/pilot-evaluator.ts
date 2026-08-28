@@ -277,23 +277,24 @@ function scenarios(): ScenarioDefinition[] {
       id: "split-options",
       title: "Dos unidades con opciones distintas",
       family: "lenguaje natural",
-      dependency: "gemini",
+      dependency: "local",
       run: async (context) => {
         const item = context.fixtures.configurable;
         if (!item) return fixtureUnavailable("un producto configurable");
-        if (!context.interpreter) return review("Gemini no está disponible");
         const { result, diagnostics } = await hybrid(
           context,
           createConversation("pilot"),
           `Quiero un ${item.name} de ${context.fixtures.firstOption} y otro de ${context.fixtures.secondOption}`
         );
         const options = configuredOptions(result.state, item.id);
-        const applied = diagnostics.some((event) => event.outcome === "applied");
+        const applied = diagnostics.some(
+          (event) => event.outcome === "applied" || event.outcome === "local_fast_path"
+        );
         return hasItem(result.state, item.id, 2) &&
           options.includes(context.fixtures.firstOption) &&
           options.includes(context.fixtures.secondOption) &&
           applied
-          ? passed("Gemini aplicó dos configuraciones válidas")
+          ? passed("Mideli aplicó dos configuraciones válidas")
           : failed(
               semanticDiagnosticDetail(diagnostics) ??
                 "No separó correctamente las dos configuraciones",

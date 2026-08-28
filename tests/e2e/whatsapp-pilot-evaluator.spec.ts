@@ -231,7 +231,7 @@ test("traduce fallos de Gemini sin exponer contenido ni credenciales", () => {
   ).toBe("Gemini rechazó la credencial configurada");
 });
 
-test("expone autenticación de Gemini en los escenarios afectados", async () => {
+test("un fallo de autenticación solo afecta escenarios que realmente usan Gemini", async () => {
   const broken = dependencies();
   broken.interpreter = async () => {
     throw new Error("gemini_http_401");
@@ -243,9 +243,9 @@ test("expone autenticación de Gemini en los escenarios afectados", async () => 
   const payment = paymentBatch.results.find((item) => item.id === "early-payment");
 
   expect(split).toMatchObject({
-    status: "failed",
-    critical: true,
-    detail: "Gemini rechazó la credencial configurada",
+    status: "passed",
+    critical: false,
+    detail: "Mideli aplicó dos configuraciones válidas",
   });
   expect(payment).toMatchObject({
     status: "failed",
