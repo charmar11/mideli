@@ -111,8 +111,8 @@ const catalogWithMultiGroupProductFirst = buildConversationCatalog([
         required: true,
         selection_mode: "single",
         options: [
-          { id: "with-fries", name: "Con papas", price: 30 },
-          { id: "without-fries", name: "Sin papas", price: 0 },
+          { name: "Con papas", price: 30 },
+          { name: "Sin papas", price: 0 },
         ],
       },
       {
@@ -121,8 +121,8 @@ const catalogWithMultiGroupProductFirst = buildConversationCatalog([
         required: true,
         selection_mode: "single",
         options: [
-          { id: "bbq", name: "BBQ", price: 0 },
-          { id: "buffalo", name: "Buffalo", price: 0 },
+          { name: "BBQ", price: 0 },
+          { name: "Buffalo", price: 0 },
         ],
       },
     ],
@@ -146,8 +146,8 @@ const catalogWithMultiGroupProductFirst = buildConversationCatalog([
       required: true,
       selection_mode: "single",
       options: [
-        { id: "beef-single-group", name: "Res", price: 0 },
-        { id: "chicken-single-group", name: "Pollo", price: 0 },
+        { name: "Res", price: 0 },
+        { name: "Pollo", price: 0 },
       ],
     }],
   },

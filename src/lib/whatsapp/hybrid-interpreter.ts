@@ -174,17 +174,23 @@ function deterministicDistributedOptions(
   );
   if (requiredGroups.length !== 1) return null;
   const group = requiredGroups[0];
+  const groupIndex = productMatch.item.modifiers.indexOf(group);
   const optionMatches = group.options
-    .flatMap((option) =>
+    .flatMap((option, optionIndex) =>
       optionAliases(option.name)
         .filter((alias) => includesPhrase(text, alias))
-        .map((alias) => ({ option, alias, index: ` ${text} `.indexOf(` ${alias} `) }))
+        .map((alias) => ({
+          option,
+          alias,
+          optionKey: option.id ?? `option-${groupIndex}-${optionIndex}`,
+          index: ` ${text} `.indexOf(` ${alias} `),
+        }))
     )
     .filter((match, index, matches) =>
-      matches.findIndex((candidate) => candidate.option.id === match.option.id) === index
+      matches.findIndex((candidate) => candidate.optionKey === match.optionKey) === index
     )
     .sort((left, right) => left.index - right.index);
-  if (optionMatches.length < 2 || optionMatches.some((match) => !match.option.id)) return null;
+  if (optionMatches.length < 2) return null;
 
   const quantity = Math.max(productMatch.quantity, optionMatches.length);
   const pending = applyValidatedCartOperations(
