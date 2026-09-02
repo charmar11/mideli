@@ -88,6 +88,11 @@ async function ensureConversation(
   const existing = await findOpenConversation(admin, phone);
   if (existing.error) throw existing.error;
   if (existing.data) {
+    const conversationUpdate = await admin
+      .from("channel_conversations")
+      .update({ content_redacted_at: null })
+      .eq("id", existing.data.id);
+    if (conversationUpdate.error) throw conversationUpdate.error;
     if (customerName) {
       const customerUpdate = await admin
         .from("customers")

@@ -12,9 +12,9 @@ import {
   RefreshCw,
   Bike,
   Banknote,
-  Copy,
   ExternalLink,
   Loader2,
+  MessageCircle,
   MapPin,
   Phone,
 } from "lucide-react";
@@ -36,6 +36,14 @@ import {
   deliveryLaneForOrder,
   shouldCompleteOrderAfterPayment,
 } from "@/lib/whatsapp/delivery-lifecycle";
+import { formatPhoneForCopy, formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import {
+  orderCustomerTotal,
+  orderExternalDeliveryFee,
+  orderProductsBalance,
+  orderProductsTotal,
+} from "@/lib/order-totals";
+import { ORDER_TYPE_VISUALS } from "@/lib/order-visuals";
 
 function formatTimeElapsed(dateString: string): string {
   const minutes = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
@@ -45,9 +53,9 @@ function formatTimeElapsed(dateString: string): string {
 }
 
 const TYPE_STYLES: Record<string, { label: string; className: string }> = {
-  comedor: { label: "Comedor", className: "bg-brand-light text-brand" },
-  domicilio: { label: "Domicilio", className: "bg-surface-raised text-muted-foreground" },
-  para_llevar: { label: "Para llevar", className: "bg-surface-raised text-muted-foreground" },
+  comedor: { label: "Comedor", className: ORDER_TYPE_VISUALS.comedor.badge },
+  domicilio: { label: "Domicilio", className: ORDER_TYPE_VISUALS.domicilio.badge },
+  para_llevar: { label: "Para llevar", className: ORDER_TYPE_VISUALS.para_llevar.badge },
 };
 
 interface StatusViewProps {
@@ -56,7 +64,7 @@ interface StatusViewProps {
 }
 
 function outstanding(order: OrderWithItems) {
-  return Math.max(0, order.total - Number(order.paid_amount ?? 0));
+  return orderProductsBalance(order);
 }
 
 function paymentMethodLabel(method: OrderWithItems["payment_method_requested"]) {
@@ -108,7 +116,6 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
         .filter(
           (order) =>
             order.status === "ready" &&
-            order.source_channel === "whatsapp" &&
             order.type === "domicilio"
         )
         .map((order) => `${order.id}:${order.delivery_status ?? "pending"}`)
@@ -184,6 +191,10 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
         toast.success(`Pedido #${order.number} en camino y cliente notificado`);
       } else if (notificationReason === "notifications_disabled") {
         toast.warning("Pedido en camino. Los avisos de WhatsApp están desactivados");
+      } else if (notificationReason === "opt_in_required") {
+        toast.info("Pedido en camino. El cliente no autorizó avisos por WhatsApp");
+      } else if (notificationReason === "phone_missing") {
+        toast.info("Pedido en camino. Este domicilio no tiene teléfono para avisar");
       } else if (notificationReason === "send_failed") {
         toast.warning("Pedido en camino. No se pudo avisar al cliente; puedes reintentar");
       } else {
@@ -401,28 +412,57 @@ function StatusSection({
           {orders.map((order) => {
             const balance = outstanding(order);
             const isPaid = balance <= 0;
-            const isWhatsappDelivery =
-              order.source_channel === "whatsapp" && order.type === "domicilio";
+            const isDelivery = order.type === "domicilio";
             const isBusy = busyOrderId === order.id;
+            const typeAccent = order.type === "domicilio"
+              ? "border-l-success"
+              : order.type === "para_llevar"
+                ? "border-l-brand"
+                : "border-l-gold";
             const details = deliveryDetails[order.id];
             const distance = formatDistance(details?.distanceMeters);
             const address = order.delivery_address?.trim() ?? "";
             const reference = order.delivery_reference?.trim() ?? "";
-            const copyText = [address, reference ? `Referencia: ${reference}` : ""]
-              .filter(Boolean)
-              .join("\n");
-            const mapHref = address
-              ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-              : null;
+            const deliveryFee = orderExternalDeliveryFee(order);
+            const subtotal = orderProductsTotal(order);
+            const customerTotal = orderCustomerTotal(order);
+            const destinationMapHref = details?.destinationLatitude !== null && details?.destinationLatitude !== undefined && details?.destinationLongitude !== null && details?.destinationLongitude !== undefined
+              ? `https://www.google.com/maps/search/?api=1&query=${details.destinationLatitude},${details.destinationLongitude}`
+              : address
+                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+                : null;
+            const originMapHref = details?.storeLatitude !== null && details?.storeLatitude !== undefined && details?.storeLongitude !== null && details?.storeLongitude !== undefined
+              ? `https://www.google.com/maps/search/?api=1&query=${details.storeLatitude},${details.storeLongitude}`
+              : details?.storeAddress
+                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(details.storeAddress)}`
+                : null;
+            const driverMessage = [
+              "*🛵 Mideli*",
+              "",
+              "*Sale de:*",
+              details?.storeAddress || "Mideli",
+              originMapHref,
+              "",
+              "*Para:*",
+              address,
+              destinationMapHref,
+              reference ? `*Referencia:* ${reference}` : null,
+              "",
+              `*Cobro a Mideli:* ${formatPaymentMoney(subtotal)}`,
+              `*Envío al repartidor:* ${formatPaymentMoney(deliveryFee)} aparte`,
+              order.customer_name ? `*Cliente:* ${order.customer_name}` : null,
+              order.customer_phone ? `*Teléfono:* ${formatPhoneForCopy(order.customer_phone)}` : null,
+            ].filter((line) => line !== null && line !== undefined).join("\n");
+            const whatsappShareHref = `https://wa.me/?text=${encodeURIComponent(driverMessage)}`;
             const requestedCash = Number(order.requested_cash_tendered ?? 0);
             const expectedChange = requestedCash > 0
-              ? Math.max(0, requestedCash - order.total)
+              ? Math.max(0, requestedCash - customerTotal)
               : null;
             const failedNotification = details?.notification?.status === "failed"
               ? details.notification
               : null;
             return (
-              <article key={order.id} className={`rounded-2xl bg-surface p-4 shadow-card ring-1 ${ready ? "ring-success/35" : order.status === "in_kitchen" ? "ring-warning/40" : "ring-border"}`}>
+              <article key={order.id} className={`rounded-2xl border-l-4 bg-surface p-4 shadow-card ring-1 ${typeAccent} ${ready ? "ring-success/35" : order.status === "in_kitchen" ? "ring-warning/40" : "ring-border"}`}>
                 <div className="mb-3 flex items-start justify-between gap-2">
                   <div>
                     <p className="font-data text-2xl font-bold">#{order.number}</p>
@@ -444,15 +484,15 @@ function StatusSection({
                   {order.items.map((item, index) => <li key={item.id || index} className="flex items-baseline gap-2"><span className="font-data text-xs font-bold text-brand">{item.quantity}x</span><span className="font-body text-sm">{item.menu_item_name}</span></li>)}
                 </ul>
 
-                {ready && isWhatsappDelivery ? (
+                {ready && isDelivery ? (
                   <div className="mt-3 space-y-3 rounded-xl border border-border bg-ink/45 p-3">
                     <div className="space-y-1.5 font-body text-xs">
-                      <p className="font-heading font-bold text-cream">
-                        {order.customer_name || "Cliente de WhatsApp"}
+                        <p className="font-heading font-bold text-cream">
+                        {order.customer_name || "Cliente"}
                       </p>
                       {order.customer_phone ? (
                         <a href={`tel:${order.customer_phone}`} className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-cream">
-                          <Phone size={13} /> {order.customer_phone}
+                          <Phone size={13} /> {formatPhoneForDisplay(order.customer_phone)}
                         </a>
                       ) : null}
                       <p className="flex items-start gap-1.5 text-muted-foreground">
@@ -466,43 +506,48 @@ function StatusSection({
                       <div className="rounded-lg bg-surface-raised p-2">
                         <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Reparto</p>
                         <p className="mt-1 font-data font-bold">{distance ?? "Distancia no disponible"}</p>
-                        <p className="text-muted-foreground">Envío {formatPaymentMoney(Number(order.delivery_fee ?? 0))}</p>
+                        <p className="text-muted-foreground">Envío externo {formatPaymentMoney(deliveryFee)} · lo cobra el repartidor</p>
                       </div>
                       <div className="rounded-lg bg-surface-raised p-2">
                         <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Cobro</p>
                         <p className="mt-1 font-heading font-bold">{paymentMethodLabel(order.payment_method_requested)}</p>
                         {requestedCash > 0 ? (
                           <p className="text-muted-foreground">
-                            Recibe {formatPaymentMoney(requestedCash)}
+                            Cliente lleva {formatPaymentMoney(requestedCash)}
                             {expectedChange ? ` · cambio ${formatPaymentMoney(expectedChange)}` : ""}
                           </p>
                         ) : (
                           <p className={isPaid ? "text-success" : "text-warning"}>
-                            {isPaid ? "Pagado" : `Pendiente ${formatPaymentMoney(balance)}`}
+                            {isPaid
+                              ? order.payment_method === "transferencia"
+                                ? "Productos pagados por transferencia"
+                                : "Productos pagados"
+                              : order.payment_method_requested === "transferencia"
+                                ? "Transferencia indicada · verificar productos"
+                                : `Pendiente productos ${formatPaymentMoney(balance)}`}
                           </p>
                         )}
                       </div>
                     </div>
 
+                    <div className="rounded-lg border border-border/70 bg-background/40 px-2 py-2 font-body text-[11px] text-muted-foreground">
+                      Total informativo del cliente: <span className="font-data font-bold text-cream">{formatPaymentMoney(customerTotal)}</span>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-2">
-                      {mapHref ? (
-                        <a href={mapHref} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream hover:bg-border">
+                      {destinationMapHref ? (
+                        <a href={destinationMapHref} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream hover:bg-border">
                           <ExternalLink size={13} /> Abrir Maps
                         </a>
                       ) : <span />}
-                      <button
-                        type="button"
-                        disabled={!copyText}
-                        onClick={() => {
-                          void navigator.clipboard.writeText(copyText).then(
-                            () => toast.success("Domicilio copiado"),
-                            () => toast.error("No se pudo copiar el domicilio")
-                          );
-                        }}
-                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream hover:bg-border disabled:opacity-50"
+                      <a
+                        href={whatsappShareHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-success font-heading text-xs font-bold text-white hover:bg-success/85"
                       >
-                        <Copy size={13} /> Copiar
-                      </button>
+                        <MessageCircle size={13} /> Enviar a repartidor
+                      </a>
                     </div>
 
                     {failedNotification ? (
@@ -515,7 +560,7 @@ function StatusSection({
 
                 {ready ? (
                   <div className="mt-3 grid grid-cols-2 gap-2">
-                    {isWhatsappDelivery ? (
+                    {isDelivery ? (
                       <>
                         {order.delivery_status === "driver_on_way" ? (
                           <button
@@ -550,7 +595,7 @@ function StatusSection({
                         )}
                         {!isPaid ? (
                           <button type="button" disabled={isBusy} onClick={() => onPay?.(order)} className="col-span-2 inline-flex h-12 items-center justify-center gap-1.5 rounded-xl bg-ink font-heading text-xs font-bold text-white transition-colors hover:bg-ink/85 disabled:opacity-60">
-                            <Banknote size={14} /> Cobrar {formatPaymentMoney(balance)}
+                            <Banknote size={14} /> Cobrar productos {formatPaymentMoney(balance)}
                           </button>
                         ) : null}
                         {failedNotification ? (

@@ -1,8 +1,16 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-08-28
+Actualizado: 2026-09-02
 
-Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
+Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para cualquier agente de IA, no solo OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
+
+## 0. Fuentes de verdad y mantenimiento
+
+La prioridad cuando exista una contradicción es: código y tipos actuales, estado remoto verificable, `AGENTS.md`, este contexto, y después `PRODUCT.md`, `DESIGN.md` y la documentación técnica en `docs/`.
+
+Este archivo debe actualizarse cuando cambien una decisión de producto, un flujo crítico, una migración, un permiso, una integración o un pendiente operativo. No debe guardar tokens, datos de clientes ni fotografías estáticas que puedan confundirse con el estado actual.
+
+La rama de trabajo puede contener cambios sin commit. Esos cambios pertenecen al trabajo en curso y no deben descartarse. Para que otra IA los reciba desde GitHub, primero hay que consolidarlos en un commit estable.
 
 ## 1. Producto
 
@@ -281,7 +289,7 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `src/components/cash/cash-shift-control.tsx` y `src/lib/stores/cash-shift-store.ts` | Apertura, movimientos y cierre de caja |
 | `src/components/license-heartbeat.tsx`, `src/lib/license.ts`, `src/lib/license-server.ts` | Vigencia de licencia en cliente y servidor |
 | `src/proxy.ts` | Sesión, licencia y control de rutas por rol (reemplaza a `src/middleware.ts`) |
-| `src/lib/push-notifications.ts`, `src/components/dashboard/ready-order-notifier.tsx` | Push y aviso sonoro de pedidos listos |
+| `src/lib/push-notifications.ts`, `src/components/dashboard/push-notification-control.tsx`, `src/components/dashboard/ready-order-notifier.tsx` | Suscripciones Push por dispositivo, temas de cocina y pedidos listos, y aviso sonoro |
 | `src/lib/product-images.ts` | Carga y limpieza de fotos de productos |
 | `src/lib/order-location.ts` | Snapshot de ubicación del pedido (zona y mesa) |
 | `src/lib/stores/catalog-store.ts` | Lectura y CRUD de categorías y menú, con caché de 30 s en carga conjunta |
@@ -291,6 +299,13 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `src/lib/stores/order-store.ts` | CRUD de órdenes, estados, cobro y suscripción Realtime |
 | `src/lib/stores/tables-store.ts` | Lectura y CRUD del mapa, con deduplicación y caché de 30 s |
 | `src/lib/stores/inventory-store.ts` | Insumos, recetas, movimientos y ajustes de stock |
+| `src/lib/order-totals.ts`, `src/lib/order-visuals.ts` | Regla de totales operativos y semántica visual por tipo/estado |
+| `src/components/pos/order-details-modal.tsx` | Datos finales del pedido, validación de requisitos y envío/cobro |
+| `src/components/whatsapp/whatsapp-inbox.tsx` | Bandeja, filtros, chat y scroll táctil contenido |
+| `src/components/whatsapp/whatsapp-customers.tsx` | Directorio de clientes, domicilios y edición segura |
+| `src/components/whatsapp/whatsapp-message-text.tsx` | Presentación segura del formato de mensajes de WhatsApp |
+| `src/lib/actions/delivery.ts` | Cotización y avisos de domicilio manual |
+| `src/lib/whatsapp/pos-draft.ts` | Transferencia del borrador de WhatsApp a Mesero |
 | `src/types/database.ts` | Tipos TypeScript del dominio |
 | `src/app/dashboard/layout.tsx` | Navegación, sesión y roles |
 | `src/app/globals.css` | Tokens y estilos globales |
@@ -325,7 +340,7 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- Migraciones locales y remotas alineadas: 47 migraciones, de `00001` a `20260827103000`.
+- El repositorio local contiene 52 migraciones, hasta `20260902084515_deduplicate_customer_addresses.sql`. La alineación remota debe verificarse con `npx supabase migration list` antes de aplicar una nueva migración; no asumir que una fotografía anterior sigue vigente.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
@@ -350,7 +365,7 @@ Patrones obligatorios:
 
 ## 9. Estado real y pendientes
 
-Estado remoto verificado funcionalmente el 2026-08-09. Los conteos inferiores son la última fotografía detallada del 2026-08-02:
+Estado remoto verificado funcionalmente el 2026-08-09. Los conteos inferiores son una fotografía histórica detallada del 2026-08-02 y no deben usarse como inventario o métrica actual:
 
 - 7 categorías.
 - 50 productos.
@@ -362,6 +377,8 @@ Estado remoto verificado funcionalmente el 2026-08-09. Los conteos inferiores so
 - 2 turnos de caja históricos.
 - 1 licencia registrada en `app_license`.
 - 12 suscripciones push activas.
+
+Cambios posteriores documentados en el código local incluyen el ciclo de vida de domicilios manuales con avisos opcionales por WhatsApp, snapshots de ubicación, separación del envío que cobra el repartidor externo, y deduplicación canónica de domicilios. Antes de depender de estos cambios en una tarea de base de datos, confirmar su estado remoto.
 
 El menú vigente proviene de `Menu_Mideli_Completo_Provisional.docx` mediante la migración `20260731060825_menu_reset_from_docx.sql`. Mango Habanero fue reemplazado por Buffalo Ranch, Cajun, Ajo Parmesano y Honey Mustard. Los modificadores de sabor y proteína tienen precio cero; solo "Con papas" agrega 30 pesos.
 
@@ -391,7 +408,7 @@ Pendientes prioritarios:
 2. Diseñar e implementar un modo de contingencia para continuar tomando pedidos ante una caída de internet.
 3. Completar monitoreo técnico, source maps privados y un procedimiento probado de respaldo y restauración.
 4. Validar en operación real todos los cobros, correcciones, cierres de caja, impresión, inventario negativo y notificaciones PWA.
-5. Agregar pruebas automatizadas para pedidos, cobro, caja, impresión, inventario y permisos.
+5. Ampliar la cobertura automatizada para pedidos, cobro, caja, impresión, inventario y permisos. Actualmente hay 20 archivos E2E de Playwright, con proyectos de escritorio, tablet y móvil; todavía no cubren toda la operación real.
 6. Después de estabilizar el piloto, priorizar clientes/lealtad y pedidos directos.
 
 El plan ordenado para continuar vive en `.opencode/plans/next-session-plan.md`.

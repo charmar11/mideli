@@ -44,15 +44,24 @@ export function PushNotificationControl({ topic }: PushNotificationControlProps)
 
   useEffect(() => {
     let active = true;
-    void getPushStatus(topic)
-      .then((nextStatus) => {
-        if (active) setStatus(nextStatus);
-      })
-      .catch(() => {
-        if (active) setStatus("error");
-      });
+    const refresh = () => {
+      void getPushStatus(topic)
+        .then((nextStatus) => {
+          if (active) setStatus(nextStatus);
+        })
+        .catch(() => {
+          if (active) setStatus("error");
+        });
+    };
+    refresh();
+    window.addEventListener("online", refresh);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
     return () => {
       active = false;
+      window.removeEventListener("online", refresh);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
     };
   }, [topic]);
 

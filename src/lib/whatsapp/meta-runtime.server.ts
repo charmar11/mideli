@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { serviceFunctionHeaders } from "@/lib/supabase/function-auth";
 import type { Order } from "@/types/database";
 import { answerBusinessQuestion } from "./business-answers";
 import { loadWhatsappCatalog } from "./catalog.server";
@@ -28,7 +29,7 @@ import {
   sendMetaReplyButtonsMessage,
   sendMetaTextMessage,
 } from "./meta-provider";
-import { interactionForState } from "./quick-replies";
+import { interactionForState, type WhatsappInteraction } from "./quick-replies";
 import { canCreateWhatsappOrder } from "./order-creation-policy";
 import {
   acquireConversationProcessing,
@@ -196,7 +197,8 @@ async function sendReply(
   body: string,
   state: ConversationState,
   catalog: ConversationCatalog,
-  humanHandoffEnabled: boolean
+  humanHandoffEnabled: boolean,
+  includeInteractive = true
 ) {
   if (!config.accessToken || !config.phoneNumberId) return null;
   const providerConfig = {
@@ -204,36 +206,119 @@ async function sendReply(
     phoneNumberId: config.phoneNumberId,
     accessToken: config.accessToken,
   };
-  const interaction = interactionForState(state, catalog, { humanHandoffEnabled });
-  if (interaction && body.length <= 1024) {
+  const interaction = includeInteractive
+    ? interactionForState(state, catalog, { humanHandoffEnabled })
+    : null;
+  const interactiveBody = interaction
+    ? bodyForInteractiveState(state, body, interaction)
+    : body;
+  if (interaction && interactiveBody.length <= 1024) {
     try {
       if (interaction.kind === "buttons") {
-        return await measuredMetaSend("buttons", () =>
+        const sent = await measuredMetaSend("buttons", () =>
           sendMetaReplyButtonsMessage(
-            { to: phone, body, buttons: interaction.buttons },
+            { to: phone, body: interactiveBody, buttons: interaction.buttons },
             providerConfig
           )
         );
+        return { ...sent, body: interactiveBody };
       }
-      return await measuredMetaSend("list", () =>
+      const sent = await measuredMetaSend("list", () =>
         sendMetaListMessage(
           {
             to: phone,
-            body,
+            body: interactiveBody,
             buttonText: interaction.buttonText,
             sections: interaction.sections,
           },
           providerConfig
         )
       );
+      return { ...sent, body: interactiveBody };
     } catch (error) {
       const detail = safeErrorDetail(error);
       console.warn(`[WhatsApp Meta] El control interactivo falló; se enviará texto: ${detail}`);
     }
   }
-  return measuredMetaSend("text", () =>
+  const sent = await measuredMetaSend("text", () =>
     sendMetaTextMessage({ to: phone, body }, providerConfig)
   );
+  return { ...sent, body };
+}
+
+function interactionOptionsText(interaction: WhatsappInteraction) {
+  if (interaction.kind === "buttons") {
+    return interaction.buttons.map((button) => `• ${button.title}`).join("\n");
+  }
+  return interaction.sections
+    .flatMap((section) => section.rows)
+    .map((row) => `• ${row.title}${row.description ? ` · ${row.description}` : ""}`)
+    .join("\n");
+}
+
+function bodyForInteractiveState(
+  state: ConversationState,
+  body: string,
+  interaction: WhatsappInteraction
+) {
+  const options = interactionOptionsText(interaction);
+
+  if (state.stage === "browsing_catalog") {
+    return state.selectedCategoryId
+      ? `🍽️ Aquí tienes los productos disponibles 😊\n\n${options}`
+      : `🍽️ ¡Qué se te antoja hoy! 😊\n\nElige una categoría:\n${options}`;
+  }
+
+  if (state.stage === "ordering") {
+    if (state.cart.length === 0) {
+      return `¡Hola! 👋 Bienvenido a Mideli.\n\n¿Qué se te antoja hoy? 😊\n\n${options}`;
+    }
+    const prompt = body.search(/\n\n¿Deseas agregar algo más\?/i);
+    return prompt >= 0
+      ? `${body.slice(0, prompt)}\n\n¿Qué deseas hacer con tu pedido?\n${options}`
+      : `${body}\n\n¿Qué deseas hacer con tu pedido?\n${options}`;
+  }
+
+  if (state.stage === "awaiting_modifiers") {
+    // The full numbered list remains the text fallback. Native controls already
+    // contain the options, so repeating them in the body makes the message noisy.
+    const conciseBody = body.split("\n\n").slice(0, 2).join("\n\n").trim();
+    return conciseBody || body;
+  }
+  if (state.stage === "awaiting_beverage") {
+    return `🥤 ¿Algo para tomar? 😊\n\n${options}`;
+  }
+  if (state.stage === "awaiting_fulfillment") {
+    return `📍 ¿Cómo deseas recibir tu pedido?\n\n${options}`;
+  }
+  if (state.stage === "awaiting_address" && state.savedAddress) {
+    return `${body.replace(
+      /^📍 ¿Usamos (?:este domicilio|tu domicilio anterior)\?/i,
+      "📍 ¿Usamos este domicilio?"
+    )}\n\n${options}`;
+  }
+  if (state.stage === "awaiting_address_reference") {
+    return `🏠 ¿Tienes una referencia para encontrar tu domicilio? Es opcional 😊\n\n${options}`;
+  }
+  if (state.stage === "awaiting_address_confirmation") {
+    return `${body.replace(/\n\n¿Es este punto\?[\s\S]*$/i, "\n\n¿Es correcto?")}\n${options}`;
+  }
+  if (state.stage === "awaiting_payment") {
+    return `💳 Elige cómo pagarás 😊\n\n${options}`;
+  }
+  if (state.stage === "awaiting_confirmation") {
+    return `${body.replace(/\n\n¿Confirmas el pedido\?[\s\S]*$/i, "\n\nRevisa tu pedido y elige una opción:")}\n${options}`;
+  }
+  if (state.stage === "awaiting_note_scope") {
+    return `📝 ¿Dónde quieres guardar la indicación?\n\n${options}`;
+  }
+  if (state.stage.startsWith("awaiting_edit_")) {
+    return `🛠️ ¿Qué deseas cambiar de tu pedido?\n\n${options}`;
+  }
+  if (state.stage.startsWith("awaiting_note_")) {
+    return `📝 Elige una opción para continuar 😊\n\n${options}`;
+  }
+  return body;
 }
 
 async function sendAddressLocation(
@@ -316,22 +401,48 @@ async function confirmedDeliveryQuoteResult(
 }
 
 async function notifyKitchen(order: Order) {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) {
+    console.warn(
+      "[WhatsApp Meta] El pedido se creó, pero el aviso Push no se solicitó: falta la configuración segura de Supabase."
+    );
+    return;
+  }
+
   const admin = createAdminClient();
-  const { error } = await admin.functions.invoke("send-order-notification", {
+  const { error, response } = await admin.functions.invoke("send-order-notification", {
     body: { orderId: order.id, event: "new_order" },
+    headers: serviceFunctionHeaders(serviceRoleKey),
   });
   if (error) {
-    console.warn("El pedido de WhatsApp se creó, pero el aviso Push no pudo solicitarse.");
+    const status = response ? ` HTTP ${response.status}` : "";
+    console.warn(
+      `[WhatsApp Meta] El pedido se creó, pero el aviso Push no pudo solicitarse.${status}: ${safeErrorDetail(error)}`
+    );
   }
 }
 
 async function notifyWhatsappAttention(conversationId: string, eventKey: string) {
-  const { error } = await createAdminClient().functions.invoke(
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) {
+    console.warn(
+      "[WhatsApp Meta] No se solicitó el aviso Push: falta la configuración segura de Supabase."
+    );
+    return;
+  }
+
+  const { error, response } = await createAdminClient().functions.invoke(
     "send-whatsapp-attention-notification",
-    { body: { conversationId, eventKey } }
+    {
+      body: { conversationId, eventKey },
+      headers: serviceFunctionHeaders(serviceRoleKey),
+    }
   );
   if (error) {
-    console.warn("El chat requiere atención, pero el aviso Push no pudo solicitarse.");
+    const status = response ? ` HTTP ${response.status}` : "";
+    console.warn(
+      `[WhatsApp Meta] El chat requiere atención, pero el aviso Push no pudo solicitarse.${status}: ${safeErrorDetail(error)}`
+    );
   }
 }
 
@@ -352,6 +463,7 @@ async function processDryRunMessage(
   const current = dryRunConversations.get(message.phone) ?? createConversation(message.phone);
   const preparedState = stateForInboundMessage(current, message);
   const input = messageInput(message, preparedState);
+  const channelClosed = !channelIsOpen(operations) && current.stage !== "confirmed";
   let result = dryRunResult(
     input === null
       ? unsupportedMessageHandoff(preparedState)
@@ -364,7 +476,7 @@ async function processDryRunMessage(
           input.deterministic
         )
   );
-  if (!channelIsOpen(operations) && current.stage !== "confirmed") {
+  if (channelClosed) {
     result = {
       state: current,
       action: "none",
@@ -423,7 +535,8 @@ async function processDryRunMessage(
       replyBody,
       result.state,
       catalog,
-      operations.settings.human_handoff_enabled
+      operations.settings.human_handoff_enabled,
+      !channelClosed
     );
     if (sent) summary.repliesSent += 1;
     else summary.replyFailures += 1;
@@ -469,11 +582,12 @@ async function processQueuedMessage(
             config,
             operations,
             input.deterministic
-          );
+    );
     let createdOrder: Order | null = null;
     let customerReceived = false;
+    const channelClosed = !channelIsOpen(operations) && state.stage !== "confirmed";
 
-    if (!channelIsOpen(operations) && state.stage !== "confirmed") {
+    if (channelClosed) {
       result = {
         state,
         action: "none",
@@ -545,9 +659,10 @@ async function processQueuedMessage(
           conversationId,
           state: result.state,
         });
+        const customerTotal = createdOrder.total + (createdOrder.delivery_fee ?? 0);
         result = {
           ...result,
-          reply: `✅ Pedido #${createdOrder.number} confirmado y enviado a cocina. Total $${createdOrder.total}.`,
+          reply: `✅ Pedido #${createdOrder.number} confirmado y enviado a cocina. Total $${customerTotal}.`,
         };
         summary.ordersCreated += 1;
       } catch {
@@ -605,7 +720,8 @@ async function processQueuedMessage(
           replyBody,
           result.state,
           catalog,
-          operations.settings.human_handoff_enabled
+          operations.settings.human_handoff_enabled,
+          !channelClosed
         );
         if (sent) {
           summary.repliesSent += 1;
@@ -614,7 +730,7 @@ async function processQueuedMessage(
               conversationId,
               externalMessageId: sent.messageId,
               phone: message.phone,
-              body: replyBody,
+              body: sent.body,
             });
           } catch {
             console.warn(
@@ -647,7 +763,7 @@ async function processQueuedMessage(
     if (result.state.stage === "handoff") {
       await notifyWhatsappAttention(conversationId, `handoff:${conversationId}:${message.id}`);
     }
-    if (createdOrder) void notifyKitchen(createdOrder);
+    if (createdOrder) await notifyKitchen(createdOrder);
   } catch (error) {
     const detail = safeErrorDetail(error);
     try {

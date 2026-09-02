@@ -285,3 +285,36 @@ export function missingRequiredGroups(
     return selected.filter((modifier) => modifier.groupId === groupId).length < minimum;
   });
 }
+
+export function modifierGroupId(
+  group: ConversationCatalogItem["modifiers"][number],
+  groupIndex: number
+) {
+  return group.id ?? `group-${groupIndex}`;
+}
+
+export function modifierMinimum(group: ConversationCatalogItem["modifiers"][number]) {
+  return group.required ? Math.max(1, group.min_selections ?? 1) : group.min_selections ?? 0;
+}
+
+export function nextModifierGroup(
+  item: ConversationCatalogItem,
+  selected: ConversationModifier[],
+  options: { includeOptional?: boolean; skippedOptionalGroupIds?: string[] } = {}
+) {
+  const includeOptional = options.includeOptional ?? false;
+  const skipped = new Set(options.skippedOptionalGroupIds ?? []);
+  const groups = item.modifiers.map((group, index) => ({
+    group,
+    index,
+    id: modifierGroupId(group, index),
+    count: selected.filter((modifier) => modifier.groupId === modifierGroupId(group, index)).length,
+  }));
+  return groups.find(({ group, count }) => count < modifierMinimum(group))
+    ?? (includeOptional
+      ? groups.find(({ group, id, count }) =>
+          modifierMinimum(group) === 0 && count === 0 && group.options.length > 0 && !skipped.has(id)
+        )
+      : undefined)
+    ?? null;
+}

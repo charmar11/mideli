@@ -40,4 +40,26 @@ test.describe("normalización segura de respuestas de WhatsApp", () => {
   test("conserva comandos interactivos sin modificarlos", () => {
     expect(customerReplyText("confirmation:confirm")).toBe("confirmation:confirm");
   });
+
+  test("extrae un producto cuando llega pegado al catálogo visible", () => {
+    expect(
+      customerReplyText(
+        "🍔 Hamburguesas\n\n1. Hamburguesa Sencilla · $135\n\nResponde con el número o el nombre.\nHamburguesa Sencilla\n$135 · Incluye papas."
+      )
+    ).toBe("Hamburguesa Sencilla");
+  });
+
+  test("extrae un botón cuando el cuerpo interactivo llega en una sola línea", () => {
+    expect(
+      customerReplyText(
+        "¡Hola! 👋 Bienvenido a Mideli. ¿Qué se te antoja hoy? 😊 - Hacer pedido - Ver menú Ver menú"
+      )
+    ).toBe("Ver menú");
+  });
+
+  test("extrae una decisión de pago pegada al texto de la pregunta", () => {
+    expect(
+      customerReplyText("¿Pagarás en efectivo o por transferencia? Efectivo")
+    ).toBe("Efectivo");
+  });
 });

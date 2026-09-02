@@ -38,8 +38,8 @@ export const CategoryTabs = memo(function CategoryTabs() {
           </div>
         </div>
 
-        <div className="pos-scroll min-w-0 flex-1 overflow-x-auto">
-          <div className="flex min-w-max items-center gap-2 pb-0.5">
+        <div className="pos-scroll min-w-0 flex-1 overflow-x-auto sm:overflow-visible">
+          <div className="flex min-w-max flex-nowrap items-center gap-2 pb-0.5 sm:min-w-0 sm:flex-wrap">
             <button
               type="button"
               onClick={() => setActiveCategory(null)}
@@ -65,13 +65,13 @@ export const CategoryTabs = memo(function CategoryTabs() {
                   onClick={() => setActiveCategory(category.id)}
                   aria-current={isActive ? "page" : undefined}
                   title={category.name}
-                  className={`flex h-10 max-w-[15rem] shrink-0 items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors sm:text-sm ${
+                  className={`flex h-10 shrink-0 items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors sm:text-sm ${
                     isActive
                       ? "bg-brand text-white shadow-md shadow-brand/20"
                       : "bg-surface text-muted-foreground ring-1 ring-border hover:bg-surface-raised hover:text-foreground"
                   }`}
                 >
-                  <span className="truncate">{category.name}</span>
+                  <span className="whitespace-nowrap">{category.name}</span>
                   <span className={isActive ? "text-white/70" : "text-muted-foreground"}>
                     {itemCounts.get(category.id) ?? 0}
                   </span>

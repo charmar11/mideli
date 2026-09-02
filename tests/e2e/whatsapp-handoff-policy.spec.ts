@@ -25,4 +25,28 @@ test("la opción de atención humana controla transferencia y botones", () => {
   if (interaction?.kind === "buttons") {
     expect(interaction.buttons.some((button) => button.id === "cmd:human")).toBeFalsy();
   }
+
+  const initialWithHandoffEnabled = interactionForState(state, catalog, {
+    humanHandoffEnabled: true,
+  });
+  expect(initialWithHandoffEnabled?.kind).toBe("buttons");
+  if (initialWithHandoffEnabled?.kind === "buttons") {
+    expect(initialWithHandoffEnabled.buttons.some((button) => button.id === "cmd:human")).toBeFalsy();
+  }
+
+  const fallback = interactionForState(
+    { ...state, stage: "handoff" },
+    catalog,
+    { humanHandoffEnabled: true }
+  );
+  expect(fallback?.kind).toBe("buttons");
+  if (fallback?.kind === "buttons") {
+    expect(fallback.buttons).toEqual([{ id: "cmd:human", title: "Hablar con alguien" }]);
+  }
+
+  expect(
+    interactionForState({ ...state, stage: "handoff" }, catalog, {
+      humanHandoffEnabled: false,
+    })
+  ).toBeNull();
 });

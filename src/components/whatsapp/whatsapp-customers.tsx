@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Search,
   Star,
+  Trash2,
   UserRound,
   UsersRound,
 } from "lucide-react";
@@ -30,6 +31,8 @@ import { Input } from "@/components/ui/input";
 import {
   getWhatsappCustomerDetailAction,
   getWhatsappCustomersAction,
+  clearWhatsappConversationMessagesAction,
+  deleteWhatsappCustomerAddressAction,
   saveWhatsappCustomerAddressAction,
   updateWhatsappCustomerAction,
 } from "@/lib/actions/whatsapp";
@@ -39,6 +42,7 @@ import type {
   WhatsappCustomerSummary,
 } from "@/lib/whatsapp/admin-types";
 import { whatsappOrderStatus } from "@/lib/whatsapp/inbox";
+import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
 
 type Props = {
   onOpenConversation: (conversationId: string) => void;
@@ -59,15 +63,6 @@ const EMPTY_ADDRESS: AddressDraft = {
   reference: "",
   isDefault: false,
 };
-
-function formatPhone(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("52") && digits.length >= 12) {
-    const local = digits.slice(-10);
-    return `+52 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
-  }
-  return digits ? `+${digits}` : "Sin teléfono";
-}
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("es-MX", {
@@ -99,6 +94,10 @@ function paymentLabel(status: string) {
   if (status === "paid") return "Pagado";
   if (status === "partial") return "Pago parcial";
   return "Pendiente";
+}
+
+function customerOrderTotal(order: WhatsappCustomerDetail["orders"][number]) {
+  return order.total + (order.type === "domicilio" ? order.deliveryFee : 0);
 }
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
@@ -146,7 +145,7 @@ function CustomerList({
   onRefresh: () => void;
 }) {
   return (
-    <Panel className="flex h-full flex-col">
+    <Panel className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border p-3">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -170,7 +169,7 @@ function CustomerList({
         </label>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-2 [content-visibility:auto]">
+      <div className="whatsapp-scroll-y min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2 [content-visibility:auto]">
         {loading && customers.length === 0 ? <DirectorySkeleton /> : null}
         {!loading && customers.length === 0 ? (
           <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
@@ -201,7 +200,7 @@ function CustomerList({
                     {customer.displayName || "Cliente sin nombre"}
                   </span>
                   <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
-                    {formatPhone(customer.phone)}
+                    {formatPhoneForDisplay(customer.phone)}
                   </span>
                 </span>
               </div>
@@ -329,6 +328,44 @@ function CustomerDetail({
     });
   }
 
+  function deleteAddress(address: WhatsappCustomerAddress) {
+    if (!detail) return;
+    const addressLabel = address.formattedAddress || address.addressText;
+    if (!window.confirm(`¿Eliminar este domicilio?\n\n${addressLabel}`)) return;
+    startTransition(async () => {
+      const result = await deleteWhatsappCustomerAddressAction({
+        customerId: detail.customer.id,
+        addressId: address.id,
+      });
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Domicilio eliminado");
+      onRefresh();
+    });
+  }
+
+  function clearConversationMessages() {
+    if (!detail?.customer.lastConversationId) return;
+    if (!window.confirm(
+      "¿Borrar y ocultar la última conversación?\n\nLos pedidos, folios y auditoría se conservarán. Esta acción no se puede deshacer."
+    )) return;
+
+    startTransition(async () => {
+      const result = await clearWhatsappConversationMessagesAction(detail.customer.lastConversationId!);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        result.data.redacted === 1
+          ? "1 mensaje borrado. La conversación se ocultó"
+          : `${result.data.redacted} mensajes borrados. La conversación se ocultó`
+      );
+    });
+  }
+
   if (loading) {
     return (
       <Panel className="flex h-full items-center justify-center">
@@ -377,7 +414,7 @@ function CustomerDetail({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate font-heading text-lg font-bold">{customer.displayName || "Cliente sin nombre"}</h2>
-                <p className="mt-0.5 font-mono text-xs text-muted-foreground">{formatPhone(customer.phone)}</p>
+                <p className="mt-0.5 font-mono text-xs text-muted-foreground">{formatPhoneForDisplay(customer.phone)}</p>
               </div>
               <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0" onClick={() => { setNameDraft(customer.displayName); setEditingName(true); }} aria-label="Editar nombre">
                 <Pencil size={16} />
@@ -387,7 +424,7 @@ function CustomerDetail({
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+      <div className="whatsapp-scroll-y min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-3 sm:p-4">
         <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
           <Metric label="Pedidos" value={String(customer.orderCount)} />
           <Metric label="Pagados" value={String(customer.paidOrderCount)} />
@@ -408,6 +445,16 @@ function CustomerDetail({
           <a href={`tel:+${customer.phone}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border px-4 font-heading text-xs font-bold text-foreground hover:bg-surface-raised sm:w-auto">
             <UserRound size={15} />Llamar
           </a>
+          {customer.lastConversationId ? (
+            <Button
+              variant="outline"
+              className="h-11 w-full gap-2 border-danger/35 text-danger hover:bg-danger/10 hover:text-danger sm:w-auto"
+              onClick={clearConversationMessages}
+              disabled={pending}
+            >
+              <Trash2 size={15} />Borrar mensajes
+            </Button>
+          ) : null}
         </div>
 
         <section className="mt-5">
@@ -435,39 +482,50 @@ function CustomerDetail({
           {!addressDraft ? (
             <div className="space-y-2">
               {addresses.map((address) => (
-                <article key={address.id} className="rounded-xl bg-background p-3">
-                  <div className="flex items-start gap-3">
+                <details key={address.id} open={address.isDefault} className="group rounded-xl bg-background">
+                  <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 p-3 [&::-webkit-details-marker]:hidden">
                     <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${address.isDefault ? "bg-gold/15 text-gold" : "bg-surface-raised text-muted-foreground"}`}>
                       {address.isDefault ? <Star size={16} /> : <Home size={16} />}
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-heading text-xs font-bold">{address.label || "Domicilio"}</p>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <strong className="min-w-0 flex-1 break-words font-heading text-xs leading-5">
+                          {address.formattedAddress || address.addressText}
+                        </strong>
                         {address.isDefault ? <span className="rounded-full bg-gold/15 px-2 py-0.5 font-heading text-[10px] font-bold text-gold">Principal</span> : null}
-                        <span className={`rounded-full px-2 py-0.5 font-heading text-[10px] font-bold ${address.confirmed ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
-                          {address.confirmed ? "Confirmado" : "Por confirmar"}
-                        </span>
-                      </div>
-                      <p className="mt-1 break-words font-body text-sm text-foreground">{address.addressText}</p>
-                      {address.reference ? <p className="mt-1 break-words font-body text-xs text-muted-foreground">Referencia: {address.reference}</p> : null}
-                      <div className="mt-2 flex flex-wrap gap-2 font-body text-[11px] text-muted-foreground">
-                        {address.deliveryFee !== null ? <span>Último envío: {formatMoney(address.deliveryFee)}</span> : null}
-                        <span>Usado {formatDate(address.lastUsedAt)}</span>
-                      </div>
+                      </span>
+                      <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 font-heading text-[10px] font-bold ${address.confirmed ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+                        {address.confirmed ? "Confirmado" : "Por confirmar"}
+                      </span>
+                    </span>
+                    <ChevronDown size={15} className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="border-t border-border px-3 pb-3 pt-2">
+                    {address.label ? <p className="font-body text-xs text-muted-foreground">{address.label}</p> : null}
+                    {address.formattedAddress && address.formattedAddress !== address.addressText ? <p className="mt-1 break-words font-body text-xs text-muted-foreground">Capturado: {address.addressText}</p> : null}
+                    {address.reference ? <p className="mt-1 break-words font-body text-xs text-muted-foreground">Referencia: {address.reference}</p> : null}
+                    <div className="mt-2 flex flex-wrap gap-2 font-body text-[11px] text-muted-foreground">
+                      {address.deliveryFee !== null ? <span>Último envío: {formatMoney(address.deliveryFee)}</span> : null}
+                      <span>Usado {formatDate(address.lastUsedAt)}</span>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0" onClick={() => editAddress(address)} aria-label={`Editar ${address.label || "domicilio"}`}>
-                      <Pencil size={15} />
-                    </Button>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => editAddress(address)} aria-label={`Editar ${address.label || "domicilio"}`}>
+                        <Pencil size={15} />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-11 w-11 text-danger hover:bg-danger/10 hover:text-danger" onClick={() => deleteAddress(address)} disabled={pending} aria-label={`Eliminar ${address.label || "domicilio"}`}>
+                        <Trash2 size={15} />
+                      </Button>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.formattedAddress || address.addressText)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-heading text-xs font-bold text-brand hover:bg-brand/10"
+                      >
+                        <ExternalLink size={14} />Abrir en Maps
+                      </a>
+                    </div>
                   </div>
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.formattedAddress || address.addressText)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-heading text-xs font-bold text-brand hover:bg-brand/10"
-                  >
-                    <ExternalLink size={14} />Abrir en Maps
-                  </a>
-                </article>
+                </details>
               ))}
             </div>
           ) : null}
@@ -514,8 +572,10 @@ function CustomerDetail({
                         </div>
                       ) : <p className="font-body text-xs text-muted-foreground">Sin detalle de productos disponible.</p>}
                       <div className="mt-3 grid grid-cols-2 gap-2">
-                        <Metric label="Pagado" value={formatMoney(order.paidAmount)} />
-                        <Metric label="Envío" value={formatMoney(order.deliveryFee)} />
+                        <Metric label="Productos" value={formatMoney(order.total)} />
+                        <Metric label="Pagado productos" value={formatMoney(order.paidAmount)} />
+                        {order.type === "domicilio" ? <Metric label="Envío externo" value={`${formatMoney(order.deliveryFee)} · aparte`} /> : null}
+                        {order.type === "domicilio" ? <Metric label="Total informativo" value={formatMoney(customerOrderTotal(order))} /> : null}
                       </div>
                       {order.deliveryAddress ? <p className="mt-3 break-words font-body text-xs text-muted-foreground">📍 {order.deliveryAddress}{order.deliveryReference ? ` · ${order.deliveryReference}` : ""}</p> : null}
                       {order.channelConversationId ? (
@@ -617,8 +677,8 @@ export function WhatsappCustomers({ onOpenConversation }: Props) {
   }
 
   return (
-    <div className="grid h-[calc(100dvh-17rem)] min-h-[30rem] w-full min-w-0 max-w-full gap-3 overflow-hidden lg:h-[calc(100dvh-13rem)] lg:grid-cols-[360px_minmax(0,1fr)]">
-      <div className={`min-w-0 ${mobileDetail ? "hidden lg:block" : "block"}`}>
+    <div className="grid h-full min-h-0 w-full min-w-0 max-w-full flex-1 gap-3 overflow-hidden lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className={`min-h-0 min-w-0 ${mobileDetail ? "hidden lg:block" : "block"}`}>
         <CustomerList
           customers={customers}
           selectedId={selectedId}
@@ -629,7 +689,7 @@ export function WhatsappCustomers({ onOpenConversation }: Props) {
           onRefresh={() => void loadDirectory(query)}
         />
       </div>
-      <div className={`min-w-0 ${mobileDetail ? "block" : "hidden lg:block"}`}>
+      <div className={`min-h-0 min-w-0 ${mobileDetail ? "block" : "hidden lg:block"}`}>
         <CustomerDetail
           key={selectedId ?? "empty-customer"}
           detail={detail}

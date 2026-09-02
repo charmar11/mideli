@@ -140,6 +140,8 @@ export type ConversationState = {
   cart: ConversationCartLine[];
   total: number;
   pendingLineId: string | null;
+  pendingModifierGroupId?: string | null;
+  skippedOptionalModifierGroupIds?: string[];
   serviceType: ConversationServiceType | null;
   address: string | null;
   addressReference: string;

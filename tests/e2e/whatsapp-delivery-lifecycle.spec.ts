@@ -23,6 +23,14 @@ test("separa los domicilios listos entre búsqueda y trayecto", () => {
   expect(
     deliveryLaneForOrder({
       type: "domicilio",
+      source_channel: "pos",
+      status: "ready",
+      delivery_status: "searching_driver",
+    })
+  ).toBe("searching_driver");
+  expect(
+    deliveryLaneForOrder({
+      type: "domicilio",
       source_channel: "whatsapp",
       status: "ready",
       delivery_status: "searching_driver",

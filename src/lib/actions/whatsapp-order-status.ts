@@ -3,7 +3,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { readWhatsappServerConfig } from "@/lib/whatsapp/config.server";
-import { sendMetaTextMessage } from "@/lib/whatsapp/meta-provider";
+import {
+  sendMetaTemplateMessage,
+  sendMetaTextMessage,
+} from "@/lib/whatsapp/meta-provider";
 import { recordOutboundMessage } from "@/lib/whatsapp/repository.server";
 import { isMissingWhatsappSchema } from "@/lib/whatsapp/schema-compat";
 import {
@@ -20,6 +23,8 @@ type NotificationOutcome = {
   reason?:
     | "not_whatsapp"
     | "notifications_disabled"
+    | "opt_in_required"
+    | "phone_missing"
     | "migration_pending"
     | "duplicate"
     | "send_failed";
@@ -35,6 +40,11 @@ export type WhatsappDeliveryOperationDetails = {
     status: "pending" | "sent" | "delivered" | "read" | "failed";
     lastError: string;
   } | null;
+  storeAddress: string;
+  storeLatitude: number | null;
+  storeLongitude: number | null;
+  destinationLatitude: number | null;
+  destinationLongitude: number | null;
 };
 
 const STAFF_ROLES = new Set(["owner", "admin", "waiter", "kitchen", "supervisor"]);
@@ -98,9 +108,10 @@ async function sendWhatsappEvent(input: {
   event: WhatsappOrderEvent;
   orderNumber: number;
   orderType: string;
-  conversationId: string;
+  conversationId: string | null;
   phone: string;
   attempts: number;
+  useTemplate: boolean;
 }): Promise<NotificationOutcome> {
   const admin = createAdminClient();
   const body = eventMessage(input.event, input.orderNumber, input.orderType);
@@ -109,20 +120,30 @@ async function sendWhatsappEvent(input: {
     if (config.provider !== "meta" || !config.accessToken || !config.phoneNumberId) {
       throw new Error("Meta no está configurado para enviar mensajes");
     }
-    const sent = await sendMetaTextMessage(
-      { to: input.phone, body },
-      {
-        graphApiVersion: config.graphApiVersion,
-        phoneNumberId: config.phoneNumberId,
-        accessToken: config.accessToken,
-      }
-    );
-    await recordOutboundMessage({
-      conversationId: input.conversationId,
-      externalMessageId: sent.messageId,
-      phone: input.phone,
-      body,
-    });
+    const metaConfig = {
+      graphApiVersion: config.graphApiVersion,
+      phoneNumberId: config.phoneNumberId,
+      accessToken: config.accessToken,
+    };
+    const sent = input.useTemplate
+      ? await sendMetaTemplateMessage(
+          {
+            to: input.phone,
+            name: config.deliveryTemplateName,
+            languageCode: config.deliveryTemplateLanguage,
+            bodyParameters: [String(input.orderNumber)],
+          },
+          metaConfig
+        )
+      : await sendMetaTextMessage({ to: input.phone, body }, metaConfig);
+    if (input.conversationId) {
+      await recordOutboundMessage({
+        conversationId: input.conversationId,
+        externalMessageId: sent.messageId,
+        phone: input.phone,
+        body,
+      });
+    }
     await admin
       .from("whatsapp_notification_events")
       .update({
@@ -157,15 +178,20 @@ async function notifyWhatsappOrder(orderId: string, event: WhatsappOrderEvent) {
   const admin = createAdminClient();
   const order = await admin
     .from("orders")
-    .select("id,number,type,source_channel,channel_conversation_id")
+    .select("id,number,type,source_channel,channel_conversation_id,customer_phone,whatsapp_status_opt_in")
     .eq("id", orderId)
     .single();
   if (isMissingWhatsappSchema(order.error)) {
     return { sent: false, reason: "migration_pending" } satisfies NotificationOutcome;
   }
   if (order.error || !order.data) throw new Error("No se encontró el pedido");
-  if (order.data.source_channel !== "whatsapp" || !order.data.channel_conversation_id) {
+  const isWhatsappConversation =
+    order.data.source_channel === "whatsapp" && Boolean(order.data.channel_conversation_id);
+  if (!isWhatsappConversation && event !== "driver_on_way") {
     return { sent: false, reason: "not_whatsapp" } satisfies NotificationOutcome;
+  }
+  if (!isWhatsappConversation && !order.data.whatsapp_status_opt_in) {
+    return { sent: false, reason: "opt_in_required" } satisfies NotificationOutcome;
   }
 
   const settings = await admin
@@ -177,18 +203,26 @@ async function notifyWhatsappOrder(orderId: string, event: WhatsappOrderEvent) {
     return { sent: false, reason: "notifications_disabled" } satisfies NotificationOutcome;
   }
 
-  const conversation = await admin
-    .from("channel_conversations")
-    .select("external_contact_id")
-    .eq("id", order.data.channel_conversation_id)
-    .single();
-  if (conversation.error || !conversation.data) throw new Error("No se encontró la conversación");
+  let conversationId: string | null = null;
+  let phone = order.data.customer_phone ?? "";
+  if (isWhatsappConversation && order.data.channel_conversation_id) {
+    const conversation = await admin
+      .from("channel_conversations")
+      .select("external_contact_id")
+      .eq("id", order.data.channel_conversation_id)
+      .single();
+    if (conversation.error || !conversation.data) throw new Error("No se encontró la conversación");
+    conversationId = order.data.channel_conversation_id;
+    phone = conversation.data.external_contact_id;
+  }
+  if (!phone) return { sent: false, reason: "phone_missing" } satisfies NotificationOutcome;
 
   const inserted = await admin
     .from("whatsapp_notification_events")
     .insert({
       order_id: orderId,
-      conversation_id: order.data.channel_conversation_id,
+      conversation_id: conversationId,
+      recipient_phone: phone,
       event_key: event,
       status: "pending",
       attempts: 1,
@@ -215,9 +249,10 @@ async function notifyWhatsappOrder(orderId: string, event: WhatsappOrderEvent) {
     event,
     orderNumber: order.data.number,
     orderType: order.data.type,
-    conversationId: order.data.channel_conversation_id,
-    phone: conversation.data.external_contact_id,
+    conversationId,
+    phone,
     attempts: 1,
+    useTemplate: !conversationId,
   });
 }
 
@@ -242,7 +277,7 @@ export async function retryWhatsappNotificationAction(eventId: string) {
     const admin = createAdminClient();
     const event = await admin
       .from("whatsapp_notification_events")
-      .select("id,event_key,status,attempts,conversation_id,orders(number,type),channel_conversations(external_contact_id)")
+      .select("id,event_key,status,attempts,conversation_id,recipient_phone,orders(number,type,customer_phone,whatsapp_status_opt_in),channel_conversations(external_contact_id)")
       .eq("id", eventId)
       .single();
     if (event.error || !event.data) throw new Error("No se encontró la notificación");
@@ -250,8 +285,8 @@ export async function retryWhatsappNotificationAction(eventId: string) {
       throw new Error("Esta notificación ya no está pendiente de reintento");
     }
     const orderRelation = event.data.orders as unknown as
-      | { number?: number; type?: string }
-      | Array<{ number?: number; type?: string }>
+      | { number?: number; type?: string; customer_phone?: string | null }
+      | Array<{ number?: number; type?: string; customer_phone?: string | null }>
       | null;
     const conversationRelation = event.data.channel_conversations as unknown as
       | { external_contact_id?: string }
@@ -261,7 +296,8 @@ export async function retryWhatsappNotificationAction(eventId: string) {
     const conversation = Array.isArray(conversationRelation)
       ? conversationRelation[0]
       : conversationRelation;
-    if (!order?.number || !order.type || !conversation?.external_contact_id) {
+    const phone = conversation?.external_contact_id || event.data.recipient_phone || order?.customer_phone;
+    if (!order?.number || !order.type || !phone) {
       throw new Error("La notificación no tiene los datos necesarios para reenviarse");
     }
     const outcome = await sendWhatsappEvent({
@@ -270,8 +306,9 @@ export async function retryWhatsappNotificationAction(eventId: string) {
       orderNumber: order.number,
       orderType: order.type,
       conversationId: event.data.conversation_id,
-      phone: conversation.external_contact_id,
+      phone,
       attempts: Number(event.data.attempts ?? 0) + 1,
+      useTemplate: !event.data.conversation_id,
     });
     return outcome.sent
       ? { success: true, ...outcome }
@@ -304,10 +341,7 @@ export async function notifyWhatsappOrderStatusAction(
         .eq("id", orderId)
         .single();
       if (current.error || !current.data) throw new Error("No se encontró el pedido");
-      if (
-        current.data.source_channel === "whatsapp" &&
-        current.data.type === "domicilio"
-      ) {
+      if (current.data.type === "domicilio") {
         if (current.data.status !== "ready") {
           throw new Error("El pedido todavía no está listo para reparto");
         }
@@ -367,8 +401,8 @@ export async function markWhatsappDriverOnWayAction(orderId: string) {
       .eq("id", orderId)
       .single();
     if (current.error || !current.data) throw new Error("No se encontró el pedido");
-    if (current.data.source_channel !== "whatsapp" || current.data.type !== "domicilio") {
-      throw new Error("Este pedido no corresponde a un domicilio de WhatsApp");
+    if (current.data.type !== "domicilio") {
+      throw new Error("Este pedido no corresponde a un domicilio");
     }
     if (current.data.status !== "ready") {
       throw new Error("El pedido debe estar listo antes de salir a reparto");
@@ -425,8 +459,8 @@ export async function finalizeWhatsappDeliveryAction(orderId: string) {
       .eq("id", orderId)
       .single();
     if (current.error || !current.data) throw new Error("No se encontró el pedido");
-    if (current.data.source_channel !== "whatsapp" || current.data.type !== "domicilio") {
-      throw new Error("Este pedido no corresponde a un domicilio de WhatsApp");
+    if (current.data.type !== "domicilio") {
+      throw new Error("Este pedido no corresponde a un domicilio");
     }
     const previous = current.data.delivery_status as DeliveryStatus;
     if (previous === "customer_received") {
@@ -494,16 +528,15 @@ export async function getWhatsappDeliveryOperationsAction(orderIds: string[]) {
     const admin = createAdminClient();
     const orders = await admin
       .from("orders")
-      .select("id,channel_conversation_id,delivery_status")
+      .select("id,channel_conversation_id,delivery_status,delivery_distance_meters,delivery_latitude,delivery_longitude")
       .in("id", uniqueIds)
-      .eq("source_channel", "whatsapp")
       .eq("type", "domicilio");
     if (orders.error) throw orders.error;
 
     const conversationIds = (orders.data ?? [])
       .map((order) => order.channel_conversation_id)
       .filter((id): id is string => Boolean(id));
-    const [quotes, notifications] = await Promise.all([
+    const [quotes, notifications, settings] = await Promise.all([
       conversationIds.length > 0
         ? admin
             .from("whatsapp_delivery_quotes")
@@ -516,13 +549,19 @@ export async function getWhatsappDeliveryOperationsAction(orderIds: string[]) {
         .select("id,order_id,event_key,status,last_error,created_at")
         .in("order_id", uniqueIds)
         .order("created_at", { ascending: false }),
+      admin
+        .from("whatsapp_channel_settings")
+        .select("store_address,store_latitude,store_longitude")
+        .eq("id", 1)
+        .maybeSingle(),
     ]);
     if (quotes.error) throw quotes.error;
     if (notifications.error) throw notifications.error;
+    if (settings.error) throw settings.error;
 
     const distanceByConversation = new Map<string, number | null>();
     for (const quote of quotes.data ?? []) {
-      if (!distanceByConversation.has(quote.conversation_id)) {
+      if (!distanceByConversation.has(quote.conversation_id) && Number(quote.distance_meters ?? 0) > 0) {
         distanceByConversation.set(quote.conversation_id, quote.distance_meters ?? null);
       }
     }
@@ -552,10 +591,17 @@ export async function getWhatsappDeliveryOperationsAction(orderIds: string[]) {
     const details: Record<string, WhatsappDeliveryOperationDetails> = {};
     for (const order of orders.data ?? []) {
       details[order.id] = {
-        distanceMeters: order.channel_conversation_id
-          ? distanceByConversation.get(order.channel_conversation_id) ?? null
-          : null,
+        distanceMeters: Number(order.delivery_distance_meters ?? 0) > 0
+          ? Number(order.delivery_distance_meters)
+          : order.channel_conversation_id
+            ? distanceByConversation.get(order.channel_conversation_id) ?? null
+            : null,
         notification: notificationByOrder.get(order.id) ?? null,
+        storeAddress: settings.data?.store_address ?? "",
+        storeLatitude: settings.data?.store_latitude === null || settings.data?.store_latitude === undefined ? null : Number(settings.data.store_latitude),
+        storeLongitude: settings.data?.store_longitude === null || settings.data?.store_longitude === undefined ? null : Number(settings.data.store_longitude),
+        destinationLatitude: order.delivery_latitude === null || order.delivery_latitude === undefined ? null : Number(order.delivery_latitude),
+        destinationLongitude: order.delivery_longitude === null || order.delivery_longitude === undefined ? null : Number(order.delivery_longitude),
       };
     }
     return { success: true, details };

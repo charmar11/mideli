@@ -23,6 +23,9 @@ interface TableFloorMapProps {
   selectedZoneId?: string | null;
   selectedLabelId?: string | null;
   editable?: boolean;
+  selectionMode?: boolean;
+  fitSingleZone?: boolean;
+  showLabels?: boolean;
   className?: string;
   onSelectTable?: (table: RestaurantTable, event?: React.MouseEvent<HTMLButtonElement>) => void;
   onEditTable?: (table: RestaurantTable) => void;
@@ -292,6 +295,9 @@ export function TableFloorMap({
   selectedZoneId = null,
   selectedLabelId = null,
   editable = false,
+  selectionMode = false,
+  fitSingleZone = false,
+  showLabels = true,
   className = "",
   onSelectTable,
   onEditTable,
@@ -732,7 +738,7 @@ export function TableFloorMap({
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointer}
       onPointerCancel={finishPointer}
-      className={`relative min-h-[22rem] aspect-[3/4] touch-pan-y overflow-hidden rounded-3xl border border-border bg-surface shadow-card sm:aspect-[4/3] sm:min-h-0 ${className}`}
+      className={`relative touch-pan-y overflow-hidden rounded-3xl border border-border bg-surface shadow-card ${selectionMode ? "h-full min-h-0 aspect-auto select-none" : "min-h-[22rem] aspect-[3/4] sm:aspect-[4/3] sm:min-h-0"} ${className}`}
       style={{
         backgroundImage:
           "linear-gradient(to right, color-mix(in srgb, var(--border) 55%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--border) 55%, transparent) 1px, transparent 1px)",
@@ -751,10 +757,27 @@ export function TableFloorMap({
         const selected = selectedZoneId === zone.id;
         const fallbackColumn = zoneIndex % 3;
         const fallbackRow = Math.floor(zoneIndex / 3);
-        const zonePositionX = numberOr(zone.position_x, 0.04 + fallbackColumn * 0.32);
-        const zonePositionY = numberOr(zone.position_y, 0.04 + fallbackRow * 0.42);
-        const zoneWidth = numberOr(zone.width, 0.29);
-        const zoneHeight = numberOr(zone.height, 0.36);
+        const singleZoneFitsCanvas = fitSingleZone && zones.length === 1;
+        const zoneWidth = singleZoneFitsCanvas
+          ? 0.92
+          : clamp(numberOr(zone.width, 0.29), 0.18, 0.96);
+        const zoneHeight = singleZoneFitsCanvas
+          ? 0.86
+          : clamp(numberOr(zone.height, 0.36), 0.16, 0.92);
+        const zonePositionX = singleZoneFitsCanvas
+          ? 0.04
+          : clamp(
+              numberOr(zone.position_x, 0.04 + fallbackColumn * 0.32),
+              0.01,
+              Math.max(0.01, 0.99 - zoneWidth)
+            );
+        const zonePositionY = singleZoneFitsCanvas
+          ? 0.1
+          : clamp(
+              numberOr(zone.position_y, 0.04 + fallbackRow * 0.42),
+              0.01,
+              Math.max(0.01, 0.99 - zoneHeight)
+            );
         return (
           <section
             key={zone.id}
@@ -768,6 +791,7 @@ export function TableFloorMap({
               top: `${zonePositionY * 100}%`,
               width: `${zoneWidth * 100}%`,
               height: `${zoneHeight * 100}%`,
+              zIndex: selected ? 20 : zoneIndex + 1,
               backgroundColor: selected ? "var(--surface)" : "var(--background)",
               backgroundImage:
                 "linear-gradient(to right, color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px)",
@@ -792,7 +816,7 @@ export function TableFloorMap({
                   {zone.name}
                 </span>
                 <span className="flex shrink-0 items-center gap-1 font-data text-[10px] text-muted-foreground">
-                  <Users size={12} /> {zoneTables.length}
+                  <Users size={12} /> {selectionMode ? `${zoneTables.length} mesas` : zoneTables.length}
                 </span>
               </button>
               {editable && selected ? (
@@ -841,16 +865,17 @@ export function TableFloorMap({
                     key={table.id}
                     className="absolute"
                     style={{
-                      left: `${Number(table.position_x) * 100}%`,
-                      top: `${Number(table.position_y) * 100}%`,
+                      left: `${clamp(numberOr(table.position_x, 0.5), displaySize.width / 2, 1 - displaySize.width / 2) * 100}%`,
+                      top: `${clamp(numberOr(table.position_y, 0.45), displaySize.height / 2, 1 - displaySize.height / 2) * 100}%`,
                       width: `${displaySize.width * 100}%`,
                       height: `${displaySize.height * 100}%`,
+                      zIndex: tableSelected ? 15 : undefined,
                       transform: `translate(-50%, -50%) rotate(${Number(table.rotation) || 0}deg)`,
                     }}
                   >
                     <button
                       type="button"
-                      aria-label={`Editar mesa ${table.name}`}
+                      aria-label={`${selectionMode ? "Seleccionar" : "Editar"} mesa ${table.name}`}
                       aria-pressed={tableSelected}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -869,14 +894,15 @@ export function TableFloorMap({
                       onPointerDown={(event) => startTableDrag(event, table)}
                       className={`flex h-full w-full touch-none flex-col items-center justify-center gap-1 border-2 px-2 shadow-card transition-shadow ${shapeClass(table.shape)} ${
                         tableSelected
-                          ? "border-brand bg-brand text-white shadow-float"
+                          ? "border-brand bg-brand text-white shadow-float ring-2 ring-brand/30"
                           : "border-ink/20 bg-surface text-foreground hover:border-brand/60"
                       } ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                      style={selectionMode ? { minWidth: 52, minHeight: 52 } : undefined}
                     >
-                      <span className="max-w-full truncate font-heading text-xs font-bold">
+                      <span className={`max-w-full font-heading font-bold ${selectionMode ? "whitespace-normal break-words text-center text-[11px] leading-tight" : "truncate text-xs"}`}>
                         {table.name}
                       </span>
-                      <span className="flex items-center gap-1 font-data text-[10px] opacity-70">
+                      <span className={`flex items-center gap-1 font-data opacity-70 ${selectionMode ? "text-[11px]" : "text-[10px]"}`}>
                         <Users size={11} /> {table.capacity}
                       </span>
                     </button>
@@ -952,7 +978,7 @@ export function TableFloorMap({
         );
       })}
 
-      {labels.map((label) => {
+      {showLabels && labels.map((label) => {
         const selected = selectedLabelId === label.id;
         const positionX = numberOr(label.position_x, 0.4);
         const positionY = numberOr(label.position_y, 0.08);

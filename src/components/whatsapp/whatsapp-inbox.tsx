@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  ShoppingBag,
   Trash2,
   UserRoundCheck,
   X,
@@ -56,20 +57,13 @@ import {
   whatsappMessageStatus,
   whatsappOrderStatus,
 } from "@/lib/whatsapp/inbox";
+import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import { WhatsappMessageText } from "@/components/whatsapp/whatsapp-message-text";
 
 type Props = {
   data: WhatsappControlData;
   focusConversationId?: string | null;
 };
-
-function formatPhone(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("52") && digits.length >= 12) {
-    const local = digits.slice(-10);
-    return `+52 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
-  }
-  return `+${digits}`;
-}
 
 function formatDate(value: string | null) {
   if (!value) return "Sin actividad";
@@ -122,8 +116,15 @@ function statusTone(tone: ReturnType<typeof whatsappConversationStatus>["tone"])
   return "bg-surface-raised text-muted-foreground";
 }
 
+function filterTone(filter: WhatsappInboxFilter) {
+  if (filter === "attention") return "bg-warning/15 text-warning";
+  if (filter === "active") return "bg-success/15 text-success";
+  if (filter === "closed") return "bg-surface-raised text-muted-foreground";
+  return "bg-brand/15 text-brand";
+}
+
 function customerLabel(conversation: WhatsappAdminConversation) {
-  return conversation.customerName || formatPhone(conversation.phone);
+  return conversation.customerName || formatPhoneForDisplay(conversation.phone);
 }
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
@@ -157,9 +158,16 @@ function ConversationList({
   onSelect: (conversation: WhatsappAdminConversation) => void;
   onSync: () => void;
 }) {
+  const filterCounts: Record<WhatsappInboxFilter, number> = {
+    attention: conversations.filter((item) => item.status === "handoff").length,
+    active: conversations.filter((item) => item.status === "active" || item.status === "confirmed").length,
+    closed: conversations.filter((item) => item.status === "closed" || item.status === "cancelled").length,
+    all: conversations.length,
+  };
+
   return (
     <>
-      <div className="border-b border-border p-3">
+      <div className="shrink-0 border-b border-border p-3">
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
             <h2 className="font-heading text-base font-bold">Conversaciones</h2>
@@ -193,26 +201,29 @@ function ConversationList({
             aria-label="Buscar conversaciones"
           />
         </label>
-        <div className="mt-2 grid grid-cols-2 gap-1 sm:flex" aria-label="Filtrar conversaciones">
+        <div className="mt-3 grid grid-cols-2 gap-1.5 sm:flex" aria-label="Filtrar conversaciones">
           {WHATSAPP_INBOX_FILTERS.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => onFilter(item.id)}
               aria-pressed={filter === item.id}
-              className={`h-9 min-w-0 rounded-lg px-2 font-heading text-[11px] font-bold transition-colors sm:shrink-0 sm:px-3 ${
+              className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-lg px-3 font-heading text-[11px] font-bold transition-colors sm:h-10 sm:min-h-0 sm:shrink-0 sm:px-3 ${
                 filter === item.id
-                  ? "bg-cream text-ink"
+                  ? `${filterTone(item.id)} ring-1 ring-current/15`
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
               }`}
             >
-              {item.label}
+              <span className="truncate">{item.label}</span>
+              <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-data text-[10px] tabular-nums ${filter === item.id ? "bg-black/10" : "bg-background text-muted-foreground"}`}>
+                {filterCounts[item.id]}
+              </span>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-2 [content-visibility:auto]">
+      <div className="whatsapp-scroll-y min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2 pb-3 [content-visibility:auto]">
         {conversations.length === 0 ? (
           <div className="flex min-h-64 items-center justify-center p-6 text-center">
             <div>
@@ -232,11 +243,11 @@ function ConversationList({
               type="button"
               onClick={() => onSelect(conversation)}
               aria-current={selected ? "true" : undefined}
-              className={`mb-1 w-full rounded-xl p-3 text-left transition-[background-color,box-shadow,transform] duration-150 active:scale-[0.99] ${
+              className={`mb-1.5 w-full rounded-xl border border-transparent p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 active:scale-[0.99] ${
                 selected
-                  ? "bg-brand/12 shadow-[inset_3px_0_0_var(--brand)]"
-                  : conversation.status === "handoff"
-                    ? "bg-warning/7 hover:bg-warning/12"
+                  ? "border-brand/30 bg-brand/12 shadow-[inset_3px_0_0_var(--brand)]"
+                : conversation.status === "handoff"
+                    ? "border-warning/15 bg-warning/7 hover:bg-warning/12"
                     : "hover:bg-background"
               }`}
             >
@@ -256,7 +267,7 @@ function ConversationList({
                       </strong>
                       {conversation.customerName ? (
                         <span className="block font-data text-[10px] text-muted-foreground">
-                          {formatPhone(conversation.phone)}
+                          {formatPhoneForDisplay(conversation.phone)}
                         </span>
                       ) : null}
                     </div>
@@ -321,7 +332,7 @@ function OrderContext({
   }
 
   const content = (
-    <div className={compact ? "space-y-3 pt-3" : "pos-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-4"}>
+    <div className={compact ? "space-y-3 pt-3" : "whatsapp-scroll-y min-h-0 flex-1 space-y-4 overflow-y-auto p-4"}>
       <div>
         <p className="font-heading text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
           Cliente
@@ -332,7 +343,7 @@ function OrderContext({
           className="mt-1 inline-flex min-h-9 items-center gap-2 font-data text-xs text-muted-foreground hover:text-cream"
         >
           <Phone aria-hidden size={14} />
-          {formatPhone(conversation.phone)}
+          {formatPhoneForDisplay(conversation.phone)}
         </a>
         <p className="mt-1 font-body text-xs text-muted-foreground">
           {conversation.assignedName
@@ -439,6 +450,15 @@ function OrderContext({
               Mapa
             </a>
           </div>
+        ) : null}
+        {items.length > 0 ? (
+          <a
+            href={`/dashboard/mesero?whatsappConversation=${encodeURIComponent(conversation.id)}`}
+            className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-3 font-heading text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
+          >
+            <ShoppingBag aria-hidden size={15} />
+            {order ? "Abrir pedido en Mesero" : "Cargar pedido en Mesero"}
+          </a>
         ) : null}
       </div>
 
@@ -559,7 +579,7 @@ function ChatPanel({
             </span>
             {conversation.customerName ? (
               <span className="hidden truncate font-data text-[10px] text-muted-foreground sm:inline">
-                {formatPhone(conversation.phone)}
+                {formatPhoneForDisplay(conversation.phone)}
               </span>
             ) : null}
           </div>
@@ -678,7 +698,7 @@ function ChatPanel({
                 <X aria-hidden size={19} />
               </Button>
             </header>
-            <div className="pos-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="whatsapp-scroll-y min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
               <OrderContext conversation={conversation} compact />
             </div>
           </section>
@@ -691,9 +711,9 @@ function ChatPanel({
           <div className="flex items-start gap-3">
             <CircleAlert aria-hidden className="mt-0.5 shrink-0 text-danger" size={17} />
             <div className="min-w-0 flex-1">
-              <p className="font-heading text-xs font-bold text-danger">¿Limpiar todo el contenido del chat?</p>
+              <p className="font-heading text-xs font-bold text-danger">¿Limpiar y ocultar esta conversación?</p>
               <p className="mt-1 font-body text-xs text-muted-foreground">
-                Los pedidos, folios y auditoría se conservarán. Los mensajes no se pueden recuperar.
+                Se borrarán los mensajes visibles y la conversación dejará de aparecer en la bandeja. Los pedidos, folios y auditoría se conservarán.
               </p>
               <div className="mt-3 flex gap-2">
                 <Button
@@ -706,7 +726,7 @@ function ChatPanel({
                     onClear();
                   }}
                 >
-                  Limpiar mensajes
+                  Limpiar y ocultar
                 </Button>
                 <Button
                   type="button"
@@ -727,7 +747,7 @@ function ChatPanel({
         <div
           ref={viewportRef}
           onScroll={onViewportScroll}
-          className="pos-scroll absolute inset-0 space-y-3 overflow-y-auto bg-background/60 px-3 py-4 sm:px-5"
+          className="whatsapp-scroll-y absolute inset-0 space-y-3 overflow-y-auto overscroll-contain bg-background/60 px-3 py-4 sm:px-5"
           aria-live="polite"
         >
           {loading ? (
@@ -757,8 +777,12 @@ function ChatPanel({
                       : "rounded-br-md bg-brand text-white"
                     : "rounded-bl-md bg-surface text-foreground ring-1 ring-border/80"
                 }`}>
-                  <p className="whitespace-pre-wrap break-words font-body text-sm leading-relaxed">
-                    {item.body || "Contenido eliminado por privacidad"}
+                  <p className="font-body text-sm leading-relaxed">
+                    {item.body ? (
+                      <WhatsappMessageText body={item.body} />
+                    ) : (
+                      "Contenido eliminado por privacidad"
+                    )}
                   </p>
                   <div className={`mt-1.5 flex items-center justify-end gap-1.5 font-data text-[9px] ${
                     outbound && !failed ? "text-white/65" : failed ? "text-danger" : "text-muted-foreground"
@@ -1031,9 +1055,14 @@ export function WhatsappInbox({ data, focusConversationId = null }: Props) {
       }
       toast.success(
         result.data.redacted === 1
-          ? "1 mensaje limpiado. El pedido se conservó"
-          : `${result.data.redacted} mensajes limpiados. Los pedidos se conservaron`
+          ? "1 mensaje borrado. La conversación se ocultó"
+          : `${result.data.redacted} mensajes borrados. La conversación se ocultó`
       );
+      selectedIdRef.current = null;
+      setSelectedId(null);
+      setMessages([]);
+      setLoadedConversationId(null);
+      setMobileChatOpen(false);
       await syncInbox();
     });
   }
@@ -1048,7 +1077,7 @@ export function WhatsappInbox({ data, focusConversationId = null }: Props) {
   }
 
   return (
-    <div className="grid h-[calc(100dvh-17rem)] min-h-[30rem] w-full min-w-0 max-w-full gap-3 overflow-hidden lg:h-[calc(100dvh-14rem)] lg:max-h-[880px] lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[21rem_minmax(0,1fr)_19rem]">
+    <div className="grid h-full min-h-0 w-full min-w-0 max-w-full flex-1 gap-3 overflow-hidden lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[21rem_minmax(0,1fr)_19rem]">
       <Panel className={`${mobileChatOpen ? "hidden lg:flex" : "flex"} flex-col`}>
         <ConversationList
           conversations={filteredConversations}

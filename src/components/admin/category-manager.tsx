@@ -107,7 +107,7 @@ function SortableCategoryRow({
       ) : (
         <button
           type="button"
-          className="min-h-11 min-w-0 flex-1 truncate rounded-lg px-1 text-left font-heading text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand cursor-pointer"
+          className="min-h-11 min-w-0 flex-1 rounded-lg px-1 py-2 text-left font-heading text-sm font-semibold leading-snug text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand cursor-pointer"
           onClick={() => onStartEdit(category)}
           title={category.name}
         >

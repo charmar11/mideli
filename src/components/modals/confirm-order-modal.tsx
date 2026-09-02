@@ -7,6 +7,7 @@ interface ConfirmOrderModalProps {
   items: CartItem[];
   orderType: "comedor" | "domicilio" | "para_llevar";
   total: number;
+  deliveryFee?: number;
   isSubmitting: boolean;
   isEditing?: boolean;
   onConfirm: () => void;
@@ -28,6 +29,7 @@ export function ConfirmOrderModal({
   items,
   orderType,
   total,
+  deliveryFee = 0,
   isSubmitting,
   isEditing = false,
   onConfirm,
@@ -116,6 +118,12 @@ export function ConfirmOrderModal({
               );
             })}
           </ul>
+          {deliveryFee > 0 ? (
+            <div className="mt-4 flex items-center justify-between border-t border-border pt-3 font-body text-sm">
+              <span>Envío a domicilio</span>
+              <span className="font-data font-bold">${formatPrice(deliveryFee)}</span>
+            </div>
+          ) : null}
         </div>
 
         <div className="bg-ink px-5 py-4 text-white">

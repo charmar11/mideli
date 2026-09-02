@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Bike,
+  CheckCircle2,
   ChevronRight,
   MapPin,
   Minus,
@@ -16,6 +17,8 @@ import {
 } from "lucide-react";
 import { useCartStore } from "@/lib/stores";
 import type { RestaurantTable, TableMapLabel, TableZone } from "@/types/database";
+import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import { ORDER_TYPE_VISUALS } from "@/lib/order-visuals";
 import { TablePicker } from "./table-picker";
 
 interface CartPanelProps {
@@ -28,6 +31,19 @@ interface CartPanelProps {
     labels?: TableMapLabel[];
   customerName?: string;
   onCustomerNameChange?: (val: string) => void;
+  customerPhone?: string;
+  onCustomerPhoneChange?: (val: string) => void;
+  deliveryAddress?: string;
+  onDeliveryAddressChange?: (val: string) => void;
+  deliveryReference?: string;
+  onDeliveryReferenceChange?: (val: string) => void;
+  deliveryFee?: number;
+  deliveryDistanceKm?: number | null;
+  deliveryConfirmed?: boolean;
+  deliveryLatitude?: number | null;
+  deliveryLongitude?: number | null;
+  onQuoteDelivery?: () => void;
+  deliveryQuoteLoading?: boolean;
   onRequestSubmit: () => void;
   onClose?: () => void;
   isMobile?: boolean;
@@ -55,6 +71,19 @@ export function CartPanel({
   labels = [],
   customerName = "",
   onCustomerNameChange,
+  customerPhone = "",
+  onCustomerPhoneChange,
+  deliveryAddress = "",
+  onDeliveryAddressChange,
+  deliveryReference = "",
+  onDeliveryReferenceChange,
+  deliveryFee = 0,
+  deliveryDistanceKm = null,
+  deliveryConfirmed = false,
+  deliveryLatitude = null,
+  deliveryLongitude = null,
+  onQuoteDelivery,
+  deliveryQuoteLoading = false,
   onRequestSubmit,
   onClose,
   isMobile = false,
@@ -67,12 +96,16 @@ export function CartPanel({
   const removeItem = useCartStore((state) => state.removeItem);
   const updateNotes = useCartStore((state) => state.updateNotes);
   const getTotal = useCartStore((state) => state.getTotal);
-  const total = getTotal();
+  const total = getTotal() + (orderType === "domicilio" ? deliveryFee : 0);
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const selectedTable = tables.find((table) => table.id === tableId);
   const selectedZone = selectedTable
     ? zones.find((zone) => zone.id === selectedTable.zone_id)
     : null;
+  const googleMapEmbedUrl =
+    deliveryLatitude !== null && deliveryLongitude !== null
+      ? `https://www.google.com/maps?q=${deliveryLatitude},${deliveryLongitude}&z=16&output=embed`
+      : null;
 
   return (
     <div
@@ -131,10 +164,10 @@ export function CartPanel({
               key={type.value}
               type="button"
               onClick={() => onOrderTypeChange(type.value)}
-              className={`flex h-14 flex-col items-center justify-center gap-1 rounded-xl transition-colors ${
+              className={`flex h-14 flex-col items-center justify-center gap-1 rounded-xl border transition-[background-color,border-color,color,box-shadow] ${
                 isActive
-                  ? "bg-ink text-white shadow-sm"
-                  : "bg-background text-muted-foreground ring-1 ring-border hover:text-foreground"
+                  ? ORDER_TYPE_VISUALS[type.value].selected
+                  : "border-border bg-background text-muted-foreground hover:border-border-strong hover:text-foreground"
               }`}
             >
               <Icon size={18} />
@@ -144,6 +177,7 @@ export function CartPanel({
         })}
       </div>
 
+      {false ? (
       <div className="border-b border-border bg-background/60 px-3 py-3">
         {orderType === "comedor" ? (
           <div className="space-y-2">
@@ -172,7 +206,7 @@ export function CartPanel({
             {selectedTable ? (
               <div className="flex items-center justify-between gap-2 px-1">
                 <span className="font-body text-xs text-muted-foreground">
-                  {selectedZone?.name ?? "Zona sin nombre"} · {selectedTable.capacity} personas
+                  {selectedZone?.name ?? "Zona sin nombre"} · {selectedTable?.capacity ?? 0} personas
                 </span>
                 <button
                   type="button"
@@ -185,18 +219,113 @@ export function CartPanel({
             ) : null}
           </div>
         ) : (
-          <label className="flex flex-col gap-1.5">
-            <span className="font-heading text-xs font-bold text-muted-foreground">Cliente</span>
-            <input
-              type="text"
-              value={customerName}
-              onChange={(event) => onCustomerNameChange?.(event.target.value)}
-              placeholder="Nombre del cliente"
-              className="h-11 rounded-xl border border-border bg-surface px-3 font-heading text-sm font-semibold text-foreground placeholder:font-body placeholder:font-normal placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
-            />
-          </label>
+          <div className="space-y-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="font-heading text-xs font-bold text-muted-foreground">Cliente</span>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(event) => onCustomerNameChange?.(event.target.value)}
+                placeholder="Nombre del cliente"
+                className="h-11 rounded-xl border border-border bg-surface px-3 font-heading text-sm font-semibold text-foreground placeholder:font-body placeholder:font-normal placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              />
+            </label>
+            {orderType === "domicilio" ? (
+              <>
+                <div className="rounded-2xl border border-border bg-surface p-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand/12 text-brand">
+                        <MapPin size={17} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-heading text-xs font-bold text-foreground">Entrega a domicilio</p>
+                        <p className="font-body text-[11px] text-muted-foreground">
+                          Confirma el punto antes de enviar
+                        </p>
+                      </div>
+                    </div>
+                    {deliveryConfirmed ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success/12 px-2 py-1 font-heading text-[10px] font-bold text-success">
+                        <CheckCircle2 size={12} /> Confirmado
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 overflow-hidden rounded-xl border border-border bg-background">
+                    {googleMapEmbedUrl ? (
+                      <iframe
+                        title="Mapa del domicilio"
+                        src={googleMapEmbedUrl ?? ""}
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                        className="h-40 w-full border-0"
+                      />
+                    ) : (
+                      <div className="flex h-28 flex-col items-center justify-center gap-2 px-4 text-center">
+                        <MapPin size={21} className="text-muted-foreground/60" />
+                        <p className="font-body text-[11px] text-muted-foreground">
+                          El mapa aparecerá cuando localices el domicilio
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="tel"
+                  value={customerPhone ? formatPhoneForDisplay(customerPhone) : ""}
+                  onChange={(event) => onCustomerPhoneChange?.(event.target.value)}
+                  placeholder="Teléfono del cliente"
+                  className="h-11 w-full rounded-xl border border-border bg-surface px-3 font-data text-sm text-foreground placeholder:font-body placeholder:font-normal placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                />
+                <textarea
+                  value={deliveryAddress}
+                  onChange={(event) => onDeliveryAddressChange?.(event.target.value)}
+                  placeholder="Dirección completa"
+                  rows={2}
+                  className="w-full resize-none rounded-xl border border-border bg-surface px-3 py-2.5 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                />
+                <button
+                  type="button"
+                  onClick={onQuoteDelivery}
+                  disabled={deliveryQuoteLoading || deliveryAddress.trim().length < 8}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-success px-3 font-heading text-xs font-bold text-white transition-colors hover:bg-success/85 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <MapPin size={15} />
+                  {deliveryQuoteLoading ? "Buscando domicilio…" : "Buscar y confirmar en Google Maps"}
+                </button>
+                {deliveryConfirmed ? (
+                  <div className="rounded-xl border border-success/20 bg-success/10 px-3 py-2.5 font-body text-xs text-success">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-heading text-[11px] font-bold">
+                      <span>Domicilio confirmado</span>
+                      {deliveryDistanceKm !== null ? <span>{deliveryDistanceKm?.toFixed(1)} km</span> : null}
+                      <span>Envío ${deliveryFee.toLocaleString("es-MX")}</span>
+                    </div>
+                    {deliveryLatitude !== null && deliveryLongitude !== null ? (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${deliveryLatitude},${deliveryLongitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-flex min-h-8 items-center gap-1 font-heading font-bold underline"
+                      >
+                        <MapPin size={13} /> Ver ubicación
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
+                <input
+                  type="text"
+                  value={deliveryReference}
+                  onChange={(event) => onDeliveryReferenceChange?.(event.target.value)}
+                  placeholder="Referencia o acceso (opcional)"
+                  className="h-11 w-full rounded-xl border border-border bg-surface px-3 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                />
+              </>
+            ) : null}
+          </div>
         )}
       </div>
+      ) : null}
 
       <div className="pos-scroll min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {items.length === 0 ? (
@@ -316,7 +445,7 @@ export function CartPanel({
           className="action-success flex w-full items-center justify-center gap-2 rounded-xl py-3.5 font-heading text-sm font-bold disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
         >
           <Send size={16} />
-          Revisar y enviar
+          Continuar con datos
         </button>
       </div>
 

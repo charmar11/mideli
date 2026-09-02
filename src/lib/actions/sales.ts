@@ -2,7 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Order, OrderItem, SelectedModifier } from "@/types/database";
+import type { Order, OrderItem } from "@/types/database";
+import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 
 export interface SalesHistoryParams {
   desde: string;
@@ -30,10 +31,6 @@ export interface DeleteSalesHistoryResult {
 
 function isValidDate(value: string) {
   return value.length > 0 && !Number.isNaN(new Date(value).getTime());
-}
-
-function normalizeModifiers(value: unknown): SelectedModifier[] {
-  return Array.isArray(value) ? (value as SelectedModifier[]) : [];
 }
 
 export async function fetchSalesHistory({
@@ -76,7 +73,7 @@ export async function fetchSalesHistory({
     const { data: ordersData, error: ordersError } = await supabase
       .from("orders")
       .select(
-        "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
+        "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,customer_phone,source_channel,whatsapp_status_opt_in,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
       )
       .gte("created_at", from.toISOString())
       .lte("created_at", to.toISOString())
@@ -138,7 +135,7 @@ export async function fetchSalesHistory({
         quantity: item.quantity,
         unit_price: item.unit_price,
         notes: item.notes ?? "",
-        selected_modifiers: normalizeModifiers(item.selected_modifiers),
+        selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
         created_at: item.created_at,
         menu_item_name: menuName ?? "Producto eliminado",
       };

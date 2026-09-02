@@ -1,4 +1,4 @@
-import { missingRequiredGroups } from "./catalog";
+import { modifierGroupId, nextModifierGroup } from "./catalog";
 import type {
   ConversationCatalog,
   ConversationCartLine,
@@ -79,7 +79,11 @@ function pageRows<T>(
 }
 
 function cartLineDescription(line: ConversationCartLine) {
-  const modifiers = line.selectedModifiers.map((modifier) => modifier.optionName).join(", ");
+  const modifiers = line.selectedModifiers
+    .map((modifier) => modifier.price > 0
+      ? `${modifier.optionName} +$${modifier.price}`
+      : modifier.optionName)
+    .join(", ");
   return [
     `${line.quantity} × $${line.unitPrice}`,
     modifiers,
@@ -121,6 +125,14 @@ export function interactionForState(
   options: { humanHandoffEnabled?: boolean } = {}
 ): WhatsappInteraction | null {
   const humanHandoffEnabled = options.humanHandoffEnabled ?? true;
+  if (state.stage === "handoff") {
+    return humanHandoffEnabled
+      ? {
+          kind: "buttons",
+          buttons: [{ id: "cmd:human", title: "Hablar con alguien" }],
+        }
+      : null;
+  }
   if (state.stage === "ordering") {
     return state.cart.length === 0
       ? {
@@ -128,9 +140,6 @@ export function interactionForState(
           buttons: [
             { id: "cmd:start", title: "Hacer pedido" },
             { id: "cmd:menu", title: "Ver menú" },
-            ...(humanHandoffEnabled
-              ? [{ id: "cmd:human", title: "Hablar con alguien" }]
-              : []),
           ],
         }
       : {
@@ -189,10 +198,19 @@ export function interactionForState(
     const item = line
       ? catalog.items.find((candidate) => candidate.id === line.menuItemId)
       : null;
-    const group = item ? missingRequiredGroups(item, line?.selectedModifiers ?? [])[0] : null;
+    const group = item
+      ? state.pendingModifierGroupId
+        ? item.modifiers.find((candidate, index) =>
+            modifierGroupId(candidate, index) === state.pendingModifierGroupId
+          ) ?? null
+        : nextModifierGroup(item, line?.selectedModifiers ?? [], {
+            includeOptional: true,
+            skippedOptionalGroupIds: state.skippedOptionalModifierGroupIds ?? [],
+          })?.group ?? null
+      : null;
     if (!group) return null;
     const groupIndex = item?.modifiers.indexOf(group) ?? 0;
-    const groupId = group.id ?? `group-${groupIndex}`;
+    const groupId = modifierGroupId(group, groupIndex);
     const choices = group.options.map((option, optionIndex) => ({
       id: `modifier:${encoded(groupId)}:${encoded(option.id ?? `option-${groupIndex}-${optionIndex}`)}`,
       title: option.name,
@@ -201,15 +219,24 @@ export function interactionForState(
         option.description ?? "",
       ].filter(Boolean).join(" · "),
     }));
-    return choices.length <= 3
+    const optionalActions = group.required
+      ? []
+      : group.selection_mode === "multiple"
+        ? [
+            { id: `modifier:done:${encoded(groupId)}`, title: "Listo" },
+            { id: `modifier:skip:${encoded(groupId)}`, title: "Sin extras" },
+          ]
+        : [{ id: `modifier:skip:${encoded(groupId)}`, title: "Sin extras" }];
+    const allButtons = [...choices.map(({ id, title }) => ({ id, title })), ...optionalActions];
+    return allButtons.length <= 3
       ? {
           kind: "buttons",
-          buttons: choices.map(({ id, title }) => ({ id, title })),
+          buttons: allButtons,
         }
       : {
           kind: "list",
           buttonText: `Elegir ${group.name}`,
-          sections: [{ title: group.name, rows: choices.slice(0, 10) }],
+          sections: [{ title: group.name, rows: [...choices, ...optionalActions].slice(0, 10) }],
         };
   }
 
@@ -250,9 +277,6 @@ export function interactionForState(
       buttons: [
         { id: "address:confirm", title: "Sí, es aquí" },
         { id: "address:change", title: "Cambiar dirección" },
-        ...(humanHandoffEnabled
-          ? [{ id: "cmd:human", title: "Hablar con alguien" }]
-          : []),
       ],
     };
   }
@@ -416,9 +440,6 @@ export function interactionForState(
       kind: "buttons",
       buttons: [
         { id: "cmd:start", title: "Nuevo pedido" },
-        ...(humanHandoffEnabled
-          ? [{ id: "cmd:human", title: "Necesito ayuda" }]
-          : []),
       ],
     };
   }

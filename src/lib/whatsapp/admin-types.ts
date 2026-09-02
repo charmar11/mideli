@@ -58,6 +58,49 @@ export type WhatsappAdminMessage = {
   occurredAt: string;
 };
 
+export type WhatsappPosDraft = {
+  conversationId: string;
+  customerId: string | null;
+  orderId: string | null;
+  orderNumber: number | null;
+  phone: string;
+  customerName: string;
+  orderType: "domicilio" | "para_llevar" | null;
+  notes: string;
+  address: string;
+  reference: string;
+  addressConfirmed: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  distanceMeters: number | null;
+  deliveryFee: number;
+  paymentMethod: "efectivo" | "transferencia" | null;
+  cashTendered: number | null;
+  items: Array<{
+    id: string;
+    menu_item_id: string;
+    name: string;
+    price: number;
+    quantity: number;
+    notes: string;
+    selected_modifiers: Array<{
+      group_id?: string;
+      option_id?: string;
+      group: string;
+      option: string;
+      price: number;
+      description?: string;
+    }>;
+  }>;
+};
+
+export type PosCustomerMatch = {
+  id: string;
+  phone: string;
+  displayName: string;
+  addresses: WhatsappCustomerAddress[];
+};
+
 export type WhatsappInboxSnapshot = {
   conversations: WhatsappAdminConversation[];
   conversationId: string | null;
@@ -173,6 +216,8 @@ export type WhatsappControlData = {
     storeOriginReady: boolean;
     dryRun: boolean;
     orderCreationEnabled: boolean;
+    orderCreationServerEnabled: boolean;
+    orderCreationSettingEnabled: boolean;
     allowedTestPhones: number;
     failedNotifications: Array<{
       id: string;

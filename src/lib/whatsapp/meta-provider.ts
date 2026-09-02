@@ -11,6 +11,13 @@ export type MetaTextMessage = {
   body: string;
 };
 
+export type MetaTemplateMessage = {
+  to: string;
+  name: string;
+  languageCode: string;
+  bodyParameters?: string[];
+};
+
 export type MetaLocationMessage = {
   to: string;
   latitude: number;
@@ -140,6 +147,40 @@ export async function sendMetaTextMessage(
   return sendMetaMessage(
     message.to,
     { type: "text", text: { preview_url: false, body } },
+    config,
+    fetcher
+  );
+}
+
+export async function sendMetaTemplateMessage(
+  message: MetaTemplateMessage,
+  config: MetaProviderConfig,
+  fetcher: typeof fetch = fetch
+) {
+  const name = message.name.trim();
+  const languageCode = message.languageCode.trim();
+  if (!name || !/^[a-z0-9_]+$/.test(name)) {
+    throw new Error("La plantilla de WhatsApp no es válida");
+  }
+  if (!languageCode || !/^[a-z]{2}(?:_[A-Z]{2})?$/.test(languageCode)) {
+    throw new Error("El idioma de la plantilla de WhatsApp no es válido");
+  }
+  const parameters = (message.bodyParameters ?? []).map((text) => ({
+    type: "text",
+    text: text.trim().slice(0, 1024),
+  }));
+  return sendMetaMessage(
+    message.to,
+    {
+      type: "template",
+      template: {
+        name,
+        language: { code: languageCode },
+        ...(parameters.length > 0
+          ? { components: [{ type: "body", parameters }] }
+          : {}),
+      },
+    },
     config,
     fetcher
   );

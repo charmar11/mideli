@@ -118,15 +118,16 @@ export function WhatsAppControlCenter({ data }: Props) {
   );
   const [isPending, startTransition] = useTransition();
   const admin = data.role === "owner" || data.role === "admin";
+  const ownsVerticalScroll = tab === "inbox" || tab === "customers";
 
   function refresh() {
     startTransition(() => router.refresh());
   }
 
   return (
-    <div className="pos-scroll h-full w-full max-w-full overflow-x-hidden overflow-y-auto bg-background">
-      <div className="mx-auto min-h-full w-full min-w-0 max-w-[1500px] px-3 py-3 sm:px-5 sm:py-5">
-        <header className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className={`h-full w-full max-w-full bg-background ${ownsVerticalScroll ? "flex min-h-0 flex-col overflow-hidden overscroll-none" : "pos-scroll overflow-x-hidden overflow-y-auto"}`}>
+      <div className={`mx-auto w-full min-w-0 max-w-[1500px] px-3 py-3 sm:px-5 sm:py-5 ${ownsVerticalScroll ? "flex min-h-0 flex-1 flex-col" : "min-h-full"}`}>
+        <header className="mb-4 flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-success/15 text-success">
               <MessageCircleMore aria-hidden size={21} />
@@ -168,7 +169,7 @@ export function WhatsAppControlCenter({ data }: Props) {
           </div>
         ) : null}
 
-        <nav className="mb-4 flex min-w-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5" aria-label="Secciones de WhatsApp">
+        <nav className="mb-4 flex min-w-0 shrink-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5" aria-label="Secciones de WhatsApp">
           <div className="flex min-w-0 flex-1 gap-1">
             {PRIMARY_TABS.filter((item) => !item.adminOnly || admin).map((item) => {
               const Icon = item.icon;
@@ -213,21 +214,23 @@ export function WhatsAppControlCenter({ data }: Props) {
           </details>
         </nav>
 
-        {tab === "overview" ? <Overview data={data} onOpen={setTab} /> : null}
-        {tab === "inbox" ? <WhatsappInbox data={data} focusConversationId={focusedConversationId} /> : null}
-        {tab === "customers" && admin ? (
-          <WhatsappCustomers
-            onOpenConversation={(conversationId) => {
-              setFocusedConversationId(conversationId);
-              setTab("inbox");
-            }}
-          />
-        ) : null}
-        {tab === "catalog" ? <Catalog data={data} admin={admin} onRefresh={refresh} /> : null}
-        {tab === "delivery" ? <Delivery data={data} admin={admin} onRefresh={refresh} /> : null}
-        {tab === "hours" ? <Hours data={data} admin={admin} onRefresh={refresh} /> : null}
-        {tab === "bot" ? <BotSettings data={data} admin={admin} onRefresh={refresh} /> : null}
-        {tab === "diagnostics" ? <Diagnostics data={data} admin={admin} /> : null}
+        <div className={ownsVerticalScroll ? "flex min-h-0 flex-1 flex-col" : ""}>
+          {tab === "overview" ? <Overview data={data} onOpen={setTab} /> : null}
+          {tab === "inbox" ? <WhatsappInbox data={data} focusConversationId={focusedConversationId} /> : null}
+          {tab === "customers" && admin ? (
+            <WhatsappCustomers
+              onOpenConversation={(conversationId) => {
+                setFocusedConversationId(conversationId);
+                setTab("inbox");
+              }}
+            />
+          ) : null}
+          {tab === "catalog" ? <Catalog data={data} admin={admin} onRefresh={refresh} /> : null}
+          {tab === "delivery" ? <Delivery data={data} admin={admin} onRefresh={refresh} /> : null}
+          {tab === "hours" ? <Hours data={data} admin={admin} onRefresh={refresh} /> : null}
+          {tab === "bot" ? <BotSettings data={data} admin={admin} onRefresh={refresh} /> : null}
+          {tab === "diagnostics" ? <Diagnostics data={data} admin={admin} /> : null}
+        </div>
       </div>
     </div>
   );
@@ -269,6 +272,16 @@ function Diagnostics({ data, admin }: { data: WhatsappControlData; admin: boolea
       label: "Origen del local ubicado",
       ready: data.diagnostics.storeOriginReady,
       detail: "Se requiere antes de habilitar cotizaciones automáticas.",
+    },
+    {
+      label: "Creación automática permitida en el servidor",
+      ready: data.diagnostics.orderCreationServerEnabled,
+      detail: "WHATSAPP_ORDER_CREATION_ENABLED debe estar configurada exactamente como true en Vercel.",
+    },
+    {
+      label: "Creación automática activada en WhatsApp",
+      ready: data.diagnostics.orderCreationSettingEnabled,
+      detail: "Activa Crear pedidos en Mideli en la configuración del bot.",
     },
   ];
   const readyCount = checks.filter((item) => item.ready).length;
@@ -510,7 +523,9 @@ function Hours({ data, admin, onRefresh }: { data: WhatsappControlData; admin: b
 function BotSettings({ data, admin, onRefresh }: { data: WhatsappControlData; admin: boolean; onRefresh: () => void }) {
   const [settings, setSettings] = useState(() => ({ ...data.settings }));
   const [pending, startTransition] = useTransition();
+  const serverOrderCreationEnabled = data.diagnostics.orderCreationServerEnabled;
+  const orderCreationReady = serverOrderCreationEnabled && settings.create_orders_enabled;
   function boolean<K extends keyof WhatsappChannelSettings>(key: K, value: boolean) { setSettings((current) => ({ ...current, [key]: value })); }
   function save() { startTransition(async () => { const result = await updateWhatsappSettingsAction({ receive_enabled: settings.receive_enabled, auto_reply_enabled: settings.auto_reply_enabled, create_orders_enabled: settings.create_orders_enabled, delivery_quotes_enabled: settings.delivery_quotes_enabled, status_notifications_enabled: settings.status_notifications_enabled, human_handoff_enabled: settings.human_handoff_enabled, message_retention_days: Number(settings.message_retention_days), store_address: settings.store_address, store_latitude: settings.store_latitude === null ? null : Number(settings.store_latitude), store_longitude: settings.store_longitude === null ? null : Number(settings.store_longitude), closed_message: settings.closed_message }); if (!result.success) { toast.error(result.error); return; } toast.success("Configuración de WhatsApp guardada"); onRefresh(); }); }
-  return <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]"><Panel className="p-4"><h2 className="mb-4 font-heading text-lg font-bold">Operación del bot</h2><div className="space-y-2"><Toggle checked={settings.receive_enabled} onChange={(value) => boolean("receive_enabled", value)} label="Recibir mensajes" description="Interruptor principal del canal." disabled={!admin} /><Toggle checked={settings.auto_reply_enabled} onChange={(value) => boolean("auto_reply_enabled", value)} label="Responder automáticamente" description="El bot guía el pedido usando el menú real." disabled={!admin} /><Toggle checked={settings.create_orders_enabled} onChange={(value) => boolean("create_orders_enabled", value)} label="Crear pedidos en Mideli" description="Solo después de la confirmación final del cliente." disabled={!admin} /><Toggle checked={settings.delivery_quotes_enabled} onChange={(value) => boolean("delivery_quotes_enabled", value)} label="Cotizar domicilios" description="Usa Google Maps, rangos y recargos configurados." disabled={!admin} /><Toggle checked={settings.status_notifications_enabled} onChange={(value) => boolean("status_notifications_enabled", value)} label="Notificar avance" description="Preparación, listo y repartidor en camino." disabled={!admin} /><Toggle checked={settings.human_handoff_enabled} onChange={(value) => boolean("human_handoff_enabled", value)} label="Permitir atención humana" description="Detiene el bot cuando un cliente necesita ayuda." disabled={!admin} /></div></Panel><div className="space-y-4"><Panel className="p-4"><div className="flex items-center gap-2"><Store size={18} className="text-brand" /><h2 className="font-heading text-base font-bold">Origen de las entregas</h2></div><label className="mt-4 block"><span className="mb-1.5 block font-heading text-xs font-bold">Dirección del local</span><Input value={settings.store_address} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, store_address: event.target.value }))} placeholder="Dirección completa de Mideli" /></label><div className="mt-3 grid grid-cols-2 gap-2"><label><span className="mb-1.5 block font-heading text-xs font-bold">Latitud</span><Input type="number" step="any" value={settings.store_latitude ?? ""} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, store_latitude: event.target.value ? Number(event.target.value) : null }))} /></label><label><span className="mb-1.5 block font-heading text-xs font-bold">Longitud</span><Input type="number" step="any" value={settings.store_longitude ?? ""} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, store_longitude: event.target.value ? Number(event.target.value) : null }))} /></label></div><a href="https://maps.google.com" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 font-body text-xs text-brand hover:underline">Abrir Google Maps <ExternalLink size={12} /></a></Panel><Panel className="p-4"><label className="block"><span className="mb-1.5 block font-heading text-xs font-bold">Mensaje fuera de horario</span><textarea value={settings.closed_message} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, closed_message: event.target.value }))} rows={4} className="w-full resize-none rounded-xl border border-input bg-background px-3 py-2 font-body text-sm outline-none focus:border-brand" /></label><label className="mt-3 block"><span className="mb-1.5 block font-heading text-xs font-bold">Retención de mensajes</span><div className="flex items-center gap-2"><Input type="number" min="7" max="365" value={settings.message_retention_days} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, message_retention_days: Number(event.target.value) }))} className="w-28" /><span className="font-body text-xs text-muted-foreground">días</span></div></label></Panel>{admin ? <Button className="h-11 w-full gap-2 bg-success text-white hover:bg-success/85" disabled={pending || !data.persisted} onClick={save}><Check size={16} />Guardar configuración</Button> : null}</div></div>;
+  return <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]"><Panel className="p-4"><h2 className="mb-4 font-heading text-lg font-bold">Operación del bot</h2><div className="space-y-2"><Toggle checked={settings.receive_enabled} onChange={(value) => boolean("receive_enabled", value)} label="Recibir mensajes" description="Interruptor principal del canal." disabled={!admin} /><Toggle checked={settings.auto_reply_enabled} onChange={(value) => boolean("auto_reply_enabled", value)} label="Responder automáticamente" description="El bot guía el pedido usando el menú real." disabled={!admin} /><Toggle checked={settings.create_orders_enabled} onChange={(value) => boolean("create_orders_enabled", value)} label="Crear pedidos en Mideli" description="Solo después de la confirmación final del cliente." disabled={!admin} />{!orderCreationReady ? <div className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-warning"><p className="font-heading text-xs font-bold">Pedidos automáticos bloqueados</p><ul className="mt-1 space-y-1 font-body text-xs text-warning/85">{!serverOrderCreationEnabled ? <li>• Falta activar el permiso técnico del servidor en Vercel.</li> : null}{!settings.create_orders_enabled ? <li>• Activa Crear pedidos en Mideli y guarda la configuración.</li> : null}</ul></div> : <p className="rounded-xl border border-success/25 bg-success/10 p-3 font-body text-xs text-success">Pedidos automáticos listos después de la confirmación final.</p>}<Toggle checked={settings.delivery_quotes_enabled} onChange={(value) => boolean("delivery_quotes_enabled", value)} label="Cotizar domicilios" description="Usa Google Maps, rangos y recargos configurados." disabled={!admin} /><Toggle checked={settings.status_notifications_enabled} onChange={(value) => boolean("status_notifications_enabled", value)} label="Notificar avance" description="Preparación, listo y repartidor en camino." disabled={!admin} /><Toggle checked={settings.human_handoff_enabled} onChange={(value) => boolean("human_handoff_enabled", value)} label="Permitir atención humana" description="Detiene el bot cuando un cliente necesita ayuda." disabled={!admin} /></div></Panel><div className="space-y-4"><Panel className="p-4"><div className="flex items-center gap-2"><Store size={18} className="text-brand" /><h2 className="font-heading text-base font-bold">Origen de las entregas</h2></div><label className="mt-4 block"><span className="mb-1.5 block font-heading text-xs font-bold">Dirección del local</span><Input value={settings.store_address} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, store_address: event.target.value }))} placeholder="Dirección completa de Mideli" /></label><div className="mt-3 grid grid-cols-2 gap-2"><label><span className="mb-1.5 block font-heading text-xs font-bold">Latitud</span><Input type="number" step="any" value={settings.store_latitude ?? ""} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, store_latitude: event.target.value ? Number(event.target.value) : null }))} /></label><label><span className="mb-1.5 block font-heading text-xs font-bold">Longitud</span><Input type="number" step="any" value={settings.store_longitude ?? ""} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, store_longitude: event.target.value ? Number(event.target.value) : null }))} /></label></div><a href="https://maps.google.com" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 font-body text-xs text-brand hover:underline">Abrir Google Maps <ExternalLink size={12} /></a></Panel><Panel className="p-4"><label className="block"><span className="mb-1.5 block font-heading text-xs font-bold">Mensaje fuera de horario</span><textarea value={settings.closed_message} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, closed_message: event.target.value }))} rows={4} className="w-full resize-none rounded-xl border border-input bg-background px-3 py-2 font-body text-sm outline-none focus:border-brand" /></label><label className="mt-3 block"><span className="mb-1.5 block font-heading text-xs font-bold">Retención de mensajes</span><div className="flex items-center gap-2"><Input type="number" min="7" max="365" value={settings.message_retention_days} disabled={!admin} onChange={(event) => setSettings((current) => ({ ...current, message_retention_days: Number(event.target.value) }))} className="w-28" /><span className="font-body text-xs text-muted-foreground">días</span></div></label></Panel>{admin ? <Button className="h-11 w-full gap-2 bg-success text-white hover:bg-success/85" disabled={pending || !data.persisted} onClick={save}><Check size={16} />Guardar configuración</Button> : null}</div></div>;
 }

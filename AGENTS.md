@@ -73,8 +73,24 @@ No hay framework de testing configurado aún. Agregar cuando sea necesario.
 
 ## Despliegue
 
-- **Hosting**: Vercel (pendiente de configurar)
+- **Hosting**: Vercel, producción en `https://mideli.vercel.app`
 - **Base de datos**: Supabase (proyecto: `qgnjennimvbrfxvcmowb`)
+- **Salud pública**: `https://mideli.vercel.app/api/health`
+- **Procedimiento operativo**: `docs/OPERATIONS.md`
+
+## Fuentes de verdad para agentes
+
+Antes de actuar, usa esta prioridad:
+
+1. Código actual y tipos del dominio.
+2. Estado remoto verificable de Supabase y Vercel.
+3. Este archivo para reglas obligatorias.
+4. `.opencode/plans/mideli-context.md` para decisiones acumuladas y pendientes.
+5. `PRODUCT.md`, `DESIGN.md`, `docs/ARCHITECTURE.md` y `docs/DECISIONS.md` para producto, interfaz y arquitectura.
+
+Si una documentación contradice al código, no inventes una solución silenciosa: confirma el comportamiento real, actualiza la documentación afectada y registra la decisión si cambia el flujo.
+
+Los cambios sin commit son trabajo en curso. No los trates como una versión estable ni los descartes para limpiar el repositorio.
 
 ## Notas
 

@@ -21,6 +21,7 @@ export const ProductGrid = memo(function ProductGrid({
   addedProduct,
 }: ProductGridProps) {
   const menuItems = useCatalogStore((state) => state.menuItems);
+  const categories = useCatalogStore((state) => state.categories);
   const cartItems = useCartStore((state) => state.items);
   const activeCategory = useUIStore((state) => state.activeCategory);
   const searchQuery = useUIStore((state) => state.searchQuery);
@@ -28,18 +29,45 @@ export const ProductGrid = memo(function ProductGrid({
 
   const filteredItems = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("es-MX");
+    const categoryOrder = new Map(
+      categories.map((category, index) => [category.id, category.sort_order ?? index])
+    );
 
-    return menuItems.filter((item) => {
-      if (!item.is_active) return false;
-      if (activeCategory && item.category_id !== activeCategory) return false;
-      if (!query) return true;
+    return menuItems
+      .filter((item) => {
+        if (!item.is_active) return false;
+        if (activeCategory && item.category_id !== activeCategory) return false;
+        if (!query) return true;
 
-      return (
-        item.name.toLocaleLowerCase("es-MX").includes(query) ||
-        item.description.toLocaleLowerCase("es-MX").includes(query)
-      );
-    });
-  }, [activeCategory, menuItems, searchQuery]);
+        return (
+          item.name.toLocaleLowerCase("es-MX").includes(query) ||
+          item.description.toLocaleLowerCase("es-MX").includes(query)
+        );
+      })
+      .sort((a, b) => {
+        const categoryDifference =
+          (categoryOrder.get(a.category_id) ?? Number.MAX_SAFE_INTEGER) -
+          (categoryOrder.get(b.category_id) ?? Number.MAX_SAFE_INTEGER);
+        return categoryDifference || a.sort_order - b.sort_order || a.name.localeCompare(b.name, "es-MX");
+      });
+  }, [activeCategory, categories, menuItems, searchQuery]);
+
+  const groupedItems = useMemo(() => {
+    if (activeCategory) return [];
+    const itemsByCategory = new Map<string, MenuItem[]>();
+    for (const item of filteredItems) {
+      const current = itemsByCategory.get(item.category_id) ?? [];
+      current.push(item);
+      itemsByCategory.set(item.category_id, current);
+    }
+
+    return categories
+      .filter((category) => itemsByCategory.has(category.id))
+      .map((category) => ({
+        category,
+        items: itemsByCategory.get(category.id) ?? [],
+      }));
+  }, [activeCategory, categories, filteredItems]);
 
   const quantitiesByProduct = useMemo(() => {
     const quantities = new Map<string, number>();
@@ -81,8 +109,24 @@ export const ProductGrid = memo(function ProductGrid({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-4">
-            {filteredItems.map((item) => {
+          <div className="space-y-6">
+            {(activeCategory
+              ? [{ category: null, items: filteredItems }]
+              : groupedItems
+            ).map((group) => (
+              <section key={group.category?.id ?? "filtered"}>
+                {!activeCategory && group.category ? (
+                  <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                    <h2 className="font-heading text-sm font-bold text-foreground sm:text-base">
+                      {group.category.name}
+                    </h2>
+                    <span className="font-data text-[11px] text-muted-foreground">
+                      {group.items.length} {group.items.length === 1 ? "platillo" : "platillos"}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-4">
+            {group.items.map((item) => {
               const quantityInCart = quantitiesByProduct.get(item.id) ?? 0;
               const wasJustAdded = addedProduct?.id === item.id;
 
@@ -161,6 +205,9 @@ export const ProductGrid = memo(function ProductGrid({
               </button>
               );
             })}
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </div>

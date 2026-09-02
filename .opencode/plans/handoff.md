@@ -1,5 +1,7 @@
 # Handoff: Mideli — Burger & Sushi
 
+> Documento histórico. Para el estado vigente usa `.opencode/plans/mideli-context.md`, `AGENTS.md` y la documentación de `docs/`. Si este archivo contradice al código actual, no tiene prioridad.
+
 ## Resumen del Proyecto
 
 **Mideli** es un sistema de gestión de pedidos (KDS + POS) para un local de comida en Ciudad Obregón, Sonora, México.

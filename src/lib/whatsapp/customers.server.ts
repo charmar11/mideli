@@ -83,8 +83,9 @@ async function loadLatestConversations(admin: AdminClient, customerIds: string[]
   for (let from = 0; from < 5_000; from += PAGE_SIZE) {
     const result = await admin
       .from("channel_conversations")
-      .select("customer_id,id,status,updated_at")
+      .select("customer_id,id,status,content_redacted_at,updated_at")
       .in("customer_id", customerIds)
+      .is("content_redacted_at", null)
       .order("updated_at", { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
     if (result.error) throw result.error;

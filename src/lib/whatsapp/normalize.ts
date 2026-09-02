@@ -23,8 +23,35 @@ export function normalizeText(value: string) {
     .replace(/\s+/g, " ");
 }
 
+export function normalizeAddressForComparison(value: string) {
+  return normalizeText(value)
+    .replace(/\b(?:calle|c)\b/g, "")
+    .replace(/\b(?:avenida|av)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function normalizePhone(value: string) {
   return value.replace(/\D/g, "");
+}
+
+export function formatPhoneForDisplay(value: string) {
+  const digits = normalizePhone(value);
+  if (!digits) return "Sin teléfono";
+  if (/^(?:52|521)\d{10}$/.test(digits)) {
+    const local = digits.slice(-10);
+    return `${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
+  }
+  return digits.length === 10
+    ? `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`
+    : `+${digits}`;
+}
+
+export function formatPhoneForCopy(value: string) {
+  const digits = normalizePhone(value);
+  if (!digits) return "";
+  if (/^(?:52|521)\d{10}$/.test(digits)) return digits.slice(-10);
+  return digits;
 }
 
 export function phoneAliases(value: string) {

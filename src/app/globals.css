@@ -203,6 +203,25 @@
   border-radius: 999px;
 }
 
+.whatsapp-scroll-y {
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.whatsapp-scroll-y::-webkit-scrollbar {
+  width: 8px;
+}
+
+.whatsapp-scroll-y::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
 /* Card entrance: one authored moment */
 @keyframes card-in {
   from {

@@ -43,7 +43,7 @@ export function shouldCompleteOrderAfterPayment(
 
 export function deliveryLaneForOrder(order: DeliveryOrderSnapshot): DeliveryLane {
   if (order.status !== "ready") return null;
-  if (order.source_channel !== "whatsapp" || order.type !== "domicilio") {
+  if (order.type !== "domicilio") {
     return "ready";
   }
   if (order.delivery_status === "searching_driver") return "searching_driver";

@@ -12,6 +12,8 @@ import type {
   WhatsappCustomerDetail,
   WhatsappCustomerDirectory,
   WhatsappInboxSnapshot,
+  PosCustomerMatch,
+  WhatsappPosDraft,
 } from "@/lib/whatsapp/admin-types";
 import type { WhatsappPilotBatchResult } from "@/lib/whatsapp/pilot-evaluator-types";
 import { runWhatsappPilotBatchOnServer } from "@/lib/whatsapp/pilot-evaluator.server";
@@ -29,6 +31,8 @@ import {
 import { recordOutboundMessage } from "@/lib/whatsapp/repository.server";
 import { isMissingWhatsappSchema } from "@/lib/whatsapp/schema-compat";
 import type { WhatsappChannelSettings } from "@/types/database";
+import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
+import { normalizeAddressForComparison } from "@/lib/whatsapp/normalize";
 
 const CHANNEL_ROLES = new Set(["owner", "admin", "waiter", "supervisor"]);
 const ADMIN_ROLES = new Set(["owner", "admin"]);
@@ -181,9 +185,10 @@ async function loadWhatsappConversations(
   const conversationResult = await admin
     .from("channel_conversations")
     .select(
-      "id,external_contact_id,customer_id,status,stage,state,bot_enabled,assigned_to,handoff_reason,updated_at,last_inbound_at,last_outbound_at"
+      "id,external_contact_id,customer_id,status,stage,state,bot_enabled,assigned_to,handoff_reason,content_redacted_at,updated_at,last_inbound_at,last_outbound_at"
     )
     .eq("provider", "meta")
+    .is("content_redacted_at", null)
     .order("updated_at", { ascending: false })
     .limit(50);
 
@@ -202,6 +207,7 @@ async function loadWhatsappConversations(
       ...row,
       bot_enabled: row.status !== "handoff",
       handoff_reason: "",
+      content_redacted_at: null,
     }));
   }
 
@@ -230,7 +236,7 @@ async function loadWhatsappConversations(
     const ordersPromise = admin
       .from("orders")
       .select(
-        "id,number,status,type,total,payment_status,payment_method,delivery_status,delivery_address,delivery_reference,payment_method_requested,requested_cash_tendered,created_at,channel_conversation_id"
+        "id,number,status,type,total,delivery_fee,payment_status,payment_method,delivery_status,delivery_address,delivery_reference,payment_method_requested,requested_cash_tendered,created_at,channel_conversation_id"
       )
       .in("channel_conversation_id", conversationIds)
       .order("created_at", { ascending: false })
@@ -277,7 +283,7 @@ async function loadWhatsappConversations(
         number: order.number,
         status: order.status,
         type: order.type,
-        total: Number(order.total ?? 0),
+        total: Number(order.total ?? 0) + (order.type === "domicilio" ? Number(order.delivery_fee ?? 0) : 0),
         paymentStatus: order.payment_status,
         deliveryStatus: order.delivery_status ?? "pending",
         deliveryAddress: order.delivery_address ?? "",
@@ -438,6 +444,8 @@ export async function getWhatsappControlDataAction(): Promise<
           dryRun: serverConfig.dryRun,
           orderCreationEnabled:
             serverConfig.orderCreationEnabled && operations.settings.create_orders_enabled,
+          orderCreationServerEnabled: serverConfig.orderCreationEnabled,
+          orderCreationSettingEnabled: operations.settings.create_orders_enabled,
           allowedTestPhones: serverConfig.allowedPhones.size,
           failedNotifications: (notificationFailureResult.data ?? []).map((item) => {
             const relation = item.orders as unknown as
@@ -791,6 +799,244 @@ export async function getWhatsappInboxSnapshotAction(
   }
 }
 
+export async function getWhatsappPosDraftAction(
+  conversationId: string
+): Promise<WhatsappActionResult<WhatsappPosDraft>> {
+  try {
+    const { admin } = await requireChannelUser();
+    const conversationResult = await admin
+      .from("channel_conversations")
+      .select("id,external_contact_id,customer_id,state,status")
+      .eq("id", conversationId)
+      .eq("provider", "meta")
+      .single();
+    if (conversationResult.error || !conversationResult.data) {
+      throw conversationResult.error ?? new Error("No se encontró la conversación");
+    }
+
+    const state = conversationResult.data.state && typeof conversationResult.data.state === "object"
+      && !Array.isArray(conversationResult.data.state)
+      ? conversationResult.data.state as Record<string, unknown>
+      : {};
+    const payment = state.payment && typeof state.payment === "object" && !Array.isArray(state.payment)
+      ? state.payment as Record<string, unknown>
+      : {};
+    const quote = state.deliveryQuote && typeof state.deliveryQuote === "object" && !Array.isArray(state.deliveryQuote)
+      ? state.deliveryQuote as Record<string, unknown>
+      : {};
+    const customer = await admin
+      .from("customers")
+      .select("display_name")
+      .eq("id", conversationResult.data.customer_id)
+      .maybeSingle();
+    if (customer.error) throw customer.error;
+
+    const latestOrder = await admin
+      .from("orders")
+      .select("id,number,type,total,notes,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,payment_method_requested,requested_cash_tendered,channel_conversation_id")
+      .eq("channel_conversation_id", conversationId)
+      .eq("source_channel", "whatsapp")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestOrder.error) throw latestOrder.error;
+
+    const orderItems = latestOrder.data
+      ? await admin
+          .from("order_items")
+          .select("id,menu_item_id,quantity,unit_price,notes,selected_modifiers,menu_items(name)")
+          .eq("order_id", latestOrder.data.id)
+      : { data: [], error: null };
+    if (orderItems.error) throw orderItems.error;
+
+    const stateCart = Array.isArray(state.cart) ? state.cart : [];
+    const items = latestOrder.data
+      ? (orderItems.data ?? []).map((item) => {
+          const relation = item.menu_items as unknown as { name?: string } | { name?: string }[] | null;
+          return {
+            id: item.id,
+            menu_item_id: item.menu_item_id,
+            name: Array.isArray(relation) ? relation[0]?.name ?? "Producto" : relation?.name ?? "Producto",
+            price: Number(item.unit_price ?? 0),
+            quantity: Number(item.quantity ?? 1),
+            notes: item.notes ?? "",
+            selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
+          };
+        })
+      : stateCart.flatMap((value) => {
+          if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+          const item = value as Record<string, unknown>;
+          if (typeof item.menuItemId !== "string" || typeof item.name !== "string") return [];
+          return [{
+            id: typeof item.id === "string" ? item.id : crypto.randomUUID(),
+            menu_item_id: item.menuItemId,
+            name: item.name,
+            price: Number(item.unitPrice ?? 0),
+            quantity: Number(item.quantity ?? 1),
+            notes: typeof item.notes === "string" ? item.notes : "",
+            selected_modifiers: normalizeWhatsappPosModifiers(item.selectedModifiers),
+          }];
+        });
+
+    return {
+      success: true,
+      data: {
+        conversationId,
+        customerId: conversationResult.data.customer_id,
+        orderId: latestOrder.data?.id ?? null,
+        orderNumber: latestOrder.data?.number ?? null,
+        phone: conversationResult.data.external_contact_id,
+        customerName: customer.data?.display_name ?? "",
+        orderType: (latestOrder.data?.type ?? state.serviceType ?? null) as WhatsappPosDraft["orderType"],
+        notes: latestOrder.data?.notes ?? (typeof state.orderNotes === "string" ? state.orderNotes : ""),
+        address: latestOrder.data?.delivery_address ?? (typeof state.address === "string" ? state.address : ""),
+        reference: latestOrder.data?.delivery_reference ?? (typeof state.addressReference === "string" ? state.addressReference : ""),
+        addressConfirmed: state.addressConfirmed === true || Boolean(latestOrder.data?.delivery_address),
+        latitude: latestOrder.data?.delivery_latitude === null || latestOrder.data?.delivery_latitude === undefined
+          ? (typeof quote.latitude === "number" ? quote.latitude : null)
+          : Number(latestOrder.data.delivery_latitude),
+        longitude: latestOrder.data?.delivery_longitude === null || latestOrder.data?.delivery_longitude === undefined
+          ? (typeof quote.longitude === "number" ? quote.longitude : null)
+          : Number(latestOrder.data.delivery_longitude),
+        distanceMeters: latestOrder.data?.delivery_distance_meters !== null && latestOrder.data?.delivery_distance_meters !== undefined && Number(latestOrder.data.delivery_distance_meters) > 0
+          ? Number(latestOrder.data.delivery_distance_meters)
+          : typeof quote.distanceMeters === "number" && quote.distanceMeters > 0
+            ? quote.distanceMeters
+            : null,
+        deliveryFee: Number(latestOrder.data?.delivery_fee ?? quote.totalFee ?? 0),
+        paymentMethod: (latestOrder.data?.payment_method_requested ?? payment.method ?? null) as WhatsappPosDraft["paymentMethod"],
+        cashTendered: latestOrder.data?.requested_cash_tendered ?? (typeof payment.cashTendered === "number" ? payment.cashTendered : null),
+        items,
+      },
+    };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
+export async function searchPosCustomersByPhoneAction(
+  rawPhone: string
+): Promise<WhatsappActionResult<PosCustomerMatch[]>> {
+  try {
+    await requireChannelUser();
+    const digits = rawPhone.replace(/\D/g, "").slice(-15);
+    if (digits.length < 4) return { success: true, data: [] };
+
+    const admin = createAdminClient();
+    const customerResult = await admin
+      .from("customers")
+      .select("id,phone,display_name")
+      .ilike("phone", `%${digits}%`)
+      .limit(8);
+    if (customerResult.error) throw customerResult.error;
+
+    const customers = customerResult.data ?? [];
+    if (customers.length === 0) return { success: true, data: [] };
+
+    const customerIds = customers.map((customer) => customer.id);
+    const addressResult = await admin
+      .from("customer_addresses")
+      .select(
+        "id,customer_id,label,address_text,reference,formatted_address,colony,latitude,longitude,delivery_fee,is_default,confirmed_at,last_used_at"
+      )
+      .in("customer_id", customerIds)
+      .order("is_default", { ascending: false })
+      .order("last_used_at", { ascending: false });
+    if (addressResult.error) throw addressResult.error;
+
+    const addressesByCustomer = new Map<string, PosCustomerMatch["addresses"]>();
+    for (const address of addressResult.data ?? []) {
+      const current = addressesByCustomer.get(address.customer_id) ?? [];
+      current.push({
+        id: address.id,
+        label: address.label ?? "",
+        addressText: address.address_text,
+        reference: address.reference ?? "",
+        formattedAddress: address.formatted_address ?? "",
+        colony: address.colony ?? "",
+        latitude: address.latitude === null ? null : Number(address.latitude),
+        longitude: address.longitude === null ? null : Number(address.longitude),
+        deliveryFee: address.delivery_fee === null ? null : Number(address.delivery_fee),
+        isDefault: address.is_default,
+        confirmed: Boolean(address.confirmed_at),
+        lastUsedAt: address.last_used_at,
+      });
+      addressesByCustomer.set(address.customer_id, current);
+    }
+
+    const matches = customers
+      .map((customer) => ({
+        id: customer.id,
+        phone: customer.phone,
+        displayName: customer.display_name ?? "",
+        addresses: addressesByCustomer.get(customer.id) ?? [],
+      }))
+      .sort((a, b) => {
+        const aExact = a.phone === digits ? 0 : 1;
+        const bExact = b.phone === digits ? 0 : 1;
+        return aExact - bExact;
+      });
+    return { success: true, data: matches };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
+export async function ensurePosCustomerAction(input: {
+  customerId?: string | null;
+  phone: string;
+  displayName?: string;
+}): Promise<WhatsappActionResult<{ customerId: string }>> {
+  try {
+    await requireChannelUser();
+    const phone = input.phone.replace(/\D/g, "").slice(-15);
+    if (phone.length < 8 || phone.length > 15) {
+      throw new Error("Escribe un teléfono válido de 8 a 15 dígitos");
+    }
+    const displayName = (input.displayName ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
+    const admin = createAdminClient();
+    const existing = await admin
+      .from("customers")
+      .select("id,display_name")
+      .eq("phone", phone)
+      .maybeSingle();
+    if (existing.error) throw existing.error;
+
+    if (existing.data) {
+      if (displayName && displayName !== existing.data.display_name) {
+        const updated = await admin
+          .from("customers")
+          .update({ display_name: displayName })
+          .eq("id", existing.data.id);
+        if (updated.error) throw updated.error;
+      }
+      return { success: true, data: { customerId: existing.data.id } };
+    }
+
+    const inserted = await admin
+      .from("customers")
+      .insert({ phone, display_name: displayName })
+      .select("id")
+      .single();
+    if (inserted.error || !inserted.data) {
+      if (inserted.error?.code === "23505") {
+        const concurrent = await admin
+          .from("customers")
+          .select("id")
+          .eq("phone", phone)
+          .single();
+        if (!concurrent.error && concurrent.data) {
+          return { success: true, data: { customerId: concurrent.data.id } };
+        }
+      }
+      throw inserted.error ?? new Error("No se pudo guardar el cliente");
+    }
+    return { success: true, data: { customerId: inserted.data.id } };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
 export async function claimWhatsappConversationAction(
   conversationId: string
 ): Promise<WhatsappActionResult> {
@@ -939,6 +1185,13 @@ export async function clearWhatsappConversationMessagesAction(
       .is("redacted_at", null);
     if (error) throw error;
 
+    const conversationUpdate = await admin
+      .from("channel_conversations")
+      .update({ content_redacted_at: redactedAt })
+      .eq("id", conversationId)
+      .eq("provider", "meta");
+    if (conversationUpdate.error) throw conversationUpdate.error;
+
     const redacted = countResult.count ?? 0;
     await audit(userId, "redact_conversation_messages", "channel_conversation", conversationId, {
       redacted,
@@ -1039,6 +1292,21 @@ export async function saveWhatsappCustomerAddressAction(input: {
       previousAddress = existing.data.address_text;
     }
 
+    let duplicateQuery = admin
+      .from("customer_addresses")
+      .select("id,address_text,formatted_address")
+      .eq("customer_id", input.customerId);
+    if (addressId) duplicateQuery = duplicateQuery.neq("id", addressId);
+    const duplicateResult = await duplicateQuery;
+    if (duplicateResult.error) throw duplicateResult.error;
+    const normalizedAddress = normalizeAddressForComparison(addressText);
+    const isDuplicate = (duplicateResult.data ?? []).some((address) => {
+      const savedInput = normalizeAddressForComparison(address.address_text);
+      const savedFormatted = normalizeAddressForComparison(address.formatted_address ?? "");
+      return normalizedAddress === savedInput || normalizedAddress === savedFormatted;
+    });
+    if (isDuplicate) throw new Error("Este domicilio ya está guardado");
+
     const addressCount = await admin
       .from("customer_addresses")
       .select("id", { count: "exact", head: true })
@@ -1127,5 +1395,61 @@ export async function saveWhatsappCustomerAddressAction(input: {
       return { success: false, error: "Este domicilio ya está guardado" };
     }
     return { success: false, error: detail };
+  }
+}
+
+export async function deleteWhatsappCustomerAddressAction(input: {
+  customerId: string;
+  addressId: string;
+}): Promise<WhatsappActionResult> {
+  try {
+    const { userId, admin } = await requireChannelUser(true);
+    const existing = await admin
+      .from("customer_addresses")
+      .select("id,is_default,address_text")
+      .eq("id", input.addressId)
+      .eq("customer_id", input.customerId)
+      .maybeSingle();
+    if (existing.error) throw existing.error;
+    if (!existing.data) throw new Error("No se encontró el domicilio");
+
+    const deleted = await admin
+      .from("customer_addresses")
+      .delete()
+      .eq("id", input.addressId)
+      .eq("customer_id", input.customerId)
+      .select("id")
+      .maybeSingle();
+    if (deleted.error) throw deleted.error;
+    if (!deleted.data) throw new Error("No se pudo eliminar el domicilio");
+
+    if (existing.data.is_default) {
+      const replacement = await admin
+        .from("customer_addresses")
+        .select("id")
+        .eq("customer_id", input.customerId)
+        .order("last_used_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (replacement.error) throw replacement.error;
+      if (replacement.data) {
+        const promoted = await admin
+          .from("customer_addresses")
+          .update({ is_default: true })
+          .eq("id", replacement.data.id)
+          .eq("customer_id", input.customerId);
+        if (promoted.error) throw promoted.error;
+      }
+    }
+
+    await audit(userId, "delete_customer_address", "customer_address", input.addressId, {
+      customerId: input.customerId,
+      addressText: existing.data.address_text,
+      wasDefault: existing.data.is_default,
+    });
+    revalidatePath("/dashboard/whatsapp");
+    return { success: true, data: undefined };
+  } catch (error) {
+    return { success: false, error: message(error) };
   }
 }

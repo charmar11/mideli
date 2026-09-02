@@ -10,6 +10,7 @@ import type {
 import { isWhatsappBusinessOpen, type ScheduleException } from "./business-hours";
 import { calculateDeliveryPrice } from "./delivery-pricing";
 import { computeDrivingDistance, geocodeDestination } from "./google-maps.server";
+import { normalizeAddressForComparison } from "./normalize";
 import type { ConversationDeliveryQuote } from "./types";
 
 export type WhatsappOperationsConfig = {
@@ -178,12 +179,20 @@ async function saveCustomerAddress(input: {
   if (conversation.error || !conversation.data) return null;
   const addresses = await admin
     .from("customer_addresses")
-    .select("id,address_text")
+    .select("id,address_text,formatted_address")
     .eq("customer_id", conversation.data.customer_id);
   if (addresses.error) throw addresses.error;
-  const normalized = input.inputAddress.trim().toLocaleLowerCase("es-MX");
+  const normalizedInput = normalizeAddressForComparison(input.inputAddress);
+  const normalizedFormatted = normalizeAddressForComparison(input.formattedAddress);
   const existing = (addresses.data ?? []).find(
-    (address) => address.address_text.trim().toLocaleLowerCase("es-MX") === normalized
+    (address) => {
+      const savedInput = normalizeAddressForComparison(address.address_text);
+      const savedFormatted = normalizeAddressForComparison(address.formatted_address ?? "");
+      return (
+        (normalizedInput && (savedInput === normalizedInput || savedFormatted === normalizedInput)) ||
+        (normalizedFormatted && (savedInput === normalizedFormatted || savedFormatted === normalizedFormatted))
+      );
+    }
   );
   const payload = {
     address_text: input.inputAddress.trim(),

@@ -426,12 +426,16 @@ entrypoint = "./functions/send-order-ready/index.ts"
 
 [functions.send-order-notification]
 enabled = true
-verify_jwt = true
+# La función valida internamente el secreto de servicio. Esto permite usar las
+# claves nuevas sb_secret_* sin que el gateway espere un JWT de usuario.
+verify_jwt = false
 import_map = "./functions/send-order-notification/deno.json"
 entrypoint = "./functions/send-order-notification/index.ts"
 
 [functions.send-whatsapp-attention-notification]
 enabled = true
-verify_jwt = true
+# La función valida internamente el secreto de servicio. Esto permite usar las
+# claves nuevas sb_secret_* sin que el gateway espere un JWT de usuario.
+verify_jwt = false
 import_map = "./functions/send-whatsapp-attention-notification/deno.json"
 entrypoint = "./functions/send-whatsapp-attention-notification/index.ts"

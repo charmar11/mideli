@@ -6,6 +6,7 @@ import {
   sendMetaListMessage,
   sendMetaLocationMessage,
   sendMetaReplyButtonsMessage,
+  sendMetaTemplateMessage,
   sendMetaTextMessage,
 } from "@/lib/whatsapp/meta-provider";
 import { verifyMetaSignature } from "@/lib/whatsapp/meta-signature";
@@ -177,6 +178,46 @@ test("el adaptador de Meta envía texto sin exponer el token en el resultado", a
     messaging_product: "whatsapp",
     to: "526440000000",
     type: "text",
+  });
+});
+
+test("el adaptador de Meta puede iniciar un aviso con plantilla aprobada", async () => {
+  let requestInit: RequestInit | undefined;
+  const fetcher: typeof fetch = async (_input, init) => {
+    requestInit = init;
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.template-1" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  await sendMetaTemplateMessage(
+    {
+      to: "526440000000",
+      name: "mideli_pedido_en_camino",
+      languageCode: "es_MX",
+      bodyParameters: ["168"],
+    },
+    {
+      graphApiVersion: "v25.0",
+      phoneNumberId: "phone-test",
+      accessToken: "temporary-test-token",
+    },
+    fetcher
+  );
+
+  expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+    messaging_product: "whatsapp",
+    to: "526440000000",
+    type: "template",
+    template: {
+      name: "mideli_pedido_en_camino",
+      language: { code: "es_MX" },
+      components: [{
+        type: "body",
+        parameters: [{ type: "text", text: "168" }],
+      }],
+    },
   });
 });
 

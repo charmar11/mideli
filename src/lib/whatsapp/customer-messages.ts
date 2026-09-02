@@ -18,5 +18,5 @@ export function deliveryQuoteReply(
 }
 
 export function addressConfirmationReply(quote: ConversationDeliveryQuote) {
-  return `📍 *Encontré este domicilio:*\n${quote.formattedAddress}\n\n¿Es aquí? Responde *sí* o envía otra dirección o ubicación.`;
+  return `📍 *Encontré este domicilio:*\n${quote.formattedAddress}\n\n¿Es este punto? Elige una opción o comparte otra ubicación.`;
 }

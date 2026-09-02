@@ -72,18 +72,23 @@ Deno.serve(async (req) => {
   const authorization = req.headers.get("Authorization");
   const token = authorization?.replace(/^Bearer\s+/i, "");
   if (!token) {
-    return json({ error: "Sesión no válida" }, 401);
+    return json({ error: "Solicitud no autorizada" }, 401);
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const {
-    data: { user },
-    error: userError,
-  } = await admin.auth.getUser(token);
-  if (userError || !user) {
-    return json({ error: "Sesión no válida" }, 401);
+  const isInternalRequest = token === serviceRoleKey;
+  let userId: string | null = null;
+  if (!isInternalRequest) {
+    const {
+      data: { user },
+      error: userError,
+    } = await admin.auth.getUser(token);
+    if (userError || !user) {
+      return json({ error: "Sesión no válida" }, 401);
+    }
+    userId = user.id;
   }
 
   const { orderId, event } = (await req.json().catch(() => ({}))) as {
@@ -95,11 +100,13 @@ Deno.serve(async (req) => {
   }
 
   const [{ data: caller }, { data: order, error: orderError }] = await Promise.all([
-    admin
-      .from("profiles")
-      .select("role,is_active")
-      .eq("id", user.id)
-      .maybeSingle(),
+    userId
+      ? admin
+          .from("profiles")
+          .select("role,is_active")
+          .eq("id", userId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     admin
       .from("orders")
       .select(
@@ -110,13 +117,13 @@ Deno.serve(async (req) => {
   ]);
 
   const allowedRoles = event === "new_order" ? NEW_ORDER_ROLES : READY_ORDER_ROLES;
-  if (!caller?.is_active || !allowedRoles.has(caller.role)) {
+  if (userId && (!caller?.is_active || !allowedRoles.has(caller.role))) {
     return json({ error: "No tienes permiso para enviar este aviso" }, 403);
   }
   if (orderError || !order) {
     return json({ error: "Pedido no encontrado" }, 404);
   }
-  if (event === "new_order" && caller.role === "waiter" && order.created_by !== user.id) {
+  if (event === "new_order" && caller?.role === "waiter" && order.created_by !== userId) {
     return json({ error: "No puedes publicar otro pedido" }, 403);
   }
   if (event === "ready" && order.status !== "ready") {

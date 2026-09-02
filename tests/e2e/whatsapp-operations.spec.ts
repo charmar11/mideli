@@ -6,6 +6,7 @@ import {
 } from "../../src/lib/whatsapp/address-confidence";
 import { isWhatsappBusinessOpen } from "../../src/lib/whatsapp/business-hours";
 import { calculateDeliveryPrice } from "../../src/lib/whatsapp/delivery-pricing";
+import { normalizeAddressForComparison } from "../../src/lib/whatsapp/normalize";
 
 const rates = [
   { minDistanceKm: 0, maxDistanceKm: 4, fee: 30 },
@@ -23,6 +24,14 @@ const hours = Array.from({ length: 7 }, (_, dayOfWeek) => ({
   opensAt: "12:00",
   closesAt: "23:00",
 }));
+
+test("considera iguales las variantes de un domicilio canónico", () => {
+  expect(
+    normalizeAddressForComparison("C. Las Palmas 1747, Villas del Palmar, Ciudad Obregón")
+  ).toBe(
+    normalizeAddressForComparison("Las Palmas 1747, Villas del Palmar, Ciudad Obregón")
+  );
+});
 
 test("normaliza calle, número y colonia antes de consultar Google", () => {
   expect(normalizeAddressQuery("Sinagogas 1230, col san xavier")).toBe(

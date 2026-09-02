@@ -428,14 +428,28 @@ export async function handleHybridConversationMessage(input: {
     input.catalog
   );
   const extractedActions = deterministicActions(input.message, input.state);
-  if (distributed && extractedActions.length === 0) {
+  if (distributed) {
+    let localResult = distributed;
+    if (extractedActions.length > 0) {
+      const progressed = applySemanticResult(
+        distributed.state,
+        {
+          intent: "unknown",
+          confidence: 1,
+          operations: [],
+          actions: extractedActions,
+        },
+        input.catalog
+      );
+      if (progressed) localResult = progressed;
+    }
     emitDiagnostic(input.onDiagnostic, {
       outcome: "local_fast_path",
       durationMs: Date.now() - totalStartedAt,
       localDurationMs: Date.now() - totalStartedAt,
       stage: input.state.stage,
     });
-    return distributed;
+    return localResult;
   }
   const localStartedAt = Date.now();
   const local = handleConversationMessage(input.state, input.message, input.catalog);

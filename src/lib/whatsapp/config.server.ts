@@ -29,6 +29,8 @@ export function readWhatsappServerConfig() {
     wabaId: process.env.META_WHATSAPP_WABA_ID || "",
     verifyToken: process.env.META_WHATSAPP_VERIFY_TOKEN || "",
     appSecret: process.env.META_APP_SECRET || "",
+    deliveryTemplateName: process.env.WHATSAPP_DELIVERY_TEMPLATE_NAME || "mideli_pedido_en_camino",
+    deliveryTemplateLanguage: process.env.WHATSAPP_DELIVERY_TEMPLATE_LANGUAGE || "es_MX",
     geminiInterpreterEnabled:
       process.env.WHATSAPP_GEMINI_INTERPRETER_ENABLED !== "false" && Boolean(geminiApiKey),
     geminiApiKey,

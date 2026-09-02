@@ -81,13 +81,62 @@ function supportsWebPush() {
   );
 }
 
+async function getMideliServiceWorkerRegistration() {
+  if (!supportsWebPush()) return null;
+
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  const existing = registrations.find((registration) =>
+    registration.active?.scriptURL.includes("/serwist/sw/") ||
+    registration.scope === `${window.location.origin}/`
+  );
+  if (existing) {
+    if (existing.active) return existing;
+    await existing.update().catch(() => undefined);
+    return existing;
+  }
+
+  // Serwist normally creates this registration. The fallback avoids a race
+  // on mobile, where the page can render before the provider has finished.
+  return navigator.serviceWorker.register("/serwist/sw/sw.js", {
+    scope: "/",
+    updateViaCache: "none",
+  });
+}
+
+async function waitForActiveServiceWorker(
+  registration: ServiceWorkerRegistration
+) {
+  if (registration.active) return registration;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("El servicio de avisos no respondió"));
+    }, 10000);
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      registration.installing?.removeEventListener("statechange", onStateChange);
+      registration.waiting?.removeEventListener("statechange", onStateChange);
+    };
+    const onStateChange = () => {
+      if (registration.active) {
+        cleanup();
+        resolve();
+      }
+    };
+    registration.installing?.addEventListener("statechange", onStateChange);
+    registration.waiting?.addEventListener("statechange", onStateChange);
+    onStateChange();
+  });
+  return registration;
+}
+
 export async function getPushStatus(topic: PushTopic): Promise<PushStatus> {
   if (!supportsWebPush()) return "unsupported";
   if (process.env.NODE_ENV === "development") return "production_required";
   if (isAppleMobile() && !isStandaloneApp()) return "install_required";
   if (Notification.permission === "denied") return "denied";
 
-  const registration = await navigator.serviceWorker.getRegistration();
+  const registration = await getMideliServiceWorkerRegistration();
   const subscription = await registration?.pushManager.getSubscription();
   if (!subscription) return "available";
 
@@ -114,12 +163,9 @@ export async function enablePushNotifications(
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "available";
 
-  const registration = await Promise.race([
-    navigator.serviceWorker.ready,
-    new Promise<never>((_, reject) =>
-      window.setTimeout(() => reject(new Error("El servicio de avisos no respondió")), 10000)
-    ),
-  ]);
+  const registration = await getMideliServiceWorkerRegistration();
+  if (!registration) throw new Error("Este dispositivo no tiene activo el servicio de avisos");
+  await waitForActiveServiceWorker(registration);
   const existing = await registration.pushManager.getSubscription();
   const subscription =
     existing ??
@@ -164,7 +210,7 @@ export async function pausePushNotifications(
     return "paused";
   }
 
-  const registration = await navigator.serviceWorker.getRegistration();
+  const registration = await getMideliServiceWorkerRegistration();
   const subscription = await registration?.pushManager.getSubscription();
   if (!subscription) {
     setDeviceAlertsEnabled(topic, false);

@@ -9,7 +9,7 @@ import {
   withPendingDeliveryQuote,
 } from "@/lib/whatsapp/conversation-engine";
 import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
-import { normalizePhone, normalizeText, phoneAliases } from "@/lib/whatsapp/normalize";
+import { formatPhoneForCopy, normalizePhone, normalizeText, phoneAliases } from "@/lib/whatsapp/normalize";
 import { deliveryQuoteReply } from "@/lib/whatsapp/customer-messages";
 import { safeErrorDetail } from "@/lib/whatsapp/error-detail";
 import type { MenuItem } from "@/types/database";
@@ -184,6 +184,8 @@ test("normaliza texto y teléfonos mexicanos sin alterar el contenido útil", ()
     "5216442793641",
     "526442793641",
   ]);
+  expect(formatPhoneForCopy("5216442793641")).toBe("6442793641");
+  expect(formatPhoneForCopy("+1 (555) 672-3841")).toBe("15556723841");
 });
 
 test("recibe un saludo sin contarlo como producto desconocido", () => {
@@ -199,6 +201,23 @@ test("recibe un saludo sin contarlo como producto desconocido", () => {
   expect(result.reply).toContain("menú");
   expect(result.reply).toContain("👋");
   expect(result.reply).not.toContain("Caguama");
+});
+
+test("no repite el saludo cuando el cliente mezcla saludo con una acción", () => {
+  const menu = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Hola, ver menú",
+    navigationCatalog
+  );
+  expect(menu.state.stage).toBe("browsing_catalog");
+  expect(menu.reply).toContain("Hamburguesas");
+
+  const product = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Hola, quiero una Hamburguesa Sencilla",
+    navigationCatalog
+  );
+  expect(product.state.cart[0]?.name).toBe("Hamburguesa Sencilla");
 });
 
 test("abre una categoría por nombre singular antes que el menú genérico", () => {
@@ -488,9 +507,37 @@ test("elige variaciones requeridas mediante IDs interactivos", () => {
     .toContain("bbq");
 
   result = handleConversationMessage(result.state, "modifier:cantidad:10", catalog);
-  expect(result.state.stage).toBe("ordering");
+  expect(result.state.stage).toBe("awaiting_modifiers");
   expect(result.state.cart[0].selectedModifiers.map((modifier) => modifier.optionId))
     .toEqual(expect.arrayContaining(["bbq", "10"]));
+
+  result = handleConversationMessage(result.state, "modifier:skip:papas", catalog);
+  expect(result.state.stage).toBe("ordering");
+});
+
+test("permite elegir variaciones opcionales múltiples y muestra el precio final una sola vez", () => {
+  let result = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Una California",
+    catalog
+  );
+
+  expect(result.state.stage).toBe("awaiting_modifiers");
+  expect(result.reply).toContain("Toppings");
+  expect(result.reply).toContain("+$30");
+
+  result = handleConversationMessage(result.state, "modifier:toppings:dracarys", catalog);
+  expect(result.state.stage).toBe("awaiting_modifiers");
+  expect(result.state.cart[0].selectedModifiers[0]?.optionName).toBe("Dracarys");
+
+  result = handleConversationMessage(result.state, "modifier:done:toppings", catalog);
+  expect(result.state.stage).toBe("ordering");
+  expect(result.state.total).toBe(155);
+  expect(result.reply).toContain("California · $155 c/u");
+  expect(result.reply).toContain("Extras: Dracarys (+$30)");
+  expect(result.reply).not.toContain("de Dracarys");
+  expect(result.reply).not.toContain("$125 + $30 extras");
+  expect(result.reply).not.toContain("Dracarys +$30");
 });
 
 test("cambia una variación desde el menú guiado sin duplicar el producto", () => {
@@ -627,8 +674,8 @@ test("distribuye variaciones distintas por unidad y conserva domicilio", () => {
   expect(
     second.state.cart.map((line) => line.selectedModifiers[0]?.optionName)
   ).toEqual(["Res", "Camarón", "Camarón"]);
-  expect(second.reply).toContain("1 California de Res");
-  expect(second.reply).toContain("2 California de Camarón");
+  expect(second.reply).toContain("1 California de Res · $125 c/u");
+  expect(second.reply).toContain("2 California de Camarón · $125 c/u");
   expect(second.reply).toContain("domicilio");
 });
 
@@ -683,7 +730,7 @@ test("aplica una misma variación a todas las unidades configurables", () => {
       (line) => line.selectedModifiers[0]?.optionName === "Camarón"
     )
   ).toBe(true);
-  expect(result.reply).toContain("3 California de Camarón");
+  expect(result.reply).toContain("3 California de Camarón · $125 c/u");
 });
 
 test("modifica una variación, reduce unidades y confirma el nuevo desglose", () => {
@@ -708,7 +755,7 @@ test("modifica una variación, reduce unidades y confirma el nuevo desglose", ()
     "Camarón",
     "Camarón",
   ]);
-  expect(result.reply).toContain("3 California de Camarón");
+  expect(result.reply).toContain("3 California de Camarón · $125 c/u");
 
   result = handleConversationMessage(
     result.state,
@@ -717,7 +764,7 @@ test("modifica una variación, reduce unidades y confirma el nuevo desglose", ()
   );
   expect(result.state.cart).toHaveLength(2);
   expect(result.state.total).toBe(250);
-  expect(result.reply).toContain("2 California de Camarón");
+  expect(result.reply).toContain("2 California de Camarón · $125 c/u");
 });
 
 test("aplica una modificación escrita directamente desde la confirmación", () => {
@@ -749,7 +796,7 @@ test("aplica una modificación escrita directamente desde la confirmación", () 
     "Camarón",
     "Camarón",
   ]);
-  expect(result.reply).toContain("2 California de Camarón");
+  expect(result.reply).toContain("2 California de Camarón · $125 c/u");
 });
 
 test("permite cambiar de domicilio a recoger después de cotizar", () => {
@@ -882,7 +929,7 @@ test("reemplaza un producto antes de confirmar", () => {
   expect(result.state.cart[0].name).toBe("California");
   expect(result.state.cart[0].selectedModifiers[0]?.optionName).toBe("Pollo");
   expect(result.state.total).toBe(125);
-  expect(result.reply).toContain("California de Pollo");
+  expect(result.reply).toContain("California de Pollo · $125 c/u");
 });
 
 test("recuerda domicilio y evita preguntarlo otra vez después de bebidas", () => {
@@ -926,7 +973,7 @@ test("pregunta por variaciones requeridas y completa la misma línea", () => {
   expect(second.state.total).toBe(189);
 });
 
-test("no inventa productos y ofrece atención solo después de tres mensajes sin coincidencias", () => {
+test("no inventa productos ni transfiere al cliente por ambigüedad normal", () => {
   const first = handleConversationMessage(
     createConversation("5216440000000"),
     "Quiero una pizza familiar",
@@ -943,9 +990,10 @@ test("no inventa productos y ofrece atención solo después de tres mensajes sin
   expect(second.action).toBe("none");
   expect(second.state.stage).toBe("ordering");
   const third = handleConversationMessage(second.state, "Mejor una pizza", catalog);
-  expect(third.action).toBe("handoff");
-  expect(third.state.stage).toBe("handoff");
+  expect(third.action).toBe("none");
+  expect(third.state.stage).toBe("ordering");
   expect(third.state.cart).toHaveLength(0);
+  expect(third.reply).toMatch(/todav[ií]a no logro identificarlo/i);
 });
 
 test("completa domicilio, efectivo y solicita crear solo después de confirmar", () => {

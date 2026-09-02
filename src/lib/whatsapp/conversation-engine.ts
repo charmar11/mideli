@@ -2,7 +2,10 @@ import {
   findCatalogProducts,
   findCatalogProductsInCategory,
   matchItemModifiers,
+  modifierGroupId,
+  modifierMinimum,
   missingRequiredGroups,
+  nextModifierGroup,
 } from "./catalog";
 import {
   explicitQuantityFromText,
@@ -151,15 +154,36 @@ function groupedCartLines(cart: ConversationCartLine[]) {
   return [...grouped.values()];
 }
 
+function descriptiveVariantModifiers(line: ConversationCartLine) {
+  return line.selectedModifiers.filter(
+    (modifier) =>
+      modifier.price === 0 &&
+      /\b(tipo|sabor|prote[ií]na)\b/.test(normalizeText(modifier.groupName))
+  );
+}
+
 function lineDescription(line: ConversationCartLine) {
-  const options = line.selectedModifiers.map((modifier) => modifier.optionName);
-  const configuration = options.length === 0
-    ? ""
-    : options.length === 1
-      ? ` de ${options[0]}`
-      : ` (${options.join(", ")})`;
+  const descriptiveVariants = descriptiveVariantModifiers(line);
+  const displayName = descriptiveVariants.length > 0
+    ? `${line.name} de ${descriptiveVariants.map((modifier) => modifier.optionName).join(" y ")}`
+    : line.name;
+  const modifiers = line.selectedModifiers.filter(
+    (modifier) => !descriptiveVariants.includes(modifier)
+  ).map((modifier) =>
+    modifier.price > 0
+      ? `${modifier.optionName} (+$${modifier.price})`
+      : modifier.optionName
+  );
+  const modifiersTotal = line.selectedModifiers.reduce(
+    (total, modifier) => total + modifier.price,
+    0
+  );
+  const finalUnitPrice = line.unitPrice + modifiersTotal;
+  const extras = modifiers.length > 0
+    ? `\n  Extras: ${modifiers.join(", ")}`
+    : "";
   const note = line.notes.trim() ? `\n  Indicación: ${line.notes.trim()}` : "";
-  return `${line.quantity} ${line.name}${configuration}${note}`;
+  return `${line.quantity} ${displayName} · $${finalUnitPrice} c/u${extras}${note}`;
 }
 
 function cartBreakdown(cart: ConversationCartLine[]) {
@@ -433,20 +457,38 @@ function itemForLine(line: ConversationCartLine, catalog: ConversationCatalog) {
 
 function firstIncompleteLine(
   cart: ConversationCartLine[],
-  catalog: ConversationCatalog
+  catalog: ConversationCatalog,
+  includeOptional = false,
+  skippedOptionalGroupIds: string[] = []
 ) {
   return cart.find((line) => {
     const item = itemForLine(line, catalog);
-    return item ? missingRequiredGroups(item, line.selectedModifiers).length > 0 : false;
+    return item
+      ? Boolean(nextModifierGroup(item, line.selectedModifiers, {
+          includeOptional,
+          skippedOptionalGroupIds,
+        }))
+      : false;
   });
 }
 
-function modifierQuestion(line: ConversationCartLine, catalog: ConversationCatalog) {
+function modifierQuestion(
+  line: ConversationCartLine,
+  catalog: ConversationCatalog,
+  requestedGroupId?: string | null
+) {
   const item = itemForLine(line, catalog);
-  const group = item
-    ? missingRequiredGroups(item, line.selectedModifiers)[0]
+  const requestedGroup = requestedGroupId && item
+    ? item.modifiers.find((candidate, index) => modifierGroupId(candidate, index) === requestedGroupId)
     : null;
+  const group = requestedGroup ?? (item
+    ? nextModifierGroup(item, line.selectedModifiers, { includeOptional: true })?.group
+    : null);
   if (!group) return `¿Qué opción deseas para ${line.name}?`;
+  const groupIndex = item?.modifiers.indexOf(group) ?? 0;
+  const selectedCount = line.selectedModifiers.filter(
+    (modifier) => modifier.groupId === modifierGroupId(group, groupIndex)
+  ).length;
   const options = group.options
     .map((option, index) => {
       const extra = Number(option.price) > 0 ? ` +$${Number(option.price)}` : "";
@@ -455,7 +497,14 @@ function modifierQuestion(line: ConversationCartLine, catalog: ConversationCatal
     })
     .join("\n");
   const multiple = group.selection_mode === "multiple" ? " Puedes elegir varias." : "";
-  return `${categoryEmoji(item?.categoryName ?? "")} *Vamos a personalizar tu ${line.name}*\n\nElige *${group.name}*.${multiple}\n\n${options}`;
+  const optional = modifierMinimum(group) === 0;
+  const finishHint = group.selection_mode === "multiple"
+    ? " Cuando termines escribe *listo*."
+    : optional
+      ? " Si no deseas agregar, escribe *sin extras*."
+      : "";
+  const selectedHint = selectedCount > 0 ? `\nYa elegiste: ${selectedCount}.` : "";
+  return `${categoryEmoji(item?.categoryName ?? "")} *Vamos a personalizar tu ${line.name}*\n\nElige *${group.name}*.${multiple}${finishHint}${selectedHint}\n\n${options}`;
 }
 
 function mergeModifiers(
@@ -628,11 +677,27 @@ function finishModifierSelection(
   catalog: ConversationCatalog
 ) {
   const nextState = withCart(state, cart);
-  const incomplete = firstIncompleteLine(cart, catalog);
+  const incomplete = firstIncompleteLine(
+    cart,
+    catalog,
+    true,
+    nextState.skippedOptionalModifierGroupIds ?? []
+  );
   if (incomplete) {
+    const incompleteItem = itemForLine(incomplete, catalog);
+    const incompleteGroup = incompleteItem
+      ? nextModifierGroup(incompleteItem, incomplete.selectedModifiers, {
+          includeOptional: true,
+          skippedOptionalGroupIds: nextState.skippedOptionalModifierGroupIds ?? [],
+        })
+      : null;
     return result(
-      { ...nextState, pendingLineId: incomplete.id },
-      modifierQuestion(incomplete, catalog)
+      {
+        ...nextState,
+        pendingLineId: incomplete.id,
+        pendingModifierGroupId: incompleteGroup?.id ?? null,
+      },
+      modifierQuestion(incomplete, catalog, incompleteGroup?.id)
     );
   }
 
@@ -641,6 +706,8 @@ function finishModifierSelection(
       ...nextState,
       stage: "browsing_catalog",
       pendingLineId: null,
+      pendingModifierGroupId: null,
+      skippedOptionalModifierGroupIds: [],
       selectedCategoryId: nextState.pendingBrowseCategoryId,
       pendingBrowseCategoryId: null,
       catalogPage: 0,
@@ -656,6 +723,8 @@ function finishModifierSelection(
     ...nextState,
     stage: "ordering",
     pendingLineId: null,
+    pendingModifierGroupId: null,
+    skippedOptionalModifierGroupIds: [],
     pendingBrowseCategoryId: null,
     ambiguityCount: 0,
   };
@@ -903,6 +972,8 @@ export function createConversation(phone: string): ConversationState {
     cart: [],
     total: 0,
     pendingLineId: null,
+    pendingModifierGroupId: null,
+    skippedOptionalModifierGroupIds: [],
     serviceType: null,
     address: null,
     addressReference: "",
@@ -940,6 +1011,10 @@ export function hydrateConversation(
     ...value,
     phone: normalizePhone(phone),
     cart: Array.isArray(value.cart) ? value.cart : [],
+    pendingModifierGroupId: value.pendingModifierGroupId ?? null,
+    skippedOptionalModifierGroupIds: Array.isArray(value.skippedOptionalModifierGroupIds)
+      ? value.skippedOptionalModifierGroupIds
+      : [],
     addressReference: value.addressReference ?? "",
     addressReferenceCollected: Boolean(
       value.addressReferenceCollected || value.addressReference?.trim()
@@ -1092,7 +1167,44 @@ function handlePendingModifiers(
   const line = state.cart.find((item) => item.id === state.pendingLineId);
   const catalogItem = line ? itemForLine(line, catalog) : null;
   if (!line || !catalogItem) {
-    return result({ ...state, stage: "ordering", pendingLineId: null }, "¿Qué más deseas agregar?");
+    return result({ ...state, stage: "ordering", pendingLineId: null, pendingModifierGroupId: null }, "¿Qué más deseas agregar?");
+  }
+
+  const currentGroup = state.pendingModifierGroupId
+    ? catalogItem.modifiers.find((group, index) =>
+        modifierGroupId(group, index) === state.pendingModifierGroupId
+      ) ?? null
+    : nextModifierGroup(catalogItem, line.selectedModifiers, {
+        includeOptional: true,
+        skippedOptionalGroupIds: state.skippedOptionalModifierGroupIds ?? [],
+      })?.group ?? null;
+  const currentGroupIndex = currentGroup ? catalogItem.modifiers.indexOf(currentGroup) : -1;
+  const currentGroupId = currentGroup && currentGroupIndex >= 0
+    ? modifierGroupId(currentGroup, currentGroupIndex)
+    : null;
+
+  const text = normalizeText(message);
+  const wantsCartChange = /\b(cambia|cambiar|cambiame|reemplaza|reemplazar|quita|quitar|elimina|eliminar|agrega|agregar)\b/.test(text);
+  if (currentGroup && modifierMinimum(currentGroup) === 0 && (isDoneIntent(text) || wantsCartChange)) {
+    const skipped = new Set(state.skippedOptionalModifierGroupIds ?? []);
+    for (const [groupIndex, group] of catalogItem.modifiers.entries()) {
+      const groupId = modifierGroupId(group, groupIndex);
+      const selectedCount = line.selectedModifiers.filter(
+        (modifier) => modifier.groupId === groupId
+      ).length;
+      if (modifierMinimum(group) === 0 && selectedCount === 0) skipped.add(groupId);
+    }
+    const continued = finishModifierSelection(
+      { ...state, pendingModifierGroupId: null, skippedOptionalModifierGroupIds: [...skipped] },
+      state.cart,
+      line,
+      catalog
+    );
+    return isDoneIntent(text) || continued.state.stage !== "ordering"
+      ? (isDoneIntent(text) && continued.state.stage === "ordering"
+        ? handleOrdering(continued.state, message, catalog)
+        : continued)
+      : handleOrdering(continued.state, message, catalog);
   }
 
   const distributed = distributePendingModifiers(
@@ -1112,6 +1224,31 @@ function handlePendingModifiers(
     : null;
   if (modifierCommand?.length === 2) {
     const [requestedGroupId, requestedOptionId] = modifierCommand;
+    if (
+      (requestedGroupId === "done" || requestedGroupId === "skip") &&
+      currentGroupId === requestedOptionId &&
+      currentGroup
+    ) {
+      const selectedCount = line.selectedModifiers.filter(
+        (modifier) => modifier.groupId === currentGroupId
+      ).length;
+      const minimum = modifierMinimum(currentGroup);
+      if (requestedGroupId === "done" && selectedCount < minimum) {
+        return result(state, modifierQuestion(line, catalog, currentGroupId));
+      }
+      const skipped = new Set(state.skippedOptionalModifierGroupIds ?? []);
+      if (minimum === 0) skipped.add(currentGroupId);
+      return finishModifierSelection(
+        {
+          ...state,
+          pendingModifierGroupId: null,
+          skippedOptionalModifierGroupIds: [...skipped],
+        },
+        state.cart,
+        line,
+        catalog
+      );
+    }
     const groupIndex = catalogItem.modifiers.findIndex((group, index) =>
       (group.id ?? `group-${index}`) === requestedGroupId
     );
@@ -1120,23 +1257,18 @@ function handlePendingModifiers(
       (option.id ?? `option-${groupIndex}-${index}`) === requestedOptionId
     ) ?? -1;
     const option = optionIndex >= 0 ? group?.options[optionIndex] : null;
-    const missing = missingRequiredGroups(catalogItem, line.selectedModifiers)[0];
-    const missingId = missing
-      ? missing.id ?? `group-${catalogItem.modifiers.indexOf(missing)}`
-      : null;
-    if (group && option && requestedGroupId === missingId) {
+    if (group && option && requestedGroupId === currentGroupId) {
       additions = [modifierFromOption(group, groupIndex, option, optionIndex)];
     }
   }
   const numeric = Number.parseInt(normalizeText(message), 10);
   if (additions.length === 0 && Number.isInteger(numeric) && numeric > 0) {
-    const missing = missingRequiredGroups(catalogItem, line.selectedModifiers)[0];
-    const option = missing?.options[numeric - 1];
-    if (missing && option) {
-      const groupIndex = catalogItem.modifiers.indexOf(missing);
+    const option = currentGroup?.options[numeric - 1];
+    if (currentGroup && option) {
+      const groupIndex = catalogItem.modifiers.indexOf(currentGroup);
       additions = [{
-        groupId: missing.id ?? `group-${groupIndex}`,
-        groupName: missing.name,
+        groupId: modifierGroupId(currentGroup, groupIndex),
+        groupName: currentGroup.name,
         optionId: option.id ?? `option-${groupIndex}-${numeric - 1}`,
         optionName: option.name,
         price: Number(option.price),
@@ -1145,7 +1277,17 @@ function handlePendingModifiers(
   }
 
   if (additions.length === 0) {
-    return result(state, modifierQuestion(line, catalog));
+    if (currentGroup && modifierMinimum(currentGroup) === 0 && /^(no|ninguno|ninguna|sin extras|sin complemento|omitir)$/.test(text)) {
+      const skipped = new Set(state.skippedOptionalModifierGroupIds ?? []);
+      skipped.add(currentGroupId ?? modifierGroupId(currentGroup, currentGroupIndex));
+      return finishModifierSelection(
+        { ...state, pendingModifierGroupId: null, skippedOptionalModifierGroupIds: [...skipped] },
+        state.cart,
+        line,
+        catalog
+      );
+    }
+    return result(state, modifierQuestion(line, catalog, currentGroupId));
   }
 
   const selectedModifiers = mergeModifiers(
@@ -1157,6 +1299,25 @@ function handlePendingModifiers(
   const cart = state.cart.map((item) =>
     item.id === line.id ? { ...item, selectedModifiers } : item
   );
+  const selectedCount = selectedModifiers.filter(
+    (modifier) => modifier.groupId === currentGroupId
+  ).length;
+  const shouldKeepMultipleGroupOpen = Boolean(
+    currentGroup &&
+    currentGroup.selection_mode === "multiple" &&
+    (!currentGroup.required || selectedCount < Math.max(1, currentGroup.min_selections ?? 1))
+  );
+  if (shouldKeepMultipleGroupOpen) {
+    return result(
+      {
+        ...state,
+        cart,
+        total: orderTotal(cart, state.deliveryQuote),
+        pendingModifierGroupId: currentGroupId,
+      },
+      modifierQuestion(cart.find((item) => item.id === line.id) ?? line, catalog, currentGroupId)
+    );
+  }
   return finishModifierSelection(state, cart, line, catalog);
 }
 
@@ -1188,7 +1349,7 @@ function addMatches(
     }
   }
   const nextState = withCart(state, [...state.cart, ...additions]);
-  const incomplete = firstIncompleteLine(nextState.cart, catalog);
+  const incomplete = firstIncompleteLine(nextState.cart, catalog, true);
 
   if (incomplete) {
     return result(
@@ -1196,6 +1357,10 @@ function addMatches(
         ...nextState,
         stage: "awaiting_modifiers",
         pendingLineId: incomplete.id,
+        pendingModifierGroupId: itemForLine(incomplete, catalog)
+          ? nextModifierGroup(itemForLine(incomplete, catalog)!, incomplete.selectedModifiers, { includeOptional: true })?.id ?? null
+          : null,
+        skippedOptionalModifierGroupIds: [],
         ambiguityCount: 0,
         nextLineNumber,
       },
@@ -1567,8 +1732,8 @@ function handleBrowsingCatalog(
 
 function deliveryAddressPrompt(state: ConversationState) {
   return state.savedAddress
-    ? `📍 ¿Usamos tu domicilio anterior: ${state.savedAddress.address}? Responde sí o escribe otro domicilio.`
-    : "📍 Compárteme la dirección completa o tu ubicación desde WhatsApp para calcular el envío 😊";
+    ? `📍 ¿Usamos tu domicilio anterior?\n${state.savedAddress.address}`
+    : "📍 Escribe la dirección con calle, número y colonia, o comparte tu ubicación desde WhatsApp.";
 }
 
 function continueAfterBeverages(state: ConversationState) {
@@ -1611,11 +1776,10 @@ function handleOrdering(
   const question = catalogQuestionReply(state, message, catalog);
   if (question) return question;
   const requestedService = serviceTypeFromText(text);
+  const greetingOnly = /^(?:hola|buenas|buen dia|buenas tardes|buenas noches|buenos dias)(?:\s+(?:hola|buenas|buen dia|buenas tardes|buenas noches|buenos dias))*$/.test(text);
   if (
     state.cart.length === 0 &&
-    ["hola", "buenas", "buen dia", "buenas tardes", "buenas noches"].some(
-      (phrase) => text === phrase || includesPhrase(text, phrase)
-    )
+    greetingOnly
   ) {
     return result(
       { ...state, ambiguityCount: 0 },
@@ -1802,9 +1966,8 @@ function handleOrdering(
   const ambiguityCount = state.ambiguityCount + 1;
   if (ambiguityCount >= 3) {
     return result(
-      { ...state, stage: "handoff", ambiguityCount },
-      "Quiero ayudarte sin hacerte perder tiempo 😊 Una persona del equipo continuará contigo.",
-      "handoff"
+      { ...state, ambiguityCount },
+      "Todavía no logro identificarlo 😊 Escríbeme el nombre del platillo y la cantidad, por ejemplo: *dos hamburguesas sencillas*. También puedes escribir *menú* para elegir una opción."
     );
   }
   return result(
@@ -1965,7 +2128,7 @@ function handleAddress(state: ConversationState, message: string) {
   if (state.savedAddress && isNegative(text)) {
     return result(
       { ...state, savedAddress: null },
-      "Perfecto. Escribe la nueva dirección completa o comparte tu ubicación."
+      "Perfecto. Escribe la nueva dirección: calle, número y colonia, o comparte tu ubicación."
     );
   }
   if (text.length < 8) {
@@ -2038,7 +2201,7 @@ function handleAddressConfirmation(state: ConversationState, message: string) {
         payment: null,
         addressConfirmationAttempts: attempts,
       },
-      "Gracias por avisarme 😊 Envíame la dirección corregida o comparte tu ubicación desde WhatsApp."
+      "Gracias por avisarme 😊 Envíame la dirección corregida con calle, número y colonia, o comparte tu ubicación."
     );
   }
 
@@ -2728,7 +2891,7 @@ function handleLateConversationChange(
         payment: null,
         stage: "awaiting_address",
       },
-      "📍 Claro, actualizamos el domicilio. Escribe la nueva dirección completa o comparte tu ubicación 😊"
+      "📍 Claro, actualizamos el domicilio. Escribe la nueva dirección: calle, número y colonia, o comparte tu ubicación 😊"
     );
   }
 

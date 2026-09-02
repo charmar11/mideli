@@ -265,9 +265,13 @@ export interface Order {
   channel_conversation_id?: string | null;
   customer_id?: string | null;
   customer_phone?: string | null;
+  whatsapp_status_opt_in?: boolean;
   delivery_address?: string | null;
   delivery_reference?: string | null;
   delivery_fee?: number;
+  delivery_distance_meters?: number | null;
+  delivery_latitude?: number | null;
+  delivery_longitude?: number | null;
   delivery_status?: "pending" | "searching_driver" | "driver_on_way" | "customer_received";
   external_order_id?: string | null;
   payment_method_requested?: "efectivo" | "tarjeta" | "transferencia" | null;

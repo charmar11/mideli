@@ -1,94 +1,107 @@
 # Product
 
-<!-- impeccable:product-schema 1 -->
+## Plataforma
 
-## Platform
+Aplicación web instalable como PWA para la operación interna de un restaurante.
 
-web
+## Usuarios
 
-## Users
+**Principales:** meseros en servicio real, personal de caja y cocina. Usan Mideli bajo presión de turno para tomar pedidos, modificarlos, enviarlos a cocina, seguir estados y cobrar.
 
-**Primary:** Meseros en servicio real (salón, barra o caja). Usan Mideli bajo presión de turno para tomar pedidos, armar carrito con modificadores, enviar a cocina, seguir estados y cobrar.
+**Administrativos:** owner y admin. Gestionan menú, categorías, imágenes, mesas, usuarios, caja, inventario, impresión, WhatsApp y analíticas.
 
-**Secondary:**
-- Cocina: lee la cola de pedidos (KDS), marca progreso y listos; trabaja con urgencia por tiempo en pantalla.
-- Dueño / admin: gestiona menú, usuarios/roles y revisa analíticas del local.
+**Supervisor:** puede operar POS y KDS, pero no administrar configuración.
 
-No hay usuario comensal en el producto actual (sin pedidos online del cliente).
+No existe usuario comensal dentro de la aplicación. WhatsApp sí es un canal externo para que el cliente converse con el bot o sea atendido por el equipo.
 
-## Product Purpose
+## Propósito
 
-Mideli es el sistema de gestión de pedidos de un solo local de comida (Burger & Sushi) en Cd. Obregón, Sonora. Existe para que el equipo opere el servicio del día a día: capturar órdenes, coordinar cocina y cerrar cobros sin depender de papel o herramientas genéricas desconectadas de la marca del local.
+Mideli coordina todo el turno de un solo local Burger & Sushi en Ciudad Obregón, Sonora: capturar la orden correctamente, enviarla a cocina, preparar, entregar y cobrar sin depender de papel ni herramientas desconectadas.
 
-**Éxito:** pedidos correctos y rápidos de mesa/caja a cocina y de listo a cobro, con catálogo y equipo administrables por el dueño.
+**Éxito:** pedidos correctos y rápidos, estados visibles, cobros auditables y suficiente contexto para resolver excepciones durante el turno.
 
-## Positioning
+## Alcance funcional actual
 
-No es un POS genérico multi-local. Es la herramienta operativa de **Mideli** — con la identidad y el lenguaje del local dentro de la operación — hecha a la medida de un solo restaurante Burger & Sushi, no de una cadena.
+- POS para comedor, domicilio y para llevar.
+- Selección visual de zona y mesa en el plano global.
+- Catálogo agrupado por categorías, modificadores, cantidades y notas.
+- KDS con estados, tiempos, prioridad, sonido y avisos.
+- Cobro completo, parcial, combinado y dividido, con propina, descuentos autorizados y cuentas pendientes.
+- Historial de ventas con dirección, ubicación, tipo de servicio, cobro y seguimiento del pedido.
+- Turnos de caja, movimientos, conteo ciego, cortes, correcciones y auditoría.
+- Menú editable con categorías ordenables, productos, precios, estado, variaciones e imágenes.
+- Inventario por insumos, recetas, compras, lotes, conteos y mermas.
+- Estación de impresión automática para tickets de cocina de 48 mm.
+- PWA con notificaciones por dispositivo para pedidos nuevos y pedidos listos.
+- Licencia mensual y protección de rutas.
+- Analíticas, control diario y rentabilidad estimada por receta.
+- WhatsApp con bot, catálogo, carrito, variaciones, domicilio, cliente por teléfono, direcciones guardadas, notas, confirmación, relevo humano, clientes, limpieza conversacional y avisos de estado.
 
-## Operating Context
+## Flujos críticos
 
-- Un local físico: C. Yaqui 404 Oriente, Cd. Obregón, Sonora.
-- Uso en tablets/móviles/navegador (PWA) durante el turno.
-- Flujos de servicio: comedor (mesa), para llevar y domicilio.
-- Mesero y cocina comparten el mismo sistema con vistas distintas y actualizaciones en tiempo real.
-- UI y copy en español (mercado México / LATAM).
-- Ritual del turno: abrir sesión → tomar pedidos → cocina prepara → listo → servir/entregar → cobrar → (admin) menú, usuarios, analíticas.
+### Pedido interno
 
-## Capabilities and Constraints
+1. Mesero crea pedido nuevo.
+2. Agrega productos y modificadores.
+3. Elige comedor, domicilio o para llevar.
+4. Selecciona mesa si es comedor o confirma domicilio si es entrega.
+5. Envía a cocina.
+6. Cocina prepara y marca listo.
+7. El personal entrega o sirve.
+8. Se registra el cobro y queda en historial.
 
-**Capacidades confirmadas:**
-- Auth de staff (Supabase) con roles: `owner`, `admin`, `waiter`, `kitchen`.
-- POS mesero: catálogo por categorías, modificadores, carrito, notas, tipos de orden, mesa/cliente, cobro (efectivo / tarjeta / transferencia).
-- KDS cocina: cola activa, urgencia por tiempo, cambio de estados, feedback sonoro.
-- Admin de menú: categorías, productos, precios, activar/desactivar, modificadores, imágenes.
-- Settings (owner/admin): altas y gestión de usuarios del local.
-- Analíticas del local (resúmenes, productos top, desgloses).
-- Estados de orden: `pending` → `in_kitchen` → `ready` → `served` → `paid` (o `cancelled`).
-- Stack: Next.js (App Router), TypeScript, Tailwind, shadcn/ui, Supabase (DB + Auth + Realtime + Storage), PWA (Serwist). Integraciones preparadas: Resend, Twilio, Polar.
+### Pedido de WhatsApp
 
-**Restricciones:**
-- Un solo local; no multi-tenant.
-- Sin superficie de pedidos para el comensal (operación interna solamente).
-- Rutas protegidas: `/dashboard`, `/menu`, `/settings`; admin de settings solo owner/admin.
-- Hosting Vercel pendiente de configurar; fuente de verdad de env en `.env.example`.
-- Sin framework de tests configurado aún.
+1. Meta entrega el mensaje al webhook.
+2. El motor serializa el procesamiento por conversación.
+3. El bot muestra opciones y catálogo con precios claros.
+4. El cliente arma y confirma su pedido.
+5. El pedido se crea con canal WhatsApp e idempotencia.
+6. Si el bot no puede continuar, la conversación pasa a atención humana con su contexto.
+7. El equipo puede cargar el pedido en Mesero, editarlo y enviarlo a cocina.
 
-**Superficies de producto a preservar:**
-- `/login` — acceso staff
-- `/dashboard/mesero` — POS
-- `/dashboard/cocina` — KDS
-- `/dashboard/analiticas` — métricas
-- `/menu` — catálogo
-- `/settings` — usuarios y roles
-- `/` — home mínima de marca (no es el foco operativo)
+### Domicilio
 
-## Brand Commitments
+El cliente conoce el costo estimado de envío, pero el total operativo de Mideli para un repartidor externo corresponde solo al subtotal de productos. El envío se conserva como dato informativo y lo cobra el repartidor aparte.
 
-- Nombre: **Mideli**
-- Categoría del local: **Burger & Sushi**
-- Tagline: no se utiliza un slogan público.
-- Ubicación pública: C. Yaqui 404 Oriente, Cd. Obregón, Sonora
-- Voz de producto: español claro, operativo, del turno (mesero/cocina/dueño)
-- La marca del local debe sentirse **dentro de la operación**, no solo en marketing externo
-- **Preferencia visual (canon):** UI de POS de categoría jugada a full fidelity, sin ironía ni “quirk” forzado. Barra de craft: **Toast, Lightspeed, Square, Mercado Pago Point**. La marca vive en wordmark + acento primario; la herramienta debe desaparecer en la tarea. Velocidad del turno gana sobre expresión: más clics o más lento = falla.
+## Roles y permisos
 
-(La identidad visual detallada vive en DESIGN.md.)
+| Rol | Operación | Administración |
+|---|---|---|
+| owner | POS, KDS, WhatsApp y caja | Completa, incluida licencia y permisos |
+| admin | POS, KDS, WhatsApp y caja | Menú, mesas, inventario, usuarios y analíticas |
+| supervisor | POS y KDS | No |
+| waiter | POS y áreas operativas autorizadas | No |
+| kitchen | KDS | No |
 
-## Evidence on Hand
+## Restricciones
 
-- Código de producto en `src/` (rutas, POS, KDS, menú, settings, analíticas, stores, tipos).
-- Metadata y PWA: `src/app/layout.tsx`, `src/app/manifest.ts`, iconos en `public/`.
-- Imágenes de marca/contenido en `imagenes/` y `public/` según existan.
-- Docs internas: `AGENTS.md`, `README.md`.
-- Backend: proyecto Supabase `qgnjennimvbrfxvcmowb`.
+- Un solo local, sin multi-tenant ni multisucursal.
+- Sin pedidos web directos para el comensal.
+- Las operaciones financieras requieren validación del servidor.
+- No se confirma un cobro, corrección o cierre de caja sin conexión con el servidor.
+- La contingencia completa sin internet todavía está pendiente.
+- PWA, impresora, push, WhatsApp real y flujos financieros requieren validación en hardware y cuentas reales.
 
-**No fabricar:** testimonios de clientes, métricas de negocio no medidas, comparación pública con competidores, precios de menú o claims de prensa que no estén en el repo.
+## Superficies de producto
 
-## Product Principles
+- `/login`: acceso del personal.
+- `/dashboard/mesero`: POS.
+- `/dashboard/cocina`: KDS.
+- `/dashboard/whatsapp`: central de servicio.
+- `/dashboard/analiticas`: control y métricas.
+- `/menu`: menú y categorías.
+- `/settings/mesas`: plano.
+- `/settings/inventario`: inventario.
+- `/settings/caja`: caja.
+- `/settings/impresion`: impresión.
+- `/settings/diagnostico`: diagnósticos.
+- `/control/licencia`: control privado del vendedor.
 
-1. **El mesero primero** — el camino feliz del POS debe ser el más rápido y claro bajo presión de servicio.
-2. **Cocina sin fricción** — el KDS prioriza legibilidad, urgencia y un toque para avanzar estados.
-3. **Marca en la herramienta** — Mideli se siente del local; no un panel anónimo de software.
-4. **Un local, una verdad** — catálogo, órdenes y roles de este restaurante; sin abstracciones de cadena.
-5. **Operación completa del turno** — de pedido a cobro y de menú a equipo, en el mismo sistema.
+## Principios de producto
+
+1. El mesero primero: el camino feliz debe ser rápido y claro bajo presión.
+2. Cocina sin fricción: la comanda debe llegar completa y ser fácil de avanzar.
+3. Una verdad operativa: pedido, cobro, ubicación y cliente deben conservar el mismo contexto.
+4. La excepción es visible: pendientes, errores, atención humana y pagos incompletos no se esconden.
+5. La marca acompaña la operación: Mideli tiene personalidad, pero la velocidad del turno gana.

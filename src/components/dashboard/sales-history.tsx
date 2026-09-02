@@ -12,9 +12,13 @@ import {
   ChevronRight as ChevronRightIcon,
   CircleAlert,
   CreditCard,
+  ExternalLink,
   FileText,
+  Clock3,
   MapPin,
+  Navigation,
   Pencil,
+  Phone,
   ReceiptText,
   Printer,
   RefreshCw,
@@ -43,12 +47,25 @@ import { createClient } from "@/lib/supabase/client";
 import type { Order, Profile } from "@/types/database";
 import type { PaymentReceipt } from "@/types/payments";
 import { formatOrderLocation } from "@/lib/order-location";
+import {
+  orderCustomerTotal,
+  orderExternalDeliveryFee,
+  orderProductsBalance,
+  orderProductsTotal,
+} from "@/lib/order-totals";
 import { useCashShiftStore } from "@/lib/stores";
 import { PaymentMethodCorrectionDialog } from "@/components/payments/payment-method-correction-dialog";
+import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import {
+  DELIVERY_STATUS_VISUALS,
+  ORDER_STATUS_VISUALS,
+  ORDER_TYPE_VISUALS,
+} from "@/lib/order-visuals";
 
 type StatusFilter = "all" | Order["status"];
 type TypeFilter = "all" | Order["type"];
 type PaymentFilter = "all" | "pending" | NonNullable<Order["payment_method"]>;
+type DeliveryFilter = "all" | NonNullable<Order["delivery_status"]>;
 type TicketChoice = {
   id: string;
   folio: number;
@@ -74,12 +91,22 @@ const STATUS_META: Record<
   Order["status"],
   { label: string; className: string }
 > = {
-  pending: { label: "Pendiente", className: "bg-warning-light text-warning" },
-  in_kitchen: { label: "En cocina", className: "bg-warning-light text-warning" },
-  ready: { label: "Listo", className: "bg-success-light text-success" },
-  served: { label: "Entregado", className: "bg-brand-light text-brand" },
-  paid: { label: "Pagado", className: "bg-success-light text-success" },
-  cancelled: { label: "Cancelado", className: "bg-destructive/10 text-destructive" },
+  pending: { label: "Pendiente", className: ORDER_STATUS_VISUALS.pending },
+  in_kitchen: { label: "En cocina", className: ORDER_STATUS_VISUALS.in_kitchen },
+  ready: { label: "Listo", className: ORDER_STATUS_VISUALS.ready },
+  served: { label: "Entregado", className: ORDER_STATUS_VISUALS.served },
+  paid: { label: "Pagado", className: ORDER_STATUS_VISUALS.paid },
+  cancelled: { label: "Cancelado", className: ORDER_STATUS_VISUALS.cancelled },
+};
+
+const DELIVERY_STATUS_META: Record<
+  NonNullable<Order["delivery_status"]>,
+  { label: string; className: string }
+> = {
+  pending: { label: "Pendiente de asignar", className: DELIVERY_STATUS_VISUALS.pending },
+  searching_driver: { label: "Buscando repartidor", className: DELIVERY_STATUS_VISUALS.searching_driver },
+  driver_on_way: { label: "En camino", className: DELIVERY_STATUS_VISUALS.driver_on_way },
+  customer_received: { label: "Cliente recibió", className: DELIVERY_STATUS_VISUALS.customer_received },
 };
 
 function toInputDate(date: Date) {
@@ -119,6 +146,26 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatDistance(meters: number | null | undefined) {
+  if (meters === null || meters === undefined || !Number.isFinite(Number(meters))) return null;
+  const distance = Number(meters);
+  return distance >= 1000
+    ? `${(distance / 1000).toLocaleString("es-MX", { maximumFractionDigits: 1 })} km`
+    : `${Math.round(distance)} m`;
+}
+
+function getDeliveryMapHref(order: SalesHistoryOrder) {
+  const latitude = Number(order.delivery_latitude);
+  const longitude = Number(order.delivery_longitude);
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+  }
+  if (order.delivery_address?.trim()) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address.trim())}`;
+  }
+  return null;
+}
+
 function OrderTypeIcon({
   type,
   size,
@@ -147,16 +194,6 @@ function PaymentMethodIcon({
     return <ArrowLeftRight size={size} className={className} />;
   }
   return <CreditCard size={size} className={className} />;
-}
-
-function getItemsTotal(order: SalesHistoryOrder) {
-  return order.items.reduce((total, item) => {
-    const modifiersTotal = item.selected_modifiers.reduce(
-      (sum, modifier) => sum + modifier.price,
-      0
-    );
-    return total + (item.unit_price + modifiersTotal) * item.quantity;
-  }, 0);
 }
 
 function isPendingPayment(order: SalesHistoryOrder) {
@@ -335,6 +372,34 @@ function PendingAccountCard({
   );
 }
 
+function getProductsBalance(order: SalesHistoryOrder) {
+  return orderProductsBalance(order);
+}
+
+function ProgressStep({
+  label,
+  active,
+  current = false,
+}: {
+  label: string;
+  active: boolean;
+  current?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span
+        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+          active ? "bg-success" : "bg-border"
+        } ${current ? "ring-4 ring-success/15" : ""}`}
+        aria-hidden="true"
+      />
+      <span className={`font-body text-xs ${active ? "text-foreground" : "text-muted-foreground"}`}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function OrderDetail({
   order,
   onClose,
@@ -351,6 +416,12 @@ function OrderDetail({
   onCorrectPayment?: () => void;
 }) {
   const status = STATUS_META[order.status];
+  const deliveryStatus = order.type === "domicilio"
+    ? DELIVERY_STATUS_META[order.delivery_status ?? "pending"]
+    : null;
+  const mapHref = order.type === "domicilio" ? getDeliveryMapHref(order) : null;
+  const distance = formatDistance(order.delivery_distance_meters);
+  const requestedPayment = order.payment_method_requested ?? order.payment_method;
 
   return (
     <div className="flex min-h-0 flex-col">
@@ -390,14 +461,16 @@ function OrderDetail({
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-5">
+      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
         <div className="mb-5 grid grid-cols-2 gap-2">
           <div className="rounded-xl border border-border bg-background/60 p-3">
             <p className="mb-1 font-body text-[11px] uppercase tracking-wider text-muted-foreground">
               Tipo
             </p>
             <div className="flex items-center gap-2 font-heading text-xs font-bold">
-              <OrderTypeIcon type={order.type} size={15} className="text-brand" />
+              <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${ORDER_TYPE_VISUALS[order.type].icon}`}>
+                <OrderTypeIcon type={order.type} size={15} />
+              </span>
               {TYPE_LABELS[order.type]}
             </div>
           </div>
@@ -458,19 +531,90 @@ function OrderDetail({
           </div>
         </div>
 
-        <div className="space-y-3 border-b border-border/70 pb-5">
-          {order.table_number ? (
+        <div className="space-y-4 border-b border-border/70 pb-5">
+          {order.customer_name || order.customer_phone ? (
+            <div className="rounded-2xl border border-border bg-background/50 p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <UserRound size={16} className="text-brand" />
+                <p className="font-heading text-sm font-bold">Cliente</p>
+              </div>
+              {order.customer_name ? (
+                <p className="font-heading text-sm font-bold">{order.customer_name}</p>
+              ) : null}
+              {order.customer_phone ? (
+                <a
+                  href={`tel:${order.customer_phone}`}
+                  className="mt-1 inline-flex items-center gap-1.5 font-data text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <Phone size={13} />
+                  {formatPhoneForDisplay(order.customer_phone)}
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+
+          {order.type === "domicilio" ? (
+            <div className="rounded-2xl border border-border bg-background/50 p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <MapPin size={16} className="text-brand" />
+                  <p className="font-heading text-sm font-bold">Entrega</p>
+                </div>
+                {deliveryStatus ? (
+                  <span className={`rounded-full px-2 py-1 font-heading text-[10px] font-bold ${deliveryStatus.className}`}>
+                    {deliveryStatus.label}
+                  </span>
+                ) : null}
+              </div>
+              <p className="font-body text-sm leading-5 text-foreground">
+                {order.delivery_address || "Domicilio no disponible"}
+              </p>
+              {order.delivery_reference ? (
+                <p className="mt-2 rounded-xl bg-surface-raised px-3 py-2 font-body text-xs leading-5 text-muted-foreground">
+                  Referencia: {order.delivery_reference}
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-body text-xs text-muted-foreground">
+                <span>Envío externo {formatMoney(orderExternalDeliveryFee(order))} · lo cobra el repartidor</span>
+                {distance ? <span>{distance}</span> : null}
+              </div>
+              {mapHref ? (
+                <a
+                  href={mapHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand-light px-3 font-heading text-xs font-bold text-brand hover:bg-brand/20"
+                >
+                  <Navigation size={15} />
+                  Abrir ubicación
+                  <ExternalLink size={13} />
+                </a>
+              ) : null}
+            </div>
+          ) : order.table_number ? (
             <div className="flex items-center gap-2 font-body text-sm text-muted-foreground">
               <MapPin size={15} className="text-brand" />
               {formatOrderLocation(order)}
             </div>
           ) : null}
-          {order.customer_name ? (
-            <div className="flex items-center gap-2 font-body text-sm text-muted-foreground">
-              <UserRound size={15} className="text-brand" />
-              {order.customer_name}
+
+          {order.type === "domicilio" ? (
+            <div className="rounded-2xl border border-border bg-background/50 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Clock3 size={16} className="text-brand" />
+                <p className="font-heading text-sm font-bold">Seguimiento</p>
+              </div>
+              <div className="space-y-2">
+                <ProgressStep label="Pedido registrado" active />
+                <ProgressStep label="Estado actual" active={order.status !== "pending"} current={order.status === "in_kitchen" || order.status === "ready"} />
+                <ProgressStep label={deliveryStatus?.label ?? "Entrega pendiente"} active={order.delivery_status === "driver_on_way" || order.delivery_status === "customer_received"} current={order.delivery_status === "driver_on_way"} />
+              </div>
+              <p className="mt-3 font-body text-[11px] text-muted-foreground">
+                Última actualización: {formatDateTime(order.updated_at)}
+              </p>
             </div>
           ) : null}
+
           {order.created_by_name ? (
             <div className="flex items-center gap-2 font-body text-sm text-muted-foreground">
               <FileText size={15} className="text-brand" />
@@ -486,18 +630,30 @@ function OrderDetail({
 
         <div className="space-y-3 pt-5">
           <div className="flex items-center justify-between font-body text-sm text-muted-foreground">
-            <span>Subtotal</span>
-            <span>{formatMoney(getItemsTotal(order))}</span>
+            <span>Productos para Mideli</span>
+            <span>{formatMoney(orderProductsTotal(order))}</span>
           </div>
+          {order.type === "domicilio" ? (
+            <>
+              <div className="flex items-center justify-between gap-3 font-body text-sm text-muted-foreground">
+                <span>Envío externo <span className="text-[11px]">(aparte)</span></span>
+                <span>{formatMoney(orderExternalDeliveryFee(order))}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-raised px-3 py-2 font-body text-sm text-muted-foreground">
+                <span>Total informativo del cliente</span>
+                <span className="font-data font-bold text-foreground">{formatMoney(orderCustomerTotal(order))}</span>
+              </div>
+            </>
+          ) : null}
           <div className="flex items-center justify-between gap-3">
-            <span className="font-heading text-base font-bold">Total</span>
-            <span className="font-data text-2xl font-bold text-brand">{formatMoney(order.total)}</span>
+            <span className="font-heading text-base font-bold">Cobro a Mideli</span>
+            <span className="font-data text-2xl font-bold text-brand">{formatMoney(orderProductsTotal(order))}</span>
           </div>
           <div className="flex items-center gap-2 font-body text-xs text-muted-foreground">
             {order.payment_status === "paid" && order.payment_method ? (
               <>
                 <PaymentMethodIcon method={order.payment_method} size={15} className="text-success" />
-                {PAYMENT_LABELS[order.payment_method]}
+                {order.payment_method === "transferencia" ? "Productos pagados por transferencia" : `${PAYMENT_LABELS[order.payment_method]} · productos`}
                 {order.paid_at ? ` · ${formatDateTime(order.paid_at)}` : ""}
               </>
             ) : order.payment_status === "paid" ? (
@@ -508,12 +664,24 @@ function OrderDetail({
             ) : (
               <>
                 <CircleAlert size={15} className="text-warning" />
-                {Number(order.paid_amount ?? 0) > 0
-                  ? `Abonado ${formatMoney(Number(order.paid_amount))} · Saldo ${formatMoney(Math.max(0, order.total - Number(order.paid_amount)))}`
+                {requestedPayment === "transferencia"
+                  ? "Transferencia indicada · verificar productos"
+                  : requestedPayment
+                  ? `Método solicitado: ${PAYMENT_LABELS[requestedPayment]} · productos`
+                  : Number(order.paid_amount ?? 0) > 0
+                  ? `Abonado ${formatMoney(Number(order.paid_amount))} · Saldo ${formatMoney(getProductsBalance(order))}`
                   : "Pago pendiente"}
               </>
             )}
           </div>
+          {requestedPayment === "efectivo" && order.requested_cash_tendered ? (
+            <div className="rounded-xl bg-warning-light/50 px-3 py-2 font-body text-xs text-muted-foreground">
+              Paga con {formatMoney(order.requested_cash_tendered)}
+              {order.change_given !== null && order.change_given !== undefined
+                ? ` · Cambio ${formatMoney(order.change_given)}`
+                : ""}
+            </div>
+          ) : null}
           {onPay && isPendingPayment(order) ? (
             <button
               type="button"
@@ -562,6 +730,7 @@ export function SalesHistory() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
+  const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>("all");
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<SalesHistoryOrder | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -616,9 +785,12 @@ export function SalesHistory() {
       const searchable = [
         String(order.number),
         order.table_zone_name ?? "",
-        order.table_number ?? "",
-        order.customer_name ?? "",
-        order.created_by_name ?? "",
+      order.table_number ?? "",
+      order.customer_name ?? "",
+      order.customer_phone ?? "",
+      order.delivery_address ?? "",
+      order.delivery_reference ?? "",
+      order.created_by_name ?? "",
         itemText,
       ]
         .join(" ")
@@ -627,13 +799,16 @@ export function SalesHistory() {
         (!normalizedSearch || searchable.includes(normalizedSearch)) &&
         (statusFilter === "all" || order.status === statusFilter) &&
         (typeFilter === "all" || order.type === typeFilter) &&
+        (deliveryFilter === "all" ||
+          (order.type === "domicilio" &&
+            (order.delivery_status ?? "pending") === deliveryFilter)) &&
         (paymentFilter === "all" ||
           (paymentFilter === "pending"
             ? isPendingPayment(order)
             : order.payment_method === paymentFilter))
       );
     });
-  }, [orders, paymentFilter, search, statusFilter, typeFilter]);
+  }, [deliveryFilter, orders, paymentFilter, search, statusFilter, typeFilter]);
 
   const pendingPaymentOrders = useMemo(
     () => orders.filter(isPendingPayment),
@@ -781,7 +956,7 @@ export function SalesHistory() {
               <div>
                 <h1 className="font-heading text-xl font-bold sm:text-2xl">Historial de ventas</h1>
                 <p className="font-body text-sm text-muted-foreground">
-                  Consulta pedidos, cobros y detalle del turno
+                  Consulta pedidos, cobros y seguimiento de entregas
                 </p>
               </div>
             </div>
@@ -861,7 +1036,7 @@ export function SalesHistory() {
                   type="search"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Buscar pedido, mesa o producto"
+                  placeholder="Buscar folio, cliente, teléfono o dirección"
                   className="h-11 w-full rounded-xl border border-border bg-background pl-10 pr-3 font-body text-sm outline-none placeholder:text-muted-foreground/70 focus:border-brand"
                 />
               </div>
@@ -903,6 +1078,18 @@ export function SalesHistory() {
                   ["efectivo", "Efectivo"],
                   ["tarjeta", "Tarjeta"],
                   ["transferencia", "Transferencia"],
+                ]}
+              />
+              <FilterSelect
+                label="Entrega"
+                value={deliveryFilter}
+                onChange={(value) => setDeliveryFilter(value as DeliveryFilter)}
+                options={[
+                  ["all", "Todos los estados"],
+                  ["pending", "Pendiente de asignar"],
+                  ["searching_driver", "Buscando repartidor"],
+                  ["driver_on_way", "En camino"],
+                  ["customer_received", "Cliente recibió"],
                 ]}
               />
               <span className="ml-auto self-center font-body text-xs text-muted-foreground">
@@ -980,7 +1167,7 @@ export function SalesHistory() {
             if (event.target === event.currentTarget) setSelectedOrder(null);
           }}
         >
-          <div className="flex max-h-[92vh] min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-float sm:mx-auto sm:max-w-lg">
+          <div className="flex max-h-[calc(100dvh-1rem)] min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-float sm:mx-auto sm:max-w-lg">
             <OrderDetail
               order={selectedOrder}
               onClose={() => setSelectedOrder(null)}
@@ -1322,18 +1509,26 @@ function HistoryOrderRow({
   onClick: () => void;
 }) {
   const status = STATUS_META[order.status];
+  const deliveryStatus = order.type === "domicilio"
+    ? DELIVERY_STATUS_META[order.delivery_status ?? "pending"]
+    : null;
+  const typeAccent = order.type === "domicilio"
+    ? "border-l-success"
+    : order.type === "para_llevar"
+      ? "border-l-brand"
+      : "border-l-gold";
   const itemsCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors sm:p-4 ${
+      className={`group flex w-full items-center gap-3 rounded-xl border border-l-4 p-3 text-left transition-colors sm:p-4 ${typeAccent} ${
         selected
           ? "border-brand/60 bg-brand-light/40"
           : "border-border bg-background/40 hover:border-border-strong hover:bg-background/80"
       }`}
     >
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-brand text-white" : "bg-surface-raised text-muted-foreground"}`}>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-brand text-white" : ORDER_TYPE_VISUALS[order.type].icon}`}>
         <OrderTypeIcon type={order.type} size={18} />
       </span>
       <span className="min-w-0 flex-1">
@@ -1346,15 +1541,29 @@ function HistoryOrderRow({
         <span className="mt-1 block truncate font-body text-xs text-muted-foreground">
           {formatTime(order.created_at)} · {TYPE_LABELS[order.type]}
           {order.type === "comedor" ? ` · ${formatOrderLocation(order)}` : ""}
-          {order.customer_name ? ` · ${order.customer_name}` : ""}
+          {order.customer_name
+            ? ` · ${order.customer_name}`
+            : order.customer_phone
+              ? ` · ${formatPhoneForDisplay(order.customer_phone)}`
+              : ""}
+          {deliveryStatus ? ` · ${deliveryStatus.label}` : ""}
         </span>
         <span className="mt-1 block truncate font-body text-xs text-muted-foreground/80">
           {itemsCount} {itemsCount === 1 ? "artículo" : "artículos"}
           {order.items.length > 0 ? ` · ${order.items[0].menu_item_name}` : ""}
         </span>
+        {order.type === "domicilio" && order.delivery_address ? (
+          <span className="mt-1 flex items-center gap-1 truncate font-body text-[11px] text-muted-foreground/70">
+            <MapPin size={12} className="shrink-0 text-brand/80" />
+            {order.delivery_address}
+          </span>
+        ) : null}
       </span>
       <span className="flex shrink-0 items-center gap-2">
-        <span className="font-data text-sm font-bold text-brand">{formatMoney(order.total)}</span>
+        <span className="flex shrink-0 flex-col items-end gap-0.5">
+          <span className="font-data text-sm font-bold text-brand">{formatMoney(orderProductsTotal(order))}</span>
+          {order.type === "domicilio" ? <span className="font-body text-[10px] text-muted-foreground">+ envío {formatMoney(orderExternalDeliveryFee(order))}</span> : null}
+        </span>
         <ChevronRight size={16} className="text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </span>
     </button>
@@ -1369,7 +1578,7 @@ function EmptyDetail() {
       </span>
       <h3 className="font-heading text-sm font-bold">Selecciona un pedido</h3>
       <p className="mt-1 max-w-xs font-body text-xs leading-relaxed text-muted-foreground">
-        Aquí verás los productos, modificadores, mesa y método de pago.
+        Aquí verás productos, cliente, domicilio, pago y seguimiento de entrega.
       </p>
     </div>
   );

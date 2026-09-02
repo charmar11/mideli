@@ -8,6 +8,7 @@ import {
   getRealtimeReconnectDelay,
 } from "@/lib/realtime-resilience";
 import { notifyWhatsappOrderStatusAction } from "@/lib/actions/whatsapp-order-status";
+import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 
 export interface OrderItemWithName extends OrderItem {
   menu_item_name?: string;
@@ -15,6 +16,19 @@ export interface OrderItemWithName extends OrderItem {
 
 export interface OrderWithItems extends Order {
   items: OrderItemWithName[];
+}
+
+export interface PosDeliveryDetails {
+  address: string;
+  reference: string;
+  fee: number;
+  phone?: string;
+  paymentMethod?: "efectivo" | "tarjeta" | "transferencia" | null;
+  cashTendered?: number | null;
+  whatsappStatusOptIn?: boolean;
+  distanceMeters?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface OrderState {
@@ -30,7 +44,11 @@ interface OrderState {
     notes?: string,
     tableNumber?: string,
     customerName?: string,
-    tableId?: string
+    tableId?: string,
+    delivery?: PosDeliveryDetails,
+    customerId?: string | null,
+    customerPhone?: string | null,
+    channelConversationId?: string | null
   ) => Promise<{ order: Order | null; error: string | null }>;
   updateOrderStatus: (
     orderId: string,
@@ -41,7 +59,12 @@ interface OrderState {
     items: CartItem[],
     tableNumber?: string,
     customerName?: string,
-    tableId?: string
+    tableId?: string,
+    delivery?: PosDeliveryDetails,
+    notes?: string,
+    customerId?: string | null,
+    customerPhone?: string | null,
+    channelConversationId?: string | null
   ) => Promise<{ error: string | null }>;
   deleteOrder: (orderId: string) => Promise<{ error: string | null }>;
   markAsServed: (orderId: string) => Promise<{ error: string | null }>;
@@ -103,26 +126,26 @@ function orderLoadError(error: unknown, fallback: string) {
   return fallback;
 }
 
-function publishOrderNotification(
+async function publishOrderNotification(
   supabase: ReturnType<typeof createClient>,
   orderId: string,
   event: "new_order" | "ready"
 ) {
-  void supabase.functions
-    .invoke("send-order-notification", { body: { orderId, event } })
-    .then((result: { error: { message: string } | null }) => {
-      if (!result.error) return;
-      console.warn(
-        "El pedido se guardó, pero falló el aviso Push:",
-        result.error.message
-      );
-    })
-    .catch((error: unknown) => {
-      console.warn(
-        "El pedido se guardó, pero no se pudo solicitar el aviso Push:",
-        error instanceof Error ? error.message : "Error desconocido"
-      );
+  try {
+    const result = await supabase.functions.invoke("send-order-notification", {
+      body: { orderId, event },
     });
+    if (!result.error) return;
+    console.warn(
+      "El pedido se guardó, pero falló el aviso Push:",
+      result.error.message
+    );
+  } catch (error: unknown) {
+    console.warn(
+      "El pedido se guardó, pero no se pudo solicitar el aviso Push:",
+      error instanceof Error ? error.message : "Error desconocido"
+    );
+  }
 }
 
 export const useOrderStore = create<OrderState>((set, get) => ({
@@ -163,7 +186,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         const supabase = createClient();
         const legacyOrderSelect =
           "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at";
-        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_phone,delivery_address,delivery_reference,delivery_fee,delivery_status,payment_method_requested,requested_cash_tendered`;
+        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_id,customer_phone,whatsapp_status_opt_in,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered`;
         const ordersDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
         let activeResult;
         try {
@@ -244,6 +267,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           ...order,
           items: (orderItemsByOrder.get(order.id) ?? []).map((item) => ({
               ...item,
+              selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
               menu_item_name: map.get(item.menu_item_id) ?? "Producto",
             })),
         }));
@@ -274,7 +298,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     notes = "",
     tableNumber = "",
     customerName = "",
-    tableId = ""
+    tableId = "",
+    delivery,
+    customerId,
+    customerPhone,
+    channelConversationId
   ) => {
     if (items.length === 0) {
       return { order: null, error: "Agrega al menos un producto" };
@@ -294,10 +322,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       tableNumber,
       customerName,
       tableId,
+      delivery,
+      channelConversationId,
     });
     const creationKey = pendingOrderCreationKeys.get(creationFingerprint) ?? crypto.randomUUID();
     pendingOrderCreationKeys.set(creationFingerprint, creationKey);
-    const total = calculateItemsTotal(items);
+    const productsTotal = calculateItemsTotal(items);
+    const total = productsTotal;
     const { data, error } = await supabase.rpc("create_order_with_items", {
       p_creation_key: creationKey,
       p_items: items.map((item) => ({
@@ -305,7 +336,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         quantity: item.quantity,
         unit_price: item.price,
         notes: item.notes,
-        selected_modifiers: item.selected_modifiers,
+        selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
       })),
       p_order_type: orderType,
       p_total: total,
@@ -322,7 +353,43 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       };
     }
 
-    const order = data as Order;
+    let order = data as Order;
+    if (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery)) {
+      const { data: updated, error: deliveryError } = await supabase
+        .from("orders")
+        .update({
+          ...(customerId ? { customer_id: customerId } : {}),
+          ...(customerPhone ? { customer_phone: customerPhone } : {}),
+          ...(channelConversationId
+            ? { source_channel: "whatsapp", channel_conversation_id: channelConversationId }
+            : {}),
+          ...(orderType === "domicilio" && delivery
+            ? {
+                total: productsTotal,
+                customer_phone: delivery.phone || null,
+                whatsapp_status_opt_in: delivery.whatsappStatusOptIn ?? false,
+                delivery_address: delivery.address.trim(),
+                delivery_reference: delivery.reference.trim() || null,
+                delivery_fee: Math.max(0, Math.round(delivery.fee)),
+                delivery_distance_meters: delivery.distanceMeters ?? null,
+                delivery_latitude: delivery.latitude ?? null,
+                delivery_longitude: delivery.longitude ?? null,
+                notes,
+                payment_method_requested: delivery.paymentMethod ?? null,
+                requested_cash_tendered: delivery.cashTendered ?? null,
+                delivery_status: "pending",
+              }
+            : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id)
+        .select("*")
+        .single();
+      if (deliveryError || !updated) {
+        return { order: null, error: "El pedido se creó, pero no se pudo guardar el domicilio" };
+      }
+      order = updated as Order;
+    }
     pendingOrderCreationKeys.delete(creationFingerprint);
 
     const localOrder = buildLocalOrder(order, items, get().menuItemsMap);
@@ -334,7 +401,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         ? state.todayOrders
         : [localOrder, ...state.todayOrders],
     }));
-    publishOrderNotification(supabase, order.id, "new_order");
+    await publishOrderNotification(supabase, order.id, "new_order");
     return { order, error: null };
   },
 
@@ -372,7 +439,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     if (status === "ready") {
-      publishOrderNotification(supabase, orderId, "ready");
+      await publishOrderNotification(supabase, orderId, "ready");
     }
 
     if (status === "in_kitchen" || status === "ready") {
@@ -402,7 +469,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     items,
     tableNumber = "",
     customerName = "",
-    tableId = ""
+    tableId = "",
+    delivery,
+    notes,
+    customerId,
+    customerPhone,
+    channelConversationId
   ) => {
     if (items.length === 0) {
       return { error: "El pedido debe tener al menos un artículo" };
@@ -416,7 +488,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         quantity: item.quantity,
         unit_price: item.price,
         notes: item.notes,
-        selected_modifiers: item.selected_modifiers,
+        selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
       })),
       p_total: calculateItemsTotal(items),
       p_table_number: tableNumber || null,
@@ -426,6 +498,37 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     if (error) {
       return { error: error.message || "No se pudo editar el pedido" };
+    }
+
+    if (delivery || notes !== undefined || customerId !== undefined || customerPhone !== undefined || channelConversationId) {
+      const { error: deliveryError } = await supabase
+        .from("orders")
+        .update({
+          ...(delivery
+            ? {
+                customer_phone: delivery.phone || null,
+                whatsapp_status_opt_in: delivery.whatsappStatusOptIn ?? false,
+                delivery_address: delivery.address.trim(),
+                delivery_reference: delivery.reference.trim() || null,
+                delivery_fee: Math.max(0, Math.round(delivery.fee)),
+                delivery_distance_meters: delivery.distanceMeters ?? null,
+                delivery_latitude: delivery.latitude ?? null,
+                delivery_longitude: delivery.longitude ?? null,
+                payment_method_requested: delivery.paymentMethod ?? null,
+                requested_cash_tendered: delivery.cashTendered ?? null,
+                delivery_status: "pending",
+              }
+            : {}),
+          ...(customerId !== undefined ? { customer_id: customerId } : {}),
+          ...(customerPhone !== undefined ? { customer_phone: customerPhone || null } : {}),
+          ...(channelConversationId
+            ? { source_channel: "whatsapp", channel_conversation_id: channelConversationId }
+            : {}),
+          ...(notes !== undefined ? { notes } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId);
+      if (deliveryError) return { error: "El pedido se actualizó, pero no se pudo guardar el domicilio" };
     }
 
     const currentOrder =
@@ -443,6 +546,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           table_number: tableNumber || null,
           table_id: tableId || null,
           customer_name: customerName || null,
+          customer_id: customerId ?? currentOrder.customer_id,
+          customer_phone: customerPhone ?? delivery?.phone ?? currentOrder.customer_phone,
+          whatsapp_status_opt_in: delivery?.whatsappStatusOptIn ?? currentOrder.whatsapp_status_opt_in,
+          delivery_address: delivery?.address || currentOrder.delivery_address,
+          delivery_reference: delivery?.reference || currentOrder.delivery_reference,
+          delivery_fee: delivery?.fee ?? currentOrder.delivery_fee,
+          delivery_distance_meters: delivery?.distanceMeters ?? currentOrder.delivery_distance_meters,
+          delivery_latitude: delivery?.latitude ?? currentOrder.delivery_latitude,
+          delivery_longitude: delivery?.longitude ?? currentOrder.delivery_longitude,
+          payment_method_requested: delivery?.paymentMethod ?? currentOrder.payment_method_requested,
+          requested_cash_tendered: delivery?.cashTendered ?? currentOrder.requested_cash_tendered,
+          notes: notes ?? currentOrder.notes,
           updated_at: new Date().toISOString(),
         },
         items,

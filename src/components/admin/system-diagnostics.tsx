@@ -328,9 +328,10 @@ async function checkPwa(): Promise<CheckOutcome> {
 }
 
 async function checkAlerts(): Promise<CheckOutcome> {
-  const [readyPushStatus, kitchenPushStatus, soundResponse] = await Promise.all([
+  const [readyPushStatus, kitchenPushStatus, whatsappPushStatus, soundResponse] = await Promise.all([
     getPushStatus("ready"),
     getPushStatus("kitchen"),
+    getPushStatus("whatsapp_attention"),
     fetch("/sounds/universfield-new-notification-051-494246.mp3", {
       method: "HEAD",
       cache: "no-store",
@@ -339,11 +340,11 @@ async function checkAlerts(): Promise<CheckOutcome> {
 
   if (!soundResponse.ok) throw new Error("sound unavailable");
   const audioReady = isReadyOrderAudioUnlocked();
-  const detail = `Entrega: ${PUSH_LABELS[readyPushStatus]}. Cocina: ${PUSH_LABELS[kitchenPushStatus]}. Sonido: ${
+  const detail = `Entrega: ${PUSH_LABELS[readyPushStatus]}. Cocina: ${PUSH_LABELS[kitchenPushStatus]}. WhatsApp: ${PUSH_LABELS[whatsappPushStatus]}. Sonido: ${
     audioReady ? "habilitado" : "pendiente de interacción"
   }.`;
 
-  if (readyPushStatus === "denied" || kitchenPushStatus === "denied") {
+  if ([readyPushStatus, kitchenPushStatus, whatsappPushStatus].includes("denied")) {
     return {
       status: "error",
       message: "Los avisos están bloqueados",
@@ -351,7 +352,7 @@ async function checkAlerts(): Promise<CheckOutcome> {
     };
   }
   if (
-    (readyPushStatus === "enabled" || kitchenPushStatus === "enabled") &&
+    (readyPushStatus === "enabled" || kitchenPushStatus === "enabled" || whatsappPushStatus === "enabled") &&
     audioReady
   ) {
     return { status: "ok", message: "Avisos y sonido listos", detail };
@@ -361,7 +362,8 @@ async function checkAlerts(): Promise<CheckOutcome> {
     status: "warning",
     message:
       readyPushStatus === "production_required" ||
-      kitchenPushStatus === "production_required"
+      kitchenPushStatus === "production_required" ||
+      whatsappPushStatus === "production_required"
         ? "Los avisos Push se validan al publicar"
         : "Los avisos requieren atención en este dispositivo",
     detail,

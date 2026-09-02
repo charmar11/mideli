@@ -1,10 +1,12 @@
 # Mideli: plan para la siguiente sesión
 
-Fecha de preparación: 2026-08-08
+Fecha de actualización: 2026-09-02
 Base de trabajo: `v0.9-piloto`
 Producción: https://mideli.vercel.app
 
-Actualización 2026-08-09: la primera versión de las fases 4 y 5 ya está implementada en local y Supabase. Incluye centro diario del dueño, correo reemplazable y rentabilidad estimada por receta. La disponibilidad manual se retiró; el inventario por receta puede quedar negativo sin bloquear la venta. Sigue pendiente validarla en dispositivos reales y configurar `CRON_SECRET` antes del próximo despliegue.
+Actualización 2026-09-02: el canal de WhatsApp, los pedidos automáticos, el relevo humano, los domicilios manuales, el seguimiento de repartidor, el cobro externo del envío, la deduplicación de domicilios, el historial ampliado y las mejoras móviles ya están implementados en el código local y publicados en producción. La suite Playwright tiene 20 archivos y proyectos de escritorio, tablet y móvil. Sigue pendiente la validación en dispositivos, impresora y cuentas reales.
+
+La documentación de operación está en `docs/OPERATIONS.md`; la arquitectura y decisiones vigentes están en `docs/ARCHITECTURE.md` y `docs/DECISIONS.md`.
 
 ## Objetivo
 
@@ -22,7 +24,7 @@ Convertir el piloto actual en un servicio mensual confiable para un restaurante 
 6. Probar PWA, sonido, push y pausa de notificaciones en dispositivos reales.
 7. Registrar cualquier fallo con dispositivo, rol, hora, pasos y captura.
 
-Resultado esperado: una lista corta y reproducible de defectos reales, no mejoras basadas solamente en percepción.
+Resultado esperado: una lista corta y reproducible de defectos reales, no mejoras basadas solamente en percepción. Registrar especialmente scroll móvil, Push, duplicados de WhatsApp, variaciones, totales de domicilio y cobro al repartidor.
 
 ### Fase 2: observabilidad, respaldos y recuperación
 

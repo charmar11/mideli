@@ -235,3 +235,28 @@ test("conserva producto, cierre, domicilio y pago expresados en un solo mensaje"
   expect(quoted.payment?.method).toBe("transferencia");
   expect(quoted.stage).toBe("awaiting_confirmation");
 });
+
+test("procesa una orden completa con dos configuraciones sin depender de Gemini", async () => {
+  let calls = 0;
+  const interpreter: SemanticInterpreter = async () => {
+    calls += 1;
+    throw new Error("No debe consultar Gemini para esta frase");
+  };
+
+  const result = await handleHybridConversationMessage({
+    state: createConversation("5216440000000"),
+    message: "Buenas tardes, quiero dos Californias, uno de res y otro de pollo. Sería todo, a domicilio y pagaré por transferencia",
+    catalog,
+    interpreter,
+  });
+
+  expect(calls).toBe(0);
+  expect(result.state.cart.map((line) => line.selectedModifiers[0]?.optionName)).toEqual([
+    "Res",
+    "Pollo",
+  ]);
+  expect(result.state.cart).toHaveLength(2);
+  expect(result.state.serviceType).toBe("domicilio");
+  expect(result.state.pendingPaymentMethod).toBe("transferencia");
+  expect(result.state.stage).toBe("awaiting_beverage");
+});
