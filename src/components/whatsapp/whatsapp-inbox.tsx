@@ -117,6 +117,14 @@ function statusTone(tone: ReturnType<typeof whatsappConversationStatus>["tone"])
   return "bg-surface-raised text-muted-foreground";
 }
 
+function statusDotTone(tone: ReturnType<typeof whatsappConversationStatus>["tone"]) {
+  if (tone === "warning") return "bg-warning";
+  if (tone === "success") return "bg-success";
+  if (tone === "brand") return "bg-brand";
+  if (tone === "danger") return "bg-danger";
+  return "bg-muted-foreground";
+}
+
 function filterTone(filter: WhatsappInboxFilter) {
   if (filter === "attention") return "bg-warning/15 text-warning";
   if (filter === "active") return "bg-success/15 text-success";
@@ -586,10 +594,13 @@ function ChatPanel({
             {customerLabel(conversation)}
           </h2>
           <div className="mt-1 flex items-center gap-2">
-            <span className={`rounded-full px-2 py-0.5 font-heading text-[9px] font-bold uppercase tracking-wide ${statusTone(status.tone)}`}>
+            <span className={`hidden rounded-full px-2 py-0.5 font-heading text-[9px] font-bold uppercase tracking-wide sm:inline-flex ${statusTone(status.tone)}`}>
               {status.label}
             </span>
-            <span className="truncate font-data text-[10px] text-muted-foreground">
+            <span className={`inline-flex size-2 shrink-0 rounded-full sm:hidden ${statusDotTone(status.tone)}`}>
+              <span className="sr-only">{status.label}</span>
+            </span>
+            <span className="shrink-0 whitespace-nowrap font-data text-[10px] text-muted-foreground">
               {formatPhoneForDisplay(conversation.phone)}
             </span>
           </div>

@@ -498,7 +498,7 @@ export function DashboardShell({
         className={
           isKitchenFocus
             ? "hidden"
-            : "hidden h-16 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 shadow-sm sm:px-4 md:flex xl:hidden"
+            : "mideli-dashboard-responsive-header hidden h-16 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 shadow-sm sm:px-4 md:flex xl:hidden"
         }
       >
         <Link href="/dashboard" className="mr-1 shrink-0 font-brand text-2xl text-brand">
@@ -548,7 +548,7 @@ export function DashboardShell({
         className={
           isKitchenFocus
             ? "hidden"
-            : "flex h-14 shrink-0 items-center border-b border-border bg-surface px-4 shadow-sm md:hidden"
+            : "mideli-dashboard-responsive-header flex h-14 shrink-0 items-center border-b border-border bg-surface px-4 shadow-sm md:hidden"
         }
       >
         <Link href="/dashboard" className="shrink-0 font-brand text-2xl text-brand">
