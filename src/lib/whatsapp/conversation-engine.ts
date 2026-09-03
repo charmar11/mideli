@@ -353,6 +353,8 @@ function commandValue(message: string, prefix: string) {
 function semanticMessageForCommand(message: string) {
   const commands: Record<string, string> = {
     "cmd:start": "hola",
+    "inactivity:continue": "si",
+    "inactivity:cancel": "cancelar",
     "beverage:show": "bebida",
     "beverage:skip": "no gracias",
     "fulfillment:pickup": "para recoger",
@@ -757,7 +759,10 @@ function cartSummary(state: ConversationState) {
   const deliveryNotes = state.serviceType === "domicilio" && state.deliveryNotes.trim()
     ? `\nAcceso: ${state.deliveryNotes.trim()}`
     : "";
-  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${orderNotes}${deliveryNotes}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido? 😊\nSi necesitas agregar una indicación, puedes escribirla antes de confirmar.`;
+  const schedule = state.scheduledForLabel
+    ? `\n🕒 Programado para *hoy a las ${state.scheduledForLabel}*`
+    : "";
+  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${schedule}${orderNotes}${deliveryNotes}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido? 😊\nSi necesitas agregar una indicación, puedes escribirla antes de confirmar.`;
 }
 
 function appendNote(existing: string, note: string) {
@@ -989,6 +994,9 @@ export function createConversation(phone: string): ConversationState {
     pendingPaymentMethod: null,
     orderNotes: "",
     deliveryNotes: "",
+    scheduledFor: null,
+    scheduledForLabel: null,
+    kitchenReleaseAt: null,
     pendingNote: null,
     editContext: null,
     guidedNote: null,
@@ -1029,6 +1037,9 @@ export function hydrateConversation(
     pendingPaymentMethod: value.pendingPaymentMethod ?? null,
     orderNotes: value.orderNotes ?? "",
     deliveryNotes: value.deliveryNotes ?? "",
+    scheduledFor: value.scheduledFor ?? null,
+    scheduledForLabel: value.scheduledForLabel ?? null,
+    kitchenReleaseAt: value.kitchenReleaseAt ?? null,
     pendingNote: value.pendingNote ?? null,
     editContext: value.editContext ?? null,
     guidedNote: value.guidedNote ?? null,
@@ -2949,6 +2960,8 @@ function handleLateConversationChange(
 function isKnownInteractiveCommand(command: string) {
   return [
     "cmd:start",
+    "inactivity:continue",
+    "inactivity:cancel",
     "cmd:menu",
     "cmd:human",
     "human_help",
@@ -3002,6 +3015,9 @@ function isKnownInteractiveCommand(command: string) {
 
 function interactiveCommandAllowed(state: ConversationState, command: string) {
   if (command === "cmd:human" || command === "human_help") return true;
+  if (command === "inactivity:continue" || command === "inactivity:cancel") {
+    return !["handoff", "confirmed", "cancelled"].includes(state.stage);
+  }
   if (command === "cmd:start") {
     return ["ordering", "confirmed", "cancelled"].includes(state.stage);
   }
@@ -3112,6 +3128,15 @@ export function handleConversationMessage(
       { ...state, stage: "handoff" },
       "Claro. Una persona del equipo continuará contigo.",
       "handoff"
+    );
+  }
+  if (command === "inactivity:continue") {
+    return result(state, currentStepReply(state, catalog));
+  }
+  if (command === "inactivity:cancel") {
+    return result(
+      { ...state, stage: "cancelled" },
+      "De acuerdo, cancelé el pedido. Si después quieres pedir, escríbeme y comenzamos de nuevo 😊"
     );
   }
   if (isKnownInteractiveCommand(command) && !interactiveCommandAllowed(state, command)) {

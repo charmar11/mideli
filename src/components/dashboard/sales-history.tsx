@@ -1552,12 +1552,17 @@ function HistoryOrderRow({
           {itemsCount} {itemsCount === 1 ? "artículo" : "artículos"}
           {order.items.length > 0 ? ` · ${order.items[0].menu_item_name}` : ""}
         </span>
-        {order.type === "domicilio" && order.delivery_address ? (
+          {order.type === "domicilio" && order.delivery_address ? (
           <span className="mt-1 flex items-center gap-1 truncate font-body text-[11px] text-muted-foreground/70">
             <MapPin size={12} className="shrink-0 text-brand/80" />
             {order.delivery_address}
           </span>
-        ) : null}
+          ) : null}
+          {order.schedule_status === "scheduled" && order.scheduled_for ? (
+            <span className="mt-1 block font-body text-[11px] font-semibold text-gold">
+              🕒 Programado para hoy · {new Intl.DateTimeFormat("es-MX", { hour: "numeric", minute: "2-digit" }).format(new Date(order.scheduled_for))}
+            </span>
+          ) : null}
       </span>
       <span className="flex shrink-0 items-center gap-2">
         <span className="flex shrink-0 flex-col items-end gap-0.5">

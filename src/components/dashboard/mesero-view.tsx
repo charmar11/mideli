@@ -86,6 +86,9 @@ export function MeseroView() {
   const [whatsappStatusOptIn, setWhatsappStatusOptIn] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [whatsappConversationId, setWhatsappConversationId] = useState<string | null>(null);
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
+  const [scheduledForLabel, setScheduledForLabel] = useState<string | null>(null);
+  const [kitchenReleaseAt, setKitchenReleaseAt] = useState<string | null>(null);
   const [customerMatches, setCustomerMatches] = useState<PosCustomerMatch[]>([]);
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -242,6 +245,9 @@ export function MeseroView() {
       setDeliveryPaymentMethod(draft.paymentMethod);
       setDeliveryCashTendered(draft.cashTendered);
       setOrderNotes(draft.notes);
+      setScheduledFor(draft.scheduledFor);
+      setScheduledForLabel(draft.scheduledForLabel);
+      setKitchenReleaseAt(draft.kitchenReleaseAt);
       setEditingOrderId(draft.orderId);
       setEditingOrderNumber(draft.orderNumber);
       setMode("pos");
@@ -420,7 +426,10 @@ export function MeseroView() {
         orderNotes,
         resolvedCustomerId,
         customerPhone,
-        whatsappConversationId
+        whatsappConversationId,
+        scheduledFor && kitchenReleaseAt
+          ? { scheduledFor, kitchenReleaseAt }
+          : undefined
       );
       error = result.error;
     } else {
@@ -447,7 +456,10 @@ export function MeseroView() {
           : undefined,
         resolvedCustomerId,
         customerPhone,
-        whatsappConversationId
+        whatsappConversationId,
+        scheduledFor && kitchenReleaseAt
+          ? { scheduledFor, kitchenReleaseAt }
+          : undefined
       );
       error = result.error;
       createdOrder = result.order;
@@ -510,6 +522,9 @@ export function MeseroView() {
     setWhatsappStatusOptIn(false);
     setCustomerId(null);
     setWhatsappConversationId(null);
+    setScheduledFor(null);
+    setScheduledForLabel(null);
+    setKitchenReleaseAt(null);
     setCustomerMatches([]);
     setDeliveryAddress("");
     setDeliveryReference("");
@@ -557,6 +572,16 @@ export function MeseroView() {
     setDeliveryConfirmed(Boolean(order.delivery_address));
     setDeliveryPaymentMethod(order.payment_method_requested ?? null);
     setDeliveryCashTendered(order.requested_cash_tendered ?? null);
+    setScheduledFor(order.scheduled_for ?? null);
+    setScheduledForLabel(
+      order.scheduled_for
+        ? new Date(order.scheduled_for).toLocaleTimeString("es-MX", {
+            hour: "numeric",
+            minute: "2-digit",
+          })
+        : null
+    );
+    setKitchenReleaseAt(order.kitchen_release_at ?? null);
     setOrderNotes(order.notes ?? "");
     setMode("pos");
   }
@@ -573,6 +598,9 @@ export function MeseroView() {
     setWhatsappStatusOptIn(false);
     setCustomerId(null);
     setWhatsappConversationId(null);
+    setScheduledFor(null);
+    setScheduledForLabel(null);
+    setKitchenReleaseAt(null);
     setCustomerMatches([]);
     setDeliveryAddress("");
     setDeliveryReference("");
@@ -598,6 +626,9 @@ export function MeseroView() {
       setWhatsappStatusOptIn(false);
       setCustomerId(null);
       setWhatsappConversationId(null);
+      setScheduledFor(null);
+      setScheduledForLabel(null);
+      setKitchenReleaseAt(null);
       setCustomerMatches([]);
       setDeliveryAddress("");
       setDeliveryReference("");
@@ -844,6 +875,7 @@ export function MeseroView() {
           paymentMethod={deliveryPaymentMethod}
           cashTendered={deliveryCashTendered}
           orderNotes={orderNotes}
+          scheduledForLabel={scheduledForLabel}
           isSubmitting={isSubmitting}
           isEditing={Boolean(editingOrderId)}
           onClose={() => !isSubmitting && setDetailsOpen(false)}

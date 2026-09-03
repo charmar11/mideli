@@ -103,6 +103,11 @@ function conversationContext(value: unknown): WhatsappAdminConversation["context
       }];
     }),
     total: typeof state.total === "number" ? state.total : 0,
+    deliveryFee:
+      state.deliveryQuote && typeof state.deliveryQuote === "object" && !Array.isArray(state.deliveryQuote) &&
+      typeof (state.deliveryQuote as Record<string, unknown>).totalFee === "number"
+        ? Number((state.deliveryQuote as Record<string, unknown>).totalFee)
+        : 0,
     serviceType:
       state.serviceType === "domicilio" || state.serviceType === "para_llevar"
         ? state.serviceType
@@ -114,6 +119,8 @@ function conversationContext(value: unknown): WhatsappAdminConversation["context
     orderNotes: typeof state.orderNotes === "string" ? state.orderNotes : "",
     deliveryNotes: typeof state.deliveryNotes === "string" ? state.deliveryNotes : "",
     paymentMethod: typeof payment.method === "string" ? payment.method : "",
+    scheduledFor: typeof state.scheduledFor === "string" ? state.scheduledFor : null,
+    scheduledForLabel: typeof state.scheduledForLabel === "string" ? state.scheduledForLabel : null,
   };
 }
 
@@ -236,7 +243,7 @@ async function loadWhatsappConversations(
     const ordersPromise = admin
       .from("orders")
       .select(
-        "id,number,status,type,total,delivery_fee,payment_status,payment_method,delivery_status,delivery_address,delivery_reference,payment_method_requested,requested_cash_tendered,created_at,channel_conversation_id"
+        "id,number,status,type,total,delivery_fee,payment_status,payment_method,delivery_status,delivery_address,delivery_reference,payment_method_requested,requested_cash_tendered,scheduled_for,schedule_status,created_at,channel_conversation_id"
       )
       .in("channel_conversation_id", conversationIds)
       .order("created_at", { ascending: false })
@@ -283,13 +290,16 @@ async function loadWhatsappConversations(
         number: order.number,
         status: order.status,
         type: order.type,
-        total: Number(order.total ?? 0) + (order.type === "domicilio" ? Number(order.delivery_fee ?? 0) : 0),
+        total: Number(order.total ?? 0),
+        deliveryFee: Number(order.delivery_fee ?? 0),
         paymentStatus: order.payment_status,
         deliveryStatus: order.delivery_status ?? "pending",
         deliveryAddress: order.delivery_address ?? "",
         deliveryReference: order.delivery_reference ?? "",
         paymentMethod: order.payment_method_requested ?? order.payment_method ?? "",
         requestedCashTendered: order.requested_cash_tendered,
+        scheduledFor: order.scheduled_for ?? null,
+        scheduleStatus: order.schedule_status ?? "none",
         createdAt: order.created_at,
       });
     }
@@ -833,7 +843,7 @@ export async function getWhatsappPosDraftAction(
 
     const latestOrder = await admin
       .from("orders")
-      .select("id,number,type,total,notes,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,payment_method_requested,requested_cash_tendered,channel_conversation_id")
+      .select("id,number,type,total,notes,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,channel_conversation_id")
       .eq("channel_conversation_id", conversationId)
       .eq("source_channel", "whatsapp")
       .order("created_at", { ascending: false })
@@ -906,6 +916,9 @@ export async function getWhatsappPosDraftAction(
         deliveryFee: Number(latestOrder.data?.delivery_fee ?? quote.totalFee ?? 0),
         paymentMethod: (latestOrder.data?.payment_method_requested ?? payment.method ?? null) as WhatsappPosDraft["paymentMethod"],
         cashTendered: latestOrder.data?.requested_cash_tendered ?? (typeof payment.cashTendered === "number" ? payment.cashTendered : null),
+        scheduledFor: latestOrder.data?.scheduled_for ?? (typeof state.scheduledFor === "string" ? state.scheduledFor : null),
+        scheduledForLabel: typeof state.scheduledForLabel === "string" ? state.scheduledForLabel : null,
+        kitchenReleaseAt: latestOrder.data?.kitchen_release_at ?? (typeof state.kitchenReleaseAt === "string" ? state.kitchenReleaseAt : null),
         items,
       },
     };

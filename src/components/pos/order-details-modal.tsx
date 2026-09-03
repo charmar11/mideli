@@ -50,6 +50,7 @@ interface OrderDetailsModalProps {
   paymentMethod: PaymentMethod;
   cashTendered: number | null;
   orderNotes: string;
+  scheduledForLabel?: string | null;
   isSubmitting: boolean;
   isEditing: boolean;
   onClose: () => void;
@@ -109,6 +110,7 @@ export function OrderDetailsModal({
   paymentMethod,
   cashTendered,
   orderNotes,
+  scheduledForLabel,
   isSubmitting,
   isEditing,
   onClose,
@@ -201,6 +203,12 @@ export function OrderDetailsModal({
             <X size={18} />
           </button>
         </header>
+        {scheduledForLabel ? (
+          <div className="mx-4 mt-3 flex shrink-0 items-center gap-2 rounded-xl border border-gold/30 bg-gold/10 px-3 py-2 font-body text-xs text-gold sm:mx-6">
+            <span aria-hidden>🕒</span>
+            Pedido programado para hoy a las <strong>{scheduledForLabel}</strong>
+          </div>
+        ) : null}
 
         <div
           className={`shrink-0 border-b px-3 py-2.5 sm:px-6 ${canSubmit ? "border-success/20 bg-success/5" : "border-warning/20 bg-warning/5"}`}

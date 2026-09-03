@@ -237,7 +237,11 @@ export async function claimInboundMessage(
   if (!duplicate) {
     const { error: updateError } = await admin
       .from("channel_conversations")
-      .update({ last_inbound_at: messageDate(message.timestamp) })
+      .update({
+        last_inbound_at: messageDate(message.timestamp),
+        inactivity_reminder_sent_at: null,
+        inactivity_deadline_at: null,
+      })
       .eq("id", conversation.id);
     if (updateError) throw updateError;
   }
@@ -511,7 +515,7 @@ export async function createExternalOrder(input: {
     .filter((value, index, values) => value && values.indexOf(value) === index)
     .join(" · ")
     .slice(0, 500);
-  const { data, error } = await admin.rpc("create_external_order_from_channel", {
+  const { data, error } = await admin.rpc("create_scheduled_external_order_from_channel", {
     p_external_order_id: input.externalOrderId,
     p_conversation_id: input.conversationId,
     p_items: state.cart.map((line) => ({
@@ -534,6 +538,8 @@ export async function createExternalOrder(input: {
     p_delivery_fee: state.deliveryQuote?.totalFee ?? 0,
     p_payment_method: state.payment?.method ?? null,
     p_cash_tendered: state.payment?.cashTendered ?? null,
+    p_scheduled_for: state.scheduledFor,
+    p_kitchen_release_at: state.kitchenReleaseAt,
   });
   if (error || !data) {
     throw error ?? new Error("No se pudo crear el pedido externo");

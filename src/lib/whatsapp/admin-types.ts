@@ -29,17 +29,21 @@ export type WhatsappAdminConversation = {
     status: string;
     type: string;
     total: number;
+    deliveryFee: number;
     paymentStatus: string;
     deliveryStatus: string;
     deliveryAddress: string;
     deliveryReference: string;
     paymentMethod: string;
     requestedCashTendered: number | null;
+    scheduledFor: string | null;
+    scheduleStatus: string;
     createdAt: string;
   } | null;
   context: {
     items: Array<{ name: string; quantity: number; notes: string }>;
     total: number;
+    deliveryFee: number;
     serviceType: "domicilio" | "para_llevar" | null;
     address: string;
     addressReference: string;
@@ -47,6 +51,8 @@ export type WhatsappAdminConversation = {
     orderNotes: string;
     deliveryNotes: string;
     paymentMethod: string;
+    scheduledFor: string | null;
+    scheduledForLabel: string | null;
   };
 };
 
@@ -76,6 +82,9 @@ export type WhatsappPosDraft = {
   deliveryFee: number;
   paymentMethod: "efectivo" | "transferencia" | null;
   cashTendered: number | null;
+  scheduledFor: string | null;
+  scheduledForLabel: string | null;
+  kitchenReleaseAt: string | null;
   items: Array<{
     id: string;
     menu_item_id: string;

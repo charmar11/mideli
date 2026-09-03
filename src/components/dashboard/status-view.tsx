@@ -75,7 +75,7 @@ function paymentMethodLabel(method: OrderWithItems["payment_method_requested"]) 
 }
 
 function formatDistance(distanceMeters: number | null | undefined) {
-  if (distanceMeters === null || distanceMeters === undefined) return null;
+  if (distanceMeters === null || distanceMeters === undefined || distanceMeters <= 0) return null;
   return distanceMeters < 1000
     ? `${distanceMeters} m`
     : `${(distanceMeters / 1000).toFixed(1)} km`;
@@ -476,6 +476,11 @@ function StatusSection({
                   <div className="flex items-center gap-1.5">
                     {isPaid ? <span className="rounded-full bg-success-light px-2.5 py-1 font-heading text-[10px] font-bold text-success">Pagado</span> : null}
                     <span className={`rounded-full px-2.5 py-1 font-heading text-[10px] font-bold ${TYPE_STYLES[order.type]?.className ?? TYPE_STYLES.comedor.className}`}>{TYPE_STYLES[order.type]?.label ?? "Comedor"}</span>
+                    {order.schedule_status === "scheduled" && order.scheduled_for ? (
+                      <span className="rounded-full bg-gold/12 px-2.5 py-1 font-heading text-[10px] font-bold text-gold">
+                        🕒 {new Intl.DateTimeFormat("es-MX", { hour: "numeric", minute: "2-digit" }).format(new Date(order.scheduled_for))}
+                      </span>
+                    ) : null}
                     <button type="button" onClick={() => onEditOrder?.(order)} aria-label={`Editar pedido ${order.number}`} className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:bg-brand-light hover:text-brand"><Pencil size={15} /></button>
                   </div>
                 </div>

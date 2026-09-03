@@ -73,7 +73,7 @@ export async function fetchSalesHistory({
     const { data: ordersData, error: ordersError } = await supabase
       .from("orders")
       .select(
-        "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,customer_phone,source_channel,whatsapp_status_opt_in,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
+        "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,customer_phone,source_channel,whatsapp_status_opt_in,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
       )
       .gte("created_at", from.toISOString())
       .lte("created_at", to.toISOString())

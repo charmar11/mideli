@@ -157,6 +157,9 @@ export type ConversationState = {
   pendingPaymentMethod: ConversationPaymentMethod | null;
   orderNotes: string;
   deliveryNotes: string;
+  scheduledFor: string | null;
+  scheduledForLabel: string | null;
+  kitchenReleaseAt: string | null;
   pendingNote: ConversationPendingNote | null;
   editContext: ConversationEditContext | null;
   guidedNote: ConversationGuidedNote | null;

@@ -334,7 +334,10 @@ function OrderContext({
   const items = conversation.context.items;
   const orderNotes = conversation.context.orderNotes;
   const deliveryNotes = conversation.context.deliveryNotes;
-  const total = order?.total ?? conversation.context.total;
+  const deliveryFee = order?.deliveryFee ?? conversation.context.deliveryFee;
+  const isDelivery = order?.type === "domicilio" || conversation.context.serviceType === "domicilio";
+  const productTotal = order?.total ?? Math.max(0, conversation.context.total - (isDelivery ? deliveryFee : 0));
+  const customerTotal = productTotal + (isDelivery ? deliveryFee : 0);
   const mapsUrl = address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     : "";
@@ -407,18 +410,35 @@ function OrderContext({
             Indicación general: {orderNotes}
           </p>
         ) : null}
-        <div className="mt-3 flex items-end justify-between rounded-xl bg-background px-3 py-2.5">
+        <div className="mt-3 rounded-xl bg-background px-3 py-2.5">
           <div>
-            <p className="font-heading text-[10px] font-bold text-muted-foreground">TOTAL</p>
+            <p className="font-heading text-[10px] font-bold text-muted-foreground">COBRO</p>
             <p className="mt-0.5 font-body text-xs text-muted-foreground">
-              {order?.type === "domicilio" || conversation.context.serviceType === "domicilio"
+              {isDelivery
                 ? "A domicilio"
                 : order?.type === "para_llevar" || conversation.context.serviceType === "para_llevar"
                   ? "Para recoger"
                   : "Servicio por definir"}
             </p>
           </div>
-          <strong className="font-data text-xl tabular-nums text-brand">${total}</strong>
+          <div className="mt-2 space-y-1 font-data text-xs tabular-nums">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Productos para Mideli</span>
+              <strong className="text-brand">${productTotal}</strong>
+            </div>
+            {isDelivery && deliveryFee > 0 ? (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-warning">Envío externo · lo cobra repartidor</span>
+                <strong className="text-warning">${deliveryFee}</strong>
+              </div>
+            ) : null}
+            {isDelivery && deliveryFee > 0 ? (
+              <div className="flex items-center justify-between gap-3 border-t border-border pt-1.5">
+                <span className="font-heading text-[10px] font-bold uppercase text-muted-foreground">Total cliente</span>
+                <strong className="text-lg text-brand">${customerTotal}</strong>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 

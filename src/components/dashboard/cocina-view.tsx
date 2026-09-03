@@ -356,7 +356,11 @@ export function CocinaView() {
 
   const kitchenOrders = activeOrders.filter(
     (o) =>
-      o.status === "pending" || o.status === "in_kitchen" || o.status === "ready"
+      (o.status === "pending" || o.status === "in_kitchen" || o.status === "ready") &&
+      (o.schedule_status !== "scheduled" ||
+        !o.kitchen_release_at ||
+        Boolean(o.kitchen_released_at) ||
+        new Date(o.kitchen_release_at).getTime() <= now.getTime())
   );
   const workOrders = kitchenOrders.filter(
     (order) => order.status === "pending" || order.status === "in_kitchen"

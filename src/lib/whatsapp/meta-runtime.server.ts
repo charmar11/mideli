@@ -32,6 +32,10 @@ import {
 import { interactionForState, type WhatsappInteraction } from "./quick-replies";
 import { canCreateWhatsappOrder } from "./order-creation-policy";
 import {
+  applyScheduleToState,
+  parseTodayScheduleRequest,
+} from "./scheduling";
+import {
   acquireConversationProcessing,
   applyOutboundStatuses,
   claimInboundMessage,
@@ -100,11 +104,30 @@ async function interpretMessage(
         console.info(`[WhatsApp Gemini] ${JSON.stringify(event)}`);
       },
     });
-  return respectHumanHandoffSetting(
+  const handedOff = respectHumanHandoffSetting(
     result,
     state,
     operations.settings.human_handoff_enabled
   );
+  const schedule = parseTodayScheduleRequest({
+    message,
+    timeZone: operations.settings.timezone,
+    hours: operations.hours,
+    exceptions: operations.exceptions,
+  });
+  if (schedule.kind === "none" || handedOff.action === "handoff") return handedOff;
+  if (schedule.kind === "invalid") {
+    return {
+      ...handedOff,
+      reply: `${handedOff.reply}\n\n🕒 ${schedule.message}`,
+    };
+  }
+  const scheduledState = applyScheduleToState(handedOff.state, schedule);
+  return {
+    ...handedOff,
+    state: scheduledState,
+    reply: `${handedOff.reply}\n\n🕒 Entendí que lo necesitas *hoy a las ${schedule.label}*. Verifica el horario antes de confirmar 😊`,
+  };
 }
 
 function stateForInboundMessage(
@@ -659,10 +682,14 @@ async function processQueuedMessage(
           conversationId,
           state: result.state,
         });
+        // En el libro operativo orders.total es el subtotal de productos.
         const customerTotal = createdOrder.total + (createdOrder.delivery_fee ?? 0);
+        const scheduledReply = result.state.scheduledForLabel
+          ? ` y programado para hoy a las ${result.state.scheduledForLabel}. Lo enviaremos a cocina unos minutos antes`
+          : " y enviado a cocina";
         result = {
           ...result,
-          reply: `✅ Pedido #${createdOrder.number} confirmado y enviado a cocina. Total $${customerTotal}.`,
+          reply: `✅ Pedido #${createdOrder.number} confirmado${scheduledReply}. Total $${customerTotal}.`,
         };
         summary.ordersCreated += 1;
       } catch {
@@ -763,7 +790,9 @@ async function processQueuedMessage(
     if (result.state.stage === "handoff") {
       await notifyWhatsappAttention(conversationId, `handoff:${conversationId}:${message.id}`);
     }
-    if (createdOrder) await notifyKitchen(createdOrder);
+    if (createdOrder && createdOrder.schedule_status !== "scheduled") {
+      await notifyKitchen(createdOrder);
+    }
   } catch (error) {
     const detail = safeErrorDetail(error);
     try {

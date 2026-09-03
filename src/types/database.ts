@@ -273,6 +273,10 @@ export interface Order {
   delivery_latitude?: number | null;
   delivery_longitude?: number | null;
   delivery_status?: "pending" | "searching_driver" | "driver_on_way" | "customer_received";
+  scheduled_for?: string | null;
+  kitchen_release_at?: string | null;
+  kitchen_released_at?: string | null;
+  schedule_status?: "none" | "scheduled" | "released";
   external_order_id?: string | null;
   payment_method_requested?: "efectivo" | "tarjeta" | "transferencia" | null;
   requested_cash_tendered?: number | null;
@@ -329,6 +333,8 @@ export interface ChannelConversation {
   handoff_reason?: string | null;
   closed_at?: string | null;
   content_redacted_at?: string | null;
+  inactivity_reminder_sent_at?: string | null;
+  inactivity_deadline_at?: string | null;
   last_inbound_at: string | null;
   last_outbound_at: string | null;
   created_at: string;

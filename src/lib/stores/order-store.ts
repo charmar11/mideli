@@ -29,6 +29,8 @@ export interface PosDeliveryDetails {
   distanceMeters?: number | null;
   latitude?: number | null;
   longitude?: number | null;
+  scheduledFor?: string | null;
+  kitchenReleaseAt?: string | null;
 }
 
 interface OrderState {
@@ -48,7 +50,8 @@ interface OrderState {
     delivery?: PosDeliveryDetails,
     customerId?: string | null,
     customerPhone?: string | null,
-    channelConversationId?: string | null
+    channelConversationId?: string | null,
+    schedule?: { scheduledFor: string; kitchenReleaseAt: string }
   ) => Promise<{ order: Order | null; error: string | null }>;
   updateOrderStatus: (
     orderId: string,
@@ -64,7 +67,8 @@ interface OrderState {
     notes?: string,
     customerId?: string | null,
     customerPhone?: string | null,
-    channelConversationId?: string | null
+    channelConversationId?: string | null,
+    schedule?: { scheduledFor: string; kitchenReleaseAt: string }
   ) => Promise<{ error: string | null }>;
   deleteOrder: (orderId: string) => Promise<{ error: string | null }>;
   markAsServed: (orderId: string) => Promise<{ error: string | null }>;
@@ -186,7 +190,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         const supabase = createClient();
         const legacyOrderSelect =
           "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at";
-        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_id,customer_phone,whatsapp_status_opt_in,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered`;
+        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_id,customer_phone,whatsapp_status_opt_in,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status`;
         const ordersDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
         let activeResult;
         try {
@@ -302,7 +306,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     delivery,
     customerId,
     customerPhone,
-    channelConversationId
+    channelConversationId,
+    schedule
   ) => {
     if (items.length === 0) {
       return { order: null, error: "Agrega al menos un producto" };
@@ -324,6 +329,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       tableId,
       delivery,
       channelConversationId,
+      schedule,
     });
     const creationKey = pendingOrderCreationKeys.get(creationFingerprint) ?? crypto.randomUUID();
     pendingOrderCreationKeys.set(creationFingerprint, creationKey);
@@ -354,7 +360,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     let order = data as Order;
-    if (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery)) {
+    if (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery) || schedule) {
       const { data: updated, error: deliveryError } = await supabase
         .from("orders")
         .update({
@@ -378,6 +384,22 @@ export const useOrderStore = create<OrderState>((set, get) => ({
                 payment_method_requested: delivery.paymentMethod ?? null,
                 requested_cash_tendered: delivery.cashTendered ?? null,
                 delivery_status: "pending",
+                ...(schedule
+                  ? {
+                      scheduled_for: schedule.scheduledFor,
+                      kitchen_release_at: schedule.kitchenReleaseAt,
+                      kitchen_released_at: null,
+                      schedule_status: "scheduled",
+                    }
+                  : {}),
+              }
+            : {}),
+          ...(schedule && !(orderType === "domicilio" && delivery)
+            ? {
+                scheduled_for: schedule.scheduledFor,
+                kitchen_release_at: schedule.kitchenReleaseAt,
+                kitchen_released_at: null,
+                schedule_status: "scheduled",
               }
             : {}),
           updated_at: new Date().toISOString(),
@@ -401,7 +423,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         ? state.todayOrders
         : [localOrder, ...state.todayOrders],
     }));
-    await publishOrderNotification(supabase, order.id, "new_order");
+    if (order.schedule_status !== "scheduled") {
+      await publishOrderNotification(supabase, order.id, "new_order");
+    }
     return { order, error: null };
   },
 
@@ -474,7 +498,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     notes,
     customerId,
     customerPhone,
-    channelConversationId
+    channelConversationId,
+    schedule
   ) => {
     if (items.length === 0) {
       return { error: "El pedido debe tener al menos un artículo" };
@@ -500,7 +525,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       return { error: error.message || "No se pudo editar el pedido" };
     }
 
-    if (delivery || notes !== undefined || customerId !== undefined || customerPhone !== undefined || channelConversationId) {
+    if (delivery || notes !== undefined || customerId !== undefined || customerPhone !== undefined || channelConversationId || schedule) {
       const { error: deliveryError } = await supabase
         .from("orders")
         .update({
@@ -517,12 +542,33 @@ export const useOrderStore = create<OrderState>((set, get) => ({
                 payment_method_requested: delivery.paymentMethod ?? null,
                 requested_cash_tendered: delivery.cashTendered ?? null,
                 delivery_status: "pending",
+                ...(delivery.scheduledFor
+                  ? {
+                      scheduled_for: delivery.scheduledFor,
+                      kitchen_release_at: delivery.kitchenReleaseAt ?? null,
+                      kitchen_released_at: null,
+                      schedule_status: "scheduled",
+                    }
+                  : {
+                      scheduled_for: null,
+                      kitchen_release_at: null,
+                      kitchen_released_at: null,
+                      schedule_status: "none",
+                    }),
               }
             : {}),
           ...(customerId !== undefined ? { customer_id: customerId } : {}),
           ...(customerPhone !== undefined ? { customer_phone: customerPhone || null } : {}),
           ...(channelConversationId
             ? { source_channel: "whatsapp", channel_conversation_id: channelConversationId }
+            : {}),
+          ...(schedule
+            ? {
+                scheduled_for: schedule.scheduledFor,
+                kitchen_release_at: schedule.kitchenReleaseAt,
+                kitchen_released_at: null,
+                schedule_status: "scheduled",
+              }
             : {}),
           ...(notes !== undefined ? { notes } : {}),
           updated_at: new Date().toISOString(),
@@ -557,6 +603,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           delivery_longitude: delivery?.longitude ?? currentOrder.delivery_longitude,
           payment_method_requested: delivery?.paymentMethod ?? currentOrder.payment_method_requested,
           requested_cash_tendered: delivery?.cashTendered ?? currentOrder.requested_cash_tendered,
+          scheduled_for: schedule?.scheduledFor ?? delivery?.scheduledFor ?? currentOrder.scheduled_for,
+          kitchen_release_at: schedule?.kitchenReleaseAt ?? delivery?.kitchenReleaseAt ?? currentOrder.kitchen_release_at,
+          schedule_status: schedule?.scheduledFor || delivery?.scheduledFor
+            ? "scheduled"
+            : currentOrder.schedule_status,
           notes: notes ?? currentOrder.notes,
           updated_at: new Date().toISOString(),
         },
