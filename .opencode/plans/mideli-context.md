@@ -340,7 +340,7 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- El repositorio local contiene 52 migraciones, hasta `20260902084515_deduplicate_customer_addresses.sql`. La alineación remota debe verificarse con `npx supabase migration list` antes de aplicar una nueva migración; no asumir que una fotografía anterior sigue vigente.
+- El repositorio local contiene 52 migraciones, hasta `20260902084515_deduplicate_customer_addresses.sql`. Verificado el 2026-09-02 con `npx supabase migration list`: las migraciones locales y remotas coinciden; `npx supabase db push --linked --dry-run` devuelve `upToDate: true`. Volver a verificar antes de aplicar una nueva migración.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
