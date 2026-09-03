@@ -167,10 +167,18 @@ function ConversationList({
 
   return (
     <>
-      <div className="shrink-0 border-b border-border p-3">
+      <div className="shrink-0 border-b border-border bg-surface p-3 sm:p-4">
         <div className="flex items-center gap-2">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success/15 text-success sm:hidden">
+            <MessageCircleMore aria-hidden size={18} />
+          </span>
           <div className="min-w-0 flex-1">
-            <h2 className="font-heading text-base font-bold">Conversaciones</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-heading text-base font-bold">Conversaciones</h2>
+              <span className="rounded-full bg-background px-2 py-0.5 font-data text-[10px] text-muted-foreground sm:hidden">
+                {conversations.length}
+              </span>
+            </div>
             <p className="font-body text-xs text-muted-foreground">
               {attentionCount > 0 ? `${attentionCount} esperan al equipo` : "Todo está atendido"}
             </p>
@@ -197,7 +205,7 @@ function ConversationList({
             value={query}
             onChange={(event) => onQuery(event.target.value)}
             placeholder="Nombre, teléfono o folio"
-            className="h-11 bg-background pl-10"
+            className="h-12 rounded-xl bg-background pl-10 sm:h-11"
             aria-label="Buscar conversaciones"
           />
         </label>
@@ -208,7 +216,7 @@ function ConversationList({
               type="button"
               onClick={() => onFilter(item.id)}
               aria-pressed={filter === item.id}
-              className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-lg px-3 font-heading text-[11px] font-bold transition-colors sm:h-10 sm:min-h-0 sm:shrink-0 sm:px-3 ${
+              className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl px-3 font-heading text-[11px] font-bold transition-colors sm:h-10 sm:min-h-0 sm:shrink-0 sm:px-3 ${
                 filter === item.id
                   ? `${filterTone(item.id)} ring-1 ring-current/15`
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
@@ -243,7 +251,7 @@ function ConversationList({
               type="button"
               onClick={() => onSelect(conversation)}
               aria-current={selected ? "true" : undefined}
-              className={`mb-1.5 w-full rounded-xl border border-transparent p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 active:scale-[0.99] ${
+              className={`mb-1.5 w-full rounded-xl border border-transparent p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 active:scale-[0.99] sm:p-3 ${
                 selected
                   ? "border-brand/30 bg-brand/12 shadow-[inset_3px_0_0_var(--brand)]"
                 : conversation.status === "handoff"
@@ -252,7 +260,7 @@ function ConversationList({
               }`}
             >
               <div className="flex items-start gap-3">
-                <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full font-heading text-xs font-bold ${
+                <span className={`mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full font-heading text-xs font-bold ${
                   conversation.status === "handoff"
                     ? "bg-warning/15 text-warning"
                     : "bg-surface-raised text-cream"
@@ -275,7 +283,7 @@ function ConversationList({
                       {status.label}
                     </span>
                   </div>
-                  <p className={`mt-2 line-clamp-2 font-body text-xs ${
+                  <p className={`mt-1.5 line-clamp-2 font-body text-xs leading-relaxed ${
                     conversation.lastMessageDirection === "inbound"
                       ? "text-foreground/85"
                       : "text-muted-foreground"
@@ -558,7 +566,7 @@ function ChatPanel({
 
   return (
     <>
-      <header className="flex min-h-[68px] items-center gap-2 border-b border-border px-3 py-2">
+      <header className="flex min-h-[68px] shrink-0 items-center gap-2 border-b border-border bg-surface px-2.5 py-2 sm:px-3">
         <Button
           type="button"
           variant="ghost"
@@ -569,6 +577,9 @@ function ChatPanel({
         >
           <ArrowLeft aria-hidden size={19} />
         </Button>
+        <span className="hidden size-10 shrink-0 items-center justify-center rounded-full bg-success/15 font-heading text-sm font-bold text-success sm:flex">
+          {(conversation.customerName || conversation.phone).trim().charAt(0).toUpperCase() || "#"}
+        </span>
         <div className="min-w-0 flex-1">
           <h2 className="truncate font-heading text-sm font-bold sm:text-base">
             {customerLabel(conversation)}
@@ -577,11 +588,9 @@ function ChatPanel({
             <span className={`rounded-full px-2 py-0.5 font-heading text-[9px] font-bold uppercase tracking-wide ${statusTone(status.tone)}`}>
               {status.label}
             </span>
-            {conversation.customerName ? (
-              <span className="hidden truncate font-data text-[10px] text-muted-foreground sm:inline">
-                {formatPhoneForDisplay(conversation.phone)}
-              </span>
-            ) : null}
+            <span className="truncate font-data text-[10px] text-muted-foreground">
+              {formatPhoneForDisplay(conversation.phone)}
+            </span>
           </div>
         </div>
 
@@ -611,7 +620,7 @@ function ChatPanel({
           </Button>
         ) : null}
 
-        <details className="group relative">
+        <details className="group relative shrink-0">
           <summary className="flex size-11 cursor-pointer list-none items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
             <MoreVertical aria-hidden size={18} />
             <span className="sr-only">Más acciones</span>
@@ -643,15 +652,15 @@ function ChatPanel({
         </details>
       </header>
 
-      <div className="border-b border-border bg-surface-raised/35 px-3 py-2 xl:hidden">
+      <div className="shrink-0 border-b border-border bg-surface-raised/35 px-3 py-2 xl:hidden">
         <button
           ref={contextTriggerRef}
           type="button"
-          className="flex min-h-11 w-full items-center gap-2 rounded-lg font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-h-12 w-full items-center gap-2 rounded-xl px-1 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => setShowContext(true)}
           aria-haspopup="dialog"
         >
-          <span className="flex size-8 items-center justify-center rounded-lg bg-brand/12 text-brand">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-brand/12 text-brand">
             {conversation.latestOrder ? `#${conversation.latestOrder.number}` : "🧾"}
           </span>
           <span className="min-w-0 flex-1">
@@ -698,7 +707,7 @@ function ChatPanel({
                 <X aria-hidden size={19} />
               </Button>
             </header>
-            <div className="whatsapp-scroll-y min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="whatsapp-scroll-y min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4">
               <OrderContext conversation={conversation} compact />
             </div>
           </section>
@@ -747,7 +756,7 @@ function ChatPanel({
         <div
           ref={viewportRef}
           onScroll={onViewportScroll}
-          className="whatsapp-scroll-y absolute inset-0 space-y-3 overflow-y-auto overscroll-contain bg-background/60 px-3 py-4 sm:px-5"
+          className="whatsapp-scroll-y absolute inset-0 space-y-3 overflow-y-auto overscroll-contain bg-[#111014] px-3 py-4 touch-pan-y sm:px-5"
           aria-live="polite"
         >
           {loading ? (
@@ -809,7 +818,7 @@ function ChatPanel({
         ) : null}
       </div>
 
-      <div className="border-t border-border bg-surface p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <div className="shrink-0 border-t border-border bg-surface/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur sm:p-3">
         {closed ? (
           <div className="flex min-h-12 items-center justify-center rounded-xl bg-background px-4 text-center font-body text-xs text-muted-foreground">
             Esta conversación está cerrada. Un mensaje nuevo del cliente abrirá otra.
@@ -835,14 +844,14 @@ function ChatPanel({
                 rows={1}
                 maxLength={1500}
                 placeholder="Escribe una respuesta..."
-                className="max-h-32 min-h-11 min-w-0 flex-1 resize-y rounded-xl border border-input bg-background px-3 py-2.5 font-body text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-brand focus:ring-2 focus:ring-brand/20"
+                className="max-h-32 min-h-12 min-w-0 flex-1 resize-none rounded-2xl border border-input bg-background px-4 py-3 font-body text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-brand focus:ring-2 focus:ring-brand/20"
                 aria-label="Respuesta al cliente"
               />
               <Button
                 type="button"
                 variant="success"
                 size="icon"
-                className="size-11"
+                className="size-12 shrink-0 rounded-full"
                 disabled={pending || !draft.trim()}
                 onClick={onSend}
                 aria-label="Enviar respuesta"
@@ -1078,7 +1087,7 @@ export function WhatsappInbox({ data, focusConversationId = null }: Props) {
 
   return (
     <div className="grid h-full min-h-0 w-full min-w-0 max-w-full flex-1 gap-3 overflow-hidden lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[21rem_minmax(0,1fr)_19rem]">
-      <Panel className={`${mobileChatOpen ? "hidden lg:flex" : "flex"} flex-col`}>
+      <Panel className={`${mobileChatOpen ? "hidden lg:flex" : "flex"} flex-col rounded-none border-0 lg:rounded-2xl lg:border`}>
         <ConversationList
           conversations={filteredConversations}
           attentionCount={conversations.filter((item) => item.status === "handoff").length}
@@ -1093,7 +1102,7 @@ export function WhatsappInbox({ data, focusConversationId = null }: Props) {
         />
       </Panel>
 
-      <Panel className={`${mobileChatOpen ? "flex" : "hidden lg:flex"} flex-col`}>
+      <Panel className={`${mobileChatOpen ? "flex" : "hidden lg:flex"} flex-col rounded-none border-0 lg:rounded-2xl lg:border`}>
         <ChatPanel
           key={selected?.id ?? "empty"}
           conversation={selected}
