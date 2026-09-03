@@ -116,9 +116,15 @@ export function WhatsAppControlCenter({ data }: Props) {
   const [focusedConversationId, setFocusedConversationId] = useState<string | null>(
     searchParams.get("conversation")
   );
+  const [mobileInboxChatOpen, setMobileInboxChatOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const admin = data.role === "owner" || data.role === "admin";
   const ownsVerticalScroll = tab === "inbox" || tab === "customers";
+
+  function selectTab(next: ControlTab) {
+    setTab(next);
+    if (next !== "inbox") setMobileInboxChatOpen(false);
+  }
 
   function refresh() {
     startTransition(() => router.refresh());
@@ -126,8 +132,8 @@ export function WhatsAppControlCenter({ data }: Props) {
 
   return (
     <div className={`h-full w-full max-w-full bg-background ${ownsVerticalScroll ? "flex min-h-0 flex-col overflow-hidden overscroll-none" : "pos-scroll overflow-x-hidden overflow-y-auto"}`}>
-      <div className={`mx-auto w-full min-w-0 max-w-[1500px] px-3 py-3 sm:px-5 sm:py-5 ${ownsVerticalScroll ? "flex min-h-0 flex-1 flex-col" : "min-h-full"}`}>
-        <header className="mb-4 flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className={`mx-auto w-full min-w-0 max-w-[1500px] px-3 py-3 sm:px-5 sm:py-5 ${mobileInboxChatOpen ? "max-w-none px-0 py-0" : ""} ${ownsVerticalScroll ? "flex min-h-0 flex-1 flex-col" : "min-h-full"}`}>
+        <header className={`mb-4 flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${mobileInboxChatOpen ? "hidden" : ""}`}>
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-success/15 text-success">
               <MessageCircleMore aria-hidden size={21} />
@@ -157,7 +163,7 @@ export function WhatsAppControlCenter({ data }: Props) {
           </div>
         </header>
 
-        {!data.persisted ? (
+        {!data.persisted && !mobileInboxChatOpen ? (
           <div className="mb-4 flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-warning">
             <CircleAlert aria-hidden className="mt-0.5 shrink-0" size={18} />
             <div>
@@ -169,7 +175,7 @@ export function WhatsAppControlCenter({ data }: Props) {
           </div>
         ) : null}
 
-        <nav className="mb-4 flex min-w-0 shrink-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5" aria-label="Secciones de WhatsApp">
+        <nav className={`mb-4 flex min-w-0 shrink-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5 ${mobileInboxChatOpen ? "hidden" : ""}`} aria-label="Secciones de WhatsApp">
           <div className="flex min-w-0 flex-1 gap-1">
             {PRIMARY_TABS.filter((item) => !item.adminOnly || admin).map((item) => {
               const Icon = item.icon;
@@ -177,7 +183,7 @@ export function WhatsAppControlCenter({ data }: Props) {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setTab(item.id)}
+                  onClick={() => selectTab(item.id)}
                   className={`flex h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 font-heading text-[9px] font-bold transition-colors sm:h-11 sm:flex-none sm:flex-row sm:gap-2 sm:px-3 sm:text-xs ${tab === item.id ? "bg-brand text-white shadow-md shadow-brand/20" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
                 >
                   <Icon aria-hidden size={16} />
@@ -200,7 +206,7 @@ export function WhatsAppControlCenter({ data }: Props) {
                     key={item.id}
                     type="button"
                     onClick={(event) => {
-                      setTab(item.id);
+                      selectTab(item.id);
                       event.currentTarget.closest("details")?.removeAttribute("open");
                     }}
                     className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left font-heading text-xs font-bold transition-colors ${tab === item.id ? "bg-brand/15 text-brand" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
@@ -215,13 +221,13 @@ export function WhatsAppControlCenter({ data }: Props) {
         </nav>
 
         <div className={ownsVerticalScroll ? "flex min-h-0 flex-1 flex-col" : ""}>
-          {tab === "overview" ? <Overview data={data} onOpen={setTab} /> : null}
-          {tab === "inbox" ? <WhatsappInbox data={data} focusConversationId={focusedConversationId} /> : null}
+          {tab === "overview" ? <Overview data={data} onOpen={selectTab} /> : null}
+          {tab === "inbox" ? <WhatsappInbox data={data} focusConversationId={focusedConversationId} onMobileChatModeChange={setMobileInboxChatOpen} /> : null}
           {tab === "customers" && admin ? (
             <WhatsappCustomers
               onOpenConversation={(conversationId) => {
                 setFocusedConversationId(conversationId);
-                setTab("inbox");
+                selectTab("inbox");
               }}
             />
           ) : null}

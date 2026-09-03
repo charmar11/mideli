@@ -213,6 +213,12 @@
   scrollbar-color: var(--border-strong) transparent;
 }
 
+@media (max-width: 767px) {
+  body.mideli-whatsapp-chat-open .mideli-mobile-bottom-nav {
+    display: none;
+  }
+}
+
 .whatsapp-scroll-y::-webkit-scrollbar {
   width: 8px;
 }

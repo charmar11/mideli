@@ -616,7 +616,7 @@ export function DashboardShell({
           className={
             isKitchenFocus
               ? "hidden"
-              : "flex shrink-0 items-stretch border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+              : "mideli-mobile-bottom-nav flex shrink-0 items-stretch border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
           }
           aria-label="Navegación"
         >

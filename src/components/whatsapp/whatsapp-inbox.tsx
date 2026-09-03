@@ -63,6 +63,7 @@ import { WhatsappMessageText } from "@/components/whatsapp/whatsapp-message-text
 type Props = {
   data: WhatsappControlData;
   focusConversationId?: string | null;
+  onMobileChatModeChange?: (open: boolean) => void;
 };
 
 function formatDate(value: string | null) {
@@ -566,7 +567,7 @@ function ChatPanel({
 
   return (
     <>
-      <header className="flex min-h-[68px] shrink-0 items-center gap-2 border-b border-border bg-surface px-2.5 py-2 sm:px-3">
+      <header className="flex min-h-[60px] shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 py-1.5 sm:min-h-[68px] sm:gap-2 sm:px-3 sm:py-2">
         <Button
           type="button"
           variant="ghost"
@@ -652,11 +653,11 @@ function ChatPanel({
         </details>
       </header>
 
-      <div className="shrink-0 border-b border-border bg-surface-raised/35 px-3 py-2 xl:hidden">
+      <div className="shrink-0 border-b border-border bg-surface-raised/35 px-3 py-1 xl:hidden">
         <button
           ref={contextTriggerRef}
           type="button"
-          className="flex min-h-12 w-full items-center gap-2 rounded-xl px-1 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-h-10 w-full items-center gap-2 rounded-xl px-1 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-12"
           onClick={() => setShowContext(true)}
           aria-haspopup="dialog"
         >
@@ -826,7 +827,7 @@ function ChatPanel({
         ) : (
           <>
             {conversation.botEnabled ? (
-              <p className="mb-2 flex items-center gap-1.5 font-body text-[11px] text-muted-foreground">
+            <p className="mb-2 hidden items-center gap-1.5 font-body text-[11px] text-muted-foreground sm:flex">
                 <Bot aria-hidden size={13} />
                 Al responder, tomarás la conversación y el bot se pausará.
               </p>
@@ -866,7 +867,7 @@ function ChatPanel({
   );
 }
 
-export function WhatsappInbox({ data, focusConversationId = null }: Props) {
+export function WhatsappInbox({ data, focusConversationId = null, onMobileChatModeChange }: Props) {
   const admin = data.role === "owner" || data.role === "admin";
   const [conversations, setConversations] = useState(data.conversations);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
@@ -901,6 +902,14 @@ export function WhatsappInbox({ data, focusConversationId = null }: Props) {
   const nearBottomRef = useRef(true);
   const lastConversationRef = useRef<string | null>(null);
   const previousMessageCountRef = useRef(0);
+
+  useEffect(() => {
+    onMobileChatModeChange?.(mobileChatOpen);
+    document.body.classList.toggle("mideli-whatsapp-chat-open", mobileChatOpen);
+    return () => {
+      document.body.classList.remove("mideli-whatsapp-chat-open");
+    };
+  }, [mobileChatOpen, onMobileChatModeChange]);
 
   const selected = conversations.find((item) => item.id === selectedId) ?? null;
   const loading = Boolean(selectedId && loadedConversationId !== selectedId);
