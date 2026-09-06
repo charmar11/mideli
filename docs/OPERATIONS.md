@@ -43,7 +43,7 @@ npx supabase db push --linked --dry-run
 
 Después de revisar el dry-run, aplicar solo la migración aprobada. Nunca ejecutar `supabase db reset --linked`, borrar tablas remotas ni eliminar datos sin autorización explícita para esa operación concreta.
 
-La copia local incluye las migraciones hasta `20260902084515_deduplicate_customer_addresses.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
+La copia local incluye 54 migraciones hasta `20260906160106_cash_shift_digital_close.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
 
 ## Publicación
 
