@@ -5,12 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArchiveRestore,
   ArrowLeft,
-  ArrowLeftRight,
   Banknote,
   CheckCircle2,
   ChevronRight,
   CircleAlert,
-  CreditCard,
   Landmark,
   Loader2,
   LockKeyhole,
@@ -20,14 +18,15 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Share2,
   Trash2,
-  WalletCards,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CashShiftReport } from "@/components/cash/cash-shift-report";
 import { useCashShiftStore } from "@/lib/stores";
 import { validateOpeningFloatCorrection } from "@/lib/cash-close";
-import { formatOrderLocation } from "@/lib/order-location";
+import { buildCashShiftShareText } from "@/lib/cash-shift-report";
 import type {
   CashAuthorizer,
   CashShift,
@@ -54,6 +53,13 @@ function duration(shift: CashShift) {
   const end = shift.closed_at ? new Date(shift.closed_at).getTime() : Date.now();
   const minutes = Math.max(0, Math.floor((end - new Date(shift.opened_at).getTime()) / 60000));
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+function localDateValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function ShiftStatus({ shift }: { shift: CashShift }) {
@@ -91,6 +97,10 @@ export function CashHistoryManager() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "open" | "closed" | "archived">("all");
+  const [period, setPeriod] = useState<"all" | "today" | "yesterday" | "7days" | "date">("all");
+  const [selectedDate, setSelectedDate] = useState(() => localDateValue(new Date()));
+  const [responsible, setResponsible] = useState("all");
+  const [attention, setAttention] = useState<"all" | "balanced" | "difference" | "pending">("all");
   const [adjusting, setAdjusting] = useState(false);
   const [adjustMethod, setAdjustMethod] = useState<"efectivo" | "tarjeta" | "transferencia" | "otro">("efectivo");
   const [adjustDirection, setAdjustDirection] = useState<"increase" | "decrease">("increase");
@@ -136,6 +146,22 @@ export function CashHistoryManager() {
     setDetailLoading(false);
     if (result.error || !result.data) return toast.error(result.error ?? "No se pudo abrir el corte");
     setSelected(result.data);
+  }
+
+  async function shareSelected() {
+    if (!selected) return;
+    const text = buildCashShiftShareText(selected);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Corte Mideli #${selected.number}`, text });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      toast.success("Resumen del corte copiado");
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === "AbortError") return;
+      toast.error("No se pudo compartir el corte");
+    }
   }
 
   async function openAdjustment() {
@@ -350,25 +376,57 @@ export function CashHistoryManager() {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const customDay = selectedDate ? new Date(`${selectedDate}T00:00:00`) : null;
+    const customDayEnd = customDay ? new Date(customDay) : null;
+    customDayEnd?.setDate(customDayEnd.getDate() + 1);
+
     return shifts.filter((shift) => {
       const isArchived = Boolean(shift.archived_at);
       const searchable = `${shift.number} ${shift.opened_by_name} ${shift.closed_by_name ?? ""} ${shift.archived_by_name ?? ""} ${shift.archive_reason ?? ""}`.toLowerCase();
       const matchesStatus = status === "archived"
         ? isArchived
         : !isArchived && (status === "all" || shift.status === status);
-      return matchesStatus && (!query || searchable.includes(query));
+      const openedAt = new Date(shift.opened_at);
+      const matchesPeriod =
+        period === "all" ||
+        (period === "today" && openedAt >= today && openedAt < tomorrow) ||
+        (period === "yesterday" && openedAt >= yesterday && openedAt < today) ||
+        (period === "7days" && openedAt >= sevenDaysAgo && openedAt < tomorrow) ||
+        (period === "date" && customDay && customDayEnd && openedAt >= customDay && openedAt < customDayEnd);
+      const difference = Math.abs(Number(shift.difference ?? 0));
+      const matchesAttention =
+        attention === "all" ||
+        (attention === "balanced" && shift.status === "closed" && difference <= 20 && shift.pending_order_count === 0) ||
+        (attention === "difference" && shift.status === "closed" && difference > 20) ||
+        (attention === "pending" && shift.pending_order_count > 0);
+      const shiftResponsible = shift.closed_by_name ?? shift.opened_by_name;
+      const matchesResponsible = responsible === "all" || shiftResponsible === responsible;
+      return matchesStatus && matchesPeriod && matchesAttention && matchesResponsible && (!query || searchable.includes(query));
     });
-  }, [search, shifts, status]);
+  }, [attention, period, responsible, search, selectedDate, shifts, status]);
+
+  const responsibles = useMemo(
+    () => Array.from(new Set(shifts.map((shift) => shift.closed_by_name ?? shift.opened_by_name))).sort((a, b) => a.localeCompare(b, "es")),
+    [shifts]
+  );
 
   const summary = useMemo(() => {
-    const closed = shifts.filter((shift) => shift.status === "closed" && !shift.archived_at);
+    const closed = filtered.filter((shift) => shift.status === "closed" && !shift.archived_at);
     return {
       net: closed.reduce((sum, shift) => sum + Number(shift.net_sales), 0),
       collected: closed.reduce((sum, shift) => sum + Number(shift.collected_total), 0),
       differences: closed.reduce((sum, shift) => sum + Math.abs(Number(shift.difference ?? 0)), 0),
       count: closed.length,
     };
-  }, [shifts]);
+  }, [filtered]);
 
   const archivedCount = useMemo(
     () => shifts.reduce((count, shift) => count + (shift.archived_at ? 1 : 0), 0),
@@ -386,7 +444,7 @@ export function CashHistoryManager() {
 
       <main className="mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-6">
         <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4 print:hidden">
-          <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Cortes cerrados</p><p className="mt-2 font-data text-2xl font-black">{summary.count}</p></div>
+          <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Cortes visibles</p><p className="mt-2 font-data text-2xl font-black">{summary.count}</p></div>
           <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Venta neta</p><p className="mt-2 font-data text-2xl font-black text-gold">{money(summary.net)}</p></div>
           <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Cobrado</p><p className="mt-2 font-data text-2xl font-black text-success">{money(summary.collected)}</p></div>
           <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Diferencias acumuladas</p><p className={`mt-2 font-data text-2xl font-black ${summary.differences > 0 ? "text-warning" : "text-success"}`}>{money(summary.differences)}</p></div>
@@ -408,10 +466,44 @@ export function CashHistoryManager() {
                   </button>
                 ))}
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="min-w-0">
+                  <span className="mb-1 block font-data text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Periodo</span>
+                  <select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-background px-2 font-heading text-xs font-bold outline-none focus:border-brand">
+                    <option value="all">Todo el historial</option>
+                    <option value="today">Hoy</option>
+                    <option value="yesterday">Ayer</option>
+                    <option value="7days">Últimos 7 días</option>
+                    <option value="date">Elegir fecha</option>
+                  </select>
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-1 block font-data text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Revisión</span>
+                  <select value={attention} onChange={(event) => setAttention(event.target.value as typeof attention)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-background px-2 font-heading text-xs font-bold outline-none focus:border-brand">
+                    <option value="all">Todos</option>
+                    <option value="balanced">Cuadrados</option>
+                    <option value="difference">Con diferencia</option>
+                    <option value="pending">Con pendientes</option>
+                  </select>
+                </label>
+              </div>
+              {period === "date" ? (
+                <label className="block">
+                  <span className="mb-1 block font-data text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Fecha del corte</span>
+                  <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="h-11 w-full rounded-xl border border-brand/35 bg-background px-3 font-data text-sm font-bold text-foreground outline-none focus:border-brand" />
+                </label>
+              ) : null}
+              <label className="block">
+                <span className="mb-1 block font-data text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Responsable</span>
+                <select value={responsible} onChange={(event) => setResponsible(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 font-heading text-xs font-bold outline-none focus:border-brand">
+                  <option value="all">Todo el equipo</option>
+                  {responsibles.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </label>
             </div>
             <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-2">
               {loading ? <div className="flex h-48 items-center justify-center"><Loader2 className="animate-spin text-brand" /></div> : filtered.length === 0 ? <div className="flex h-48 flex-col items-center justify-center text-center"><ReceiptText className="mb-2 text-muted-foreground/40" /><p className="font-heading text-sm font-bold">Sin cortes en este filtro</p></div> : filtered.map((shift) => (
-                <button key={shift.id} type="button" onClick={() => void choose(shift)} className="mb-2 flex w-full items-center gap-3 rounded-xl border border-transparent bg-background/60 p-3 text-left hover:border-brand/35">
+                <button key={shift.id} type="button" onClick={() => void choose(shift)} className="mb-2 flex w-full items-start gap-3 rounded-xl border border-transparent bg-background/60 p-3 text-left transition-colors hover:border-brand/35">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised font-data text-sm font-black">#{shift.number}</span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2"><strong className="truncate font-heading text-sm">{shift.opened_by_name}</strong><ShiftStatus shift={shift} /></span>
@@ -421,7 +513,14 @@ export function CashHistoryManager() {
                         <span className="mt-0.5 block truncate font-body text-xs text-destructive/80">{shift.archive_reason}</span>
                       </>
                     ) : (
-                      <span className="mt-1 block font-body text-xs text-muted-foreground">{dateTime(shift.opened_at)} · {duration(shift)}</span>
+                      <>
+                        <span className="mt-1 block font-body text-xs text-muted-foreground">{dateTime(shift.opened_at)} · {duration(shift)}</span>
+                        <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-data text-[10px] text-muted-foreground">
+                          <span>{shift.payment_count} cobros</span>
+                          <span className="text-gold">Venta {money(shift.net_sales)}</span>
+                          {shift.pending_order_count > 0 ? <span className="text-warning">{shift.pending_order_count} pendientes</span> : null}
+                        </span>
+                      </>
                     )}
                   </span>
                   <ChevronRight size={17} className="text-muted-foreground" />
@@ -437,6 +536,7 @@ export function CashHistoryManager() {
                   <button type="button" onClick={() => setSelected(null)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-raised lg:hidden print:hidden"><ArrowLeft size={17} /></button>
                   <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="font-heading text-xl font-black">Corte #{selected.number}</h2><ShiftStatus shift={selected} /></div><p className="font-body text-xs text-muted-foreground print:text-gray-600">{dateTime(selected.opened_at)} a {dateTime(selected.closed_at)}</p></div>
                   {selected.status === "closed" ? <button type="button" onClick={() => window.print()} className="flex h-10 items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold print:hidden"><Printer size={15} />Imprimir</button> : null}
+                  {selected.status === "closed" ? <button type="button" onClick={() => void shareSelected()} className="flex h-10 items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold print:hidden"><Share2 size={15} /><span className="hidden sm:inline">Compartir</span></button> : null}
                   {selected.status === "open" ? <button type="button" onClick={openOpeningFloatCorrection} className="flex h-10 items-center gap-2 rounded-xl bg-gold/12 px-3 font-heading text-xs font-bold text-gold print:hidden"><Pencil size={15} /><span className="hidden sm:inline">Corregir fondo</span></button> : null}
                   {selected.status === "closed" && !selected.archived_at ? <button type="button" onClick={() => void openAdjustment()} className="flex h-10 items-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning print:hidden"><RotateCcw size={15} /><span className="hidden sm:inline">Corregir</span></button> : null}
                   {selected.status === "closed" && !selected.archived_at ? <button type="button" aria-label="Archivar corte" onClick={openArchiveDialog} className="flex h-10 items-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning print:hidden"><Trash2 size={15} /><span className="hidden sm:inline">Archivar</span></button> : null}
@@ -444,7 +544,6 @@ export function CashHistoryManager() {
                   {selected.archived_at ? <button type="button" onClick={() => void openPermanentDeleteDialog()} className="flex h-10 items-center gap-2 rounded-xl bg-destructive px-3 font-heading text-xs font-bold text-white transition-colors hover:bg-destructive/85 print:hidden"><Trash2 size={15} /><span className="hidden sm:inline">Eliminar definitivamente</span></button> : null}
                 </div>
                 <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-5 print:overflow-visible print:bg-white print:text-black">
-                  <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric label="Venta neta" value={money(selected.net_sales)} tone="gold" /><Metric label="Cobrado" value={money(selected.collected_total)} tone="success" /><Metric label="Esperado" value={money(selected.expected_cash)} /><Metric label="Diferencia" value={money(selected.difference)} tone={Math.abs(Number(selected.difference ?? 0)) <= 20 ? "success" : "danger"} /></div>
                   {selected.archived_at ? (
                     <section className="mb-5 rounded-2xl border border-destructive/30 bg-destructive/8 p-4 print:border-gray-300 print:bg-white">
                       <div className="flex items-start gap-3">
@@ -457,15 +556,7 @@ export function CashHistoryManager() {
                       </div>
                     </section>
                   ) : null}
-                  <div className="mb-5 grid gap-4 xl:grid-cols-2">
-                    <Block title="Métodos de pago" icon={<WalletCards size={17} />}><Rows rows={[["Efectivo", money(selected.cash_total), <Banknote key="cash" size={15} />],["Tarjeta", money(selected.card_total), <CreditCard key="card" size={15} />],["Transferencia", money(selected.transfer_total), <ArrowLeftRight key="transfer" size={15} />],["Propinas", money(selected.tip_total), null],["Descuentos", money(selected.discount_total), null]]} /></Block>
-                    <Block title="Operación de caja" icon={<Landmark size={17} />}><Rows rows={[["Fondo inicial", money(selected.opening_float), null],["Entradas de fondo", money(selected.fund_in_total), null],["Retiros", money(selected.withdrawal_total), null],["Gastos", money(selected.expense_total), null],["Efectivo contado", money(selected.counted_cash), null]]} /></Block>
-                  </div>
-                  {selected.pending_orders.length > 0 ? <Block title={`Cuentas transferidas · ${selected.pending_orders.length}`} icon={<CircleAlert size={17} />}><div className="divide-y divide-border">{selected.pending_orders.map((order) => <div key={order.id} className="flex items-center justify-between gap-3 py-3"><div><p className="font-heading text-sm font-bold">Pedido #{order.order_number}</p><p className="font-body text-xs text-muted-foreground">{formatOrderLocation({ type: order.order_type, table_number: order.table_number, table_zone_name: order.table_zone_name, customer_name: order.customer_name })}</p></div><strong className="font-data text-warning">{money(order.outstanding_amount)}</strong></div>)}</div></Block> : null}
-                  {selected.movements.length > 0 ? <Block title="Movimientos autorizados" icon={<RotateCcw size={17} />}><div className="divide-y divide-border">{selected.movements.map((movement) => <div key={movement.id} className="py-3"><div className="flex justify-between gap-3"><strong className="font-heading text-sm">{movement.reason}</strong><span className={`font-data text-sm font-bold ${movement.direction === "in" ? "text-success" : "text-destructive"}`}>{movement.direction === "in" ? "+" : "−"}{money(movement.amount)}</span></div><p className="mt-1 font-body text-xs text-muted-foreground">{movement.created_by_name} · autorizó {movement.authorized_by_name} · {dateTime(movement.created_at)}</p></div>)}</div></Block> : null}
-                  {selected.adjustments.length > 0 ? <Block title="Correcciones posteriores" icon={<LockKeyhole size={17} />}><div className="divide-y divide-border">{selected.adjustments.map((adjustment) => <div key={adjustment.id} className="py-3"><div className="flex justify-between gap-3"><strong className="font-heading text-sm">{adjustment.reason}</strong><span className={`font-data text-sm font-bold ${adjustment.direction === "increase" ? "text-success" : "text-destructive"}`}>{adjustment.direction === "increase" ? "+" : "−"}{money(adjustment.amount)}</span></div><p className="mt-1 font-body text-xs text-muted-foreground">{adjustment.payment_method} · {adjustment.created_by_name} · autorizó {adjustment.authorized_by_name}</p></div>)}</div></Block> : null}
-                  {(selected.opening_float_changes ?? []).length > 0 ? <Block title="Correcciones del fondo inicial" icon={<Pencil size={17} />}><div className="divide-y divide-border">{selected.opening_float_changes.map((change) => <div key={change.id} className="py-3"><div className="flex items-start justify-between gap-3"><div><strong className="font-heading text-sm">{change.reason}</strong><p className="mt-1 font-body text-xs text-muted-foreground">{change.changed_by_name} · {dateTime(change.created_at)}</p></div><span className="shrink-0 text-right font-data text-xs"><span className="text-muted-foreground line-through">{money(change.previous_amount)}</span><strong className="ml-2 text-gold">{money(change.new_amount)}</strong></span></div></div>)}</div></Block> : null}
-                  <Block title={`Tickets · ${selected.payments.length}`} icon={<ReceiptText size={17} />}><div className="divide-y divide-border">{selected.payments.length === 0 ? <p className="py-4 text-center font-body text-sm text-muted-foreground">Sin cobros en este turno</p> : selected.payments.map((payment) => <div key={payment.id} className="flex items-center justify-between gap-3 py-3"><div><p className="font-heading text-sm font-bold">Ticket #{payment.folio}</p><p className="font-body text-xs text-muted-foreground">{formatOrderLocation({ type: payment.table_number ? "comedor" : "para_llevar", table_number: payment.table_number, table_zone_name: payment.table_zone_name, customer_name: payment.customer_name })} · {payment.charged_by_name}</p></div><strong className="font-data">{money(payment.total_amount)}</strong></div>)}</div></Block>
+                  <CashShiftReport shift={selected} />
                 </div>
               </>
             ) : <div className="flex flex-1 flex-col items-center justify-center text-center"><span className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-raised text-muted-foreground"><Landmark size={25} /></span><h2 className="font-heading text-base font-bold">Selecciona un corte</h2><p className="mt-1 font-body text-sm text-muted-foreground">Aquí verás el detalle completo y su auditoría.</p></div>}
@@ -632,16 +723,4 @@ export function CashHistoryManager() {
       ) : null}
     </div>
   );
-}
-
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "gold" | "success" | "danger" }) {
-  return <div className="rounded-xl bg-background/70 p-3 print:border print:border-gray-300 print:bg-white"><p className="font-body text-xs text-muted-foreground print:text-gray-600">{label}</p><p className={`mt-1 font-data text-lg font-black ${tone === "gold" ? "text-gold" : tone === "success" ? "text-success" : tone === "danger" ? "text-destructive" : ""}`}>{value}</p></div>;
-}
-
-function Block({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
-  return <section className="mb-4 rounded-2xl border border-border bg-background/40 p-4 print:border-gray-300 print:bg-white"><h3 className="mb-3 flex items-center gap-2 font-heading text-sm font-black">{icon}{title}</h3>{children}</section>;
-}
-
-function Rows({ rows }: { rows: Array<[string, string, React.ReactNode]> }) {
-  return <div className="space-y-2">{rows.map(([label, value, icon]) => <div key={label} className="flex items-center justify-between gap-3 font-body text-sm"><span className="flex items-center gap-2 text-muted-foreground print:text-gray-600">{icon}{label}</span><strong className="font-data">{value}</strong></div>)}</div>;
 }

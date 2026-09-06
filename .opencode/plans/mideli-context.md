@@ -111,7 +111,7 @@ El sistema debe permitir que el dueño de un local configure su plano sin depend
 - Durante un pedido, el mesero selecciona la mesa directamente en el dibujo.
 - La selección se hace después de armar el pedido, no antes.
 
-La migración `00005_global_table_map.sql` agrega geometría a `table_zones` y acomoda las zonas activas existentes en un grid inicial. La base remota tiene 2 zonas y 5 mesas en el corte del 2026-07-30.
+La migración `00005_global_table_map.sql` agrega geometría a `table_zones` y acomoda las zonas activas existentes en un grid inicial. La base remota tenía 2 zonas y 5 mesas en el corte del 2026-07-30. Esta cifra es histórica y debe volver a consultarse antes de usarla.
 
 ### Flujo de pedidos
 
@@ -168,6 +168,8 @@ Caja compartida del local con apertura y cierre explícitos (migración `2026080
 - Historial inmutable en `/settings/caja` (`cash-history-manager`), control operativo en `src/components/cash/cash-shift-control.tsx` y store `cash-shift-store.ts`.
 - Los pedidos guardan snapshot de ubicación (zona y mesa) para mostrarla en Estado, Historial, cuentas, cobro y tickets aunque el plano cambie después (`src/lib/order-location.ts`).
 - El conteo por denominaciones tiene botones grandes para aumentar y disminuir. El cierre no se descarta al tocar fuera del modal.
+- Desde la migración `20260906160106_cash_shift_digital_close.sql`, quien cierra un turno puede consultar su corte digital durante las dos horas siguientes. Al terminar el cierre, la interfaz carga el detalle persistido con ventas por tipo de servicio, métodos de pago, arqueo, pendientes y auditoría. El mismo reporte se reutiliza en `/settings/caja`, cuyo historial permite filtrar por periodo y por cortes cuadrados, con diferencia o con pendientes.
+- El selector de mesas usa la composición compacta hasta 1023 px. En tablet vertical, el plano ya no oculta el resumen ni la confirmación; la acción permanece visible y muestra el nombre de la mesa seleccionada.
 
 ### Cobro unificado y tickets
 
@@ -340,7 +342,7 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- El repositorio local contiene 52 migraciones, hasta `20260902084515_deduplicate_customer_addresses.sql`. Verificado el 2026-09-02 con `npx supabase migration list`: las migraciones locales y remotas coinciden; `npx supabase db push --linked --dry-run` devuelve `upToDate: true`. Volver a verificar antes de aplicar una nueva migración.
+- El repositorio local contiene 54 migraciones, hasta `20260906160106_cash_shift_digital_close.sql`. Verificado el 2026-09-06 con `npx supabase migration list`; la migración del corte digital se aplicó al proyecto remoto y debe confirmarse nuevamente con `npx supabase db push --linked --dry-run` antes de cerrar esta tarea.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 

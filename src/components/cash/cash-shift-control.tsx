@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
@@ -7,6 +8,7 @@ import {
   Calculator,
   CheckCircle2,
   CircleDollarSign,
+  History,
   Landmark,
   Loader2,
   LockKeyhole,
@@ -14,20 +16,25 @@ import {
   Plus,
   ReceiptText,
   RotateCcw,
+  Share2,
   WalletCards,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CashShiftReport } from "@/components/cash/cash-shift-report";
 import { useCashShiftStore } from "@/lib/stores";
 import {
   buildBlindCashCountDisclosure,
   buildCashCloseBreakdown,
 } from "@/lib/cash-close";
+import { buildCashShiftShareText } from "@/lib/cash-shift-report";
 import type {
   CashAuthorizer,
   CashClosePreview,
   CashCountMode,
   CashDirection,
+  CashShift,
+  CashShiftDetail,
   CashMovementType,
 } from "@/types/cash";
 
@@ -193,6 +200,7 @@ export function CashShiftControl() {
   const recordMovement = useCashShiftStore((state) => state.recordMovement);
   const previewClose = useCashShiftStore((state) => state.previewClose);
   const closeShift = useCashShiftStore((state) => state.closeShift);
+  const getDetail = useCashShiftStore((state) => state.getDetail);
   const subscribe = useCashShiftStore((state) => state.subscribe);
 
   const [open, setOpen] = useState(false);
@@ -213,6 +221,9 @@ export function CashShiftControl() {
   const [authorizers, setAuthorizers] = useState<CashAuthorizer[]>([]);
   const [authorizerId, setAuthorizerId] = useState("");
   const [pin, setPin] = useState("");
+  const [closedShift, setClosedShift] = useState<CashShift | null>(null);
+  const [closedDetail, setClosedDetail] = useState<CashShiftDetail | null>(null);
+  const [resultError, setResultError] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchCurrentShift();
@@ -357,16 +368,50 @@ export function CashShiftControl() {
       note: closeNote,
       authorization,
     });
-    setWorking(false);
-    if (result.error) return setError(result.error);
+    if (result.error || !result.data) {
+      setWorking(false);
+      return setError(result.error ?? "No se pudo cerrar la caja");
+    }
     toast.success(`Caja #${currentShift.number} cerrada`);
+    setClosedShift(result.data);
+    setClosedDetail(null);
+    setResultError(null);
     setView("result");
     setPreview(null);
     resetAuthorization();
+
+    const detail = await getDetail(result.data.id);
+    setWorking(false);
+    if (detail.error || !detail.data) {
+      setResultError(
+        detail.error ?? "El corte se guardó, pero no se pudo cargar su detalle."
+      );
+      return;
+    }
+    setClosedDetail(detail.data);
+  }
+
+  async function shareClosedReport() {
+    if (!closedDetail) return;
+    const text = buildCashShiftShareText(closedDetail);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Corte Mideli #${closedDetail.number}`, text });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      toast.success("Resumen del corte copiado");
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === "AbortError") return;
+      toast.error("No se pudo compartir el corte");
+    }
   }
 
   function openDialog() {
     setError(null);
+    setResultError(null);
+    setClosedShift(null);
+    setClosedDetail(null);
     setView(currentShift ? "summary" : "open");
     setOpen(true);
   }
@@ -398,7 +443,7 @@ export function CashShiftControl() {
           aria-modal="true"
           aria-label="Gestión de caja"
         >
-          <section className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:rounded-2xl">
+          <section className={`flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:rounded-2xl ${view === "result" ? "max-w-4xl" : "max-w-2xl"}`}>
             <header className="flex items-start justify-between gap-3 border-b border-border p-4 sm:p-5">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-light text-brand">
@@ -406,10 +451,10 @@ export function CashShiftControl() {
                 </span>
                 <div>
                   <h2 className="font-heading text-lg font-black">
-                    {view === "open" ? "Abrir caja" : view === "movement" ? "Movimiento de efectivo" : view === "count" ? "Cerrar y contar" : view === "result" ? "Turno cerrado" : `Caja #${currentShift?.number ?? ""}`}
+                    {view === "open" ? "Abrir caja" : view === "movement" ? "Movimiento de efectivo" : view === "count" ? "Cerrar y contar" : view === "result" ? `Corte #${closedDetail?.number ?? closedShift?.number ?? ""} guardado` : `Caja #${currentShift?.number ?? ""}`}
                   </h2>
                   <p className="font-body text-xs text-muted-foreground">
-                    {currentShift ? `Abierta por ${currentShift.opened_by_name} · ${shiftDuration(currentShift.opened_at)}` : "Una sola caja compartida para el local"}
+                    {currentShift ? `Abierta por ${currentShift.opened_by_name} · ${shiftDuration(currentShift.opened_at)}` : closedShift ? "Turno cerrado e inmutable" : "Una sola caja compartida para el local"}
                   </p>
                 </div>
               </div>
@@ -543,7 +588,30 @@ export function CashShiftControl() {
               ) : null}
 
               {view === "result" ? (
-                <div className="flex flex-col items-center py-8 text-center"><span className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-success/12 text-success"><CheckCircle2 size={32} /></span><h3 className="font-heading text-xl font-black">Corte guardado</h3><p className="mt-2 max-w-sm font-body text-sm text-muted-foreground">El turno quedó cerrado e inmutable. Las cuentas pendientes siguen disponibles para el siguiente turno.</p><button type="button" onClick={() => setOpen(false)} className="mt-6 h-12 min-w-48 rounded-xl bg-brand px-5 font-heading text-sm font-bold text-white">Listo</button></div>
+                <div className="space-y-4">
+                  {working && !closedDetail ? (
+                    <div className="flex min-h-64 flex-col items-center justify-center text-center">
+                      <Loader2 className="animate-spin text-success" size={30} />
+                      <p className="mt-3 font-heading text-sm font-bold">Preparando el corte digital</p>
+                      <p className="mt-1 font-body text-xs text-muted-foreground">El turno ya quedó cerrado.</p>
+                    </div>
+                  ) : closedDetail ? (
+                    <CashShiftReport shift={closedDetail} />
+                  ) : (
+                    <div className="flex flex-col items-center py-8 text-center">
+                      <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-success/12 text-success"><CheckCircle2 size={32} /></span>
+                      <h3 className="font-heading text-xl font-black">Corte guardado</h3>
+                      <p className="mt-2 max-w-md font-body text-sm text-muted-foreground">El turno quedó cerrado correctamente. Puedes consultar el detalle desde el historial de caja.</p>
+                      <ErrorMessage>{resultError}</ErrorMessage>
+                    </div>
+                  )}
+
+                  <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-3 print:hidden">
+                    <button type="button" disabled={!closedDetail} onClick={() => void shareClosedReport()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-surface-raised px-4 font-heading text-sm font-bold disabled:opacity-40"><Share2 size={17} />Compartir resumen</button>
+                    <Link href="/settings/caja" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border px-4 font-heading text-sm font-bold"><History size={17} />Abrir historial</Link>
+                    <button type="button" onClick={() => setOpen(false)} className="action-success min-h-12 rounded-xl px-5 font-heading text-sm font-bold">Listo</button>
+                  </div>
+                </div>
               ) : null}
             </div>
           </section>

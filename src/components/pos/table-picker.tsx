@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check, List, Map, MapPin, Users, X } from "lucide-react";
 import { TableFloorMap } from "@/components/tables";
+import { COMPACT_TABLE_PICKER_MEDIA_QUERY } from "@/lib/table-picker-layout";
 import type { RestaurantTable, TableMapLabel, TableZone } from "@/types/database";
 
 interface TablePickerProps {
@@ -29,11 +30,11 @@ export function TablePicker({
   const [pendingTableId, setPendingTableId] = useState(selectedTableId);
   const [mobileZoneId, setMobileZoneId] = useState(initialZoneId);
   const [mobileView, setMobileView] = useState<MobileTableView>("map");
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [usesCompactLayout, setUsesCompactLayout] = useState(false);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 639px)");
-    const updateViewport = () => setIsMobileViewport(mediaQuery.matches);
+    const mediaQuery = window.matchMedia(COMPACT_TABLE_PICKER_MEDIA_QUERY);
+    const updateViewport = () => setUsesCompactLayout(mediaQuery.matches);
 
     updateViewport();
     mediaQuery.addEventListener("change", updateViewport);
@@ -123,7 +124,7 @@ export function TablePicker({
           </button>
         </header>
 
-        {isMobileViewport ? (
+        {usesCompactLayout ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
             {zones.length > 1 ? (
               <div className="shrink-0">
@@ -243,7 +244,8 @@ export function TablePicker({
                 onClick={() => selectedTable && onConfirm(selectedTable)}
                 className="action-success inline-flex min-h-14 items-center justify-center gap-2 rounded-xl px-3 font-heading text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Check size={18} /> Confirmar mesa
+                <Check size={18} />
+                {selectedTable ? `Confirmar ${selectedTable.name}` : "Confirmar mesa"}
               </button>
             </div>
           </div>

@@ -141,6 +141,10 @@ export interface CashShiftPaymentSummary {
   folio: number;
   status: "completed" | "voided";
   total_amount: number;
+  order_type: "comedor" | "domicilio" | "para_llevar" | null;
+  order_numbers: number[];
+  item_count: number;
+  payment_methods: Array<"efectivo" | "tarjeta" | "transferencia">;
   table_zone_name: string | null;
   table_number: string | null;
   customer_name: string | null;
