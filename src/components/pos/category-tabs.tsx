@@ -38,8 +38,8 @@ export const CategoryTabs = memo(function CategoryTabs() {
           </div>
         </div>
 
-        <div className="pos-scroll min-w-0 flex-1 overflow-x-auto sm:overflow-visible">
-          <div className="flex min-w-max flex-nowrap items-center gap-2 pb-0.5 sm:min-w-0 sm:flex-wrap">
+        <div className="pos-scroll min-w-0 flex-1 overflow-x-auto xl:overflow-visible">
+          <div className="flex min-w-max flex-nowrap items-center gap-2 pb-0.5 xl:min-w-0 xl:flex-wrap">
             <button
               type="button"
               onClick={() => setActiveCategory(null)}

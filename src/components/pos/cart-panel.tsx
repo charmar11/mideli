@@ -111,7 +111,7 @@ export function CartPanel({
     <div
       className={`flex flex-col bg-surface ${
         isMobile
-          ? "h-[88dvh] w-full rounded-t-3xl shadow-float"
+          ? "h-[88dvh] w-full rounded-t-3xl shadow-float md:h-[min(88dvh,48rem)] md:max-w-2xl md:rounded-3xl"
           : "h-full w-[min(26rem,40vw)] shrink-0 border-l border-border"
       }`}
     >

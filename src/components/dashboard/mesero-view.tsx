@@ -725,7 +725,7 @@ export function MeseroView() {
             />
           </div>
 
-          <div className="hidden shrink-0 lg:flex">
+          <div className="hidden shrink-0 xl:flex">
             <CartPanel
               orderType={orderType}
               onOrderTypeChange={setOrderType}
@@ -772,7 +772,7 @@ export function MeseroView() {
                 : ""
             }`}
             style={{ bottom: "calc(4.75rem + env(safe-area-inset-bottom))" }}
-            className="mobile-cart-dock fixed inset-x-3 z-30 flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-brand px-4 text-white shadow-float active:scale-[0.985] md:inset-x-auto md:right-4 md:min-w-64 lg:hidden"
+            className="mobile-cart-dock fixed inset-x-3 z-30 flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-brand px-4 text-white shadow-float active:scale-[0.985] md:inset-x-auto md:right-4 md:min-w-72 xl:hidden"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15">
               <ShoppingBag size={19} />
@@ -796,7 +796,7 @@ export function MeseroView() {
 
           {cartOpen ? (
             <div
-              className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 backdrop-blur-[2px] lg:hidden"
+              className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 backdrop-blur-[2px] xl:hidden"
               onClick={(e) => {
                 if (e.target === e.currentTarget) setCartOpen(false);
               }}
