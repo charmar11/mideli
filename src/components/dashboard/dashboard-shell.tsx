@@ -514,7 +514,7 @@ export function DashboardShell({
         <Link href="/dashboard" className="mr-1 shrink-0 font-brand text-2xl text-brand">
           Mideli
         </Link>
-        <nav className="pos-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-contain" aria-label="Navegación principal">
+        <nav className="pos-scroll flex min-w-0 flex-1 touch-pan-x items-center gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain" aria-label="Navegación principal">
           {operationItems.map((item) => (
             <HeaderLink key={item.href} item={item} pathname={pathname} />
           ))}
@@ -602,7 +602,7 @@ export function DashboardShell({
               onClick={startTour}
               aria-label="Abrir ayuda y tutorial"
               title="Ayuda y tutorial"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground"
+              className="inline-flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
             >
               <HelpCircle aria-hidden size={15} />
             </button>
@@ -611,7 +611,7 @@ export function DashboardShell({
               onClick={handleLogout}
               aria-label="Cerrar sesión"
               title="Cerrar sesión"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground"
+              className="inline-flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
             >
               <LogOut aria-hidden size={15} />
             </button>

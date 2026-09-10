@@ -81,26 +81,41 @@ function supportsWebPush() {
   );
 }
 
+let serviceWorkerRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
+
 async function getMideliServiceWorkerRegistration() {
   if (!supportsWebPush()) return null;
 
-  const registrations = await navigator.serviceWorker.getRegistrations();
-  const existing = registrations.find((registration) =>
-    registration.active?.scriptURL.includes("/serwist/sw/") ||
-    registration.scope === `${window.location.origin}/`
-  );
-  if (existing) {
-    if (existing.active) return existing;
-    await existing.update().catch(() => undefined);
-    return existing;
-  }
+  if (serviceWorkerRegistrationPromise) return serviceWorkerRegistrationPromise;
 
-  // Serwist normally creates this registration. The fallback avoids a race
-  // on mobile, where the page can render before the provider has finished.
-  return navigator.serviceWorker.register("/serwist/sw/sw.js", {
-    scope: "/",
-    updateViaCache: "none",
-  });
+  const pending = (async () => {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    const existing = registrations.find((registration) =>
+      registration.active?.scriptURL.includes("/serwist/sw/") ||
+      registration.scope === `${window.location.origin}/`
+    );
+    if (existing) {
+      if (existing.active) return existing;
+      await existing.update().catch(() => undefined);
+      return existing;
+    }
+
+    // Serwist normally creates this registration. The fallback avoids a race
+    // on mobile, where the page can render before the provider has finished.
+    return navigator.serviceWorker.register("/serwist/sw/sw.js", {
+      scope: "/",
+      updateViaCache: "none",
+    });
+  })();
+
+  serviceWorkerRegistrationPromise = pending;
+  try {
+    return await pending;
+  } finally {
+    if (serviceWorkerRegistrationPromise === pending) {
+      serviceWorkerRegistrationPromise = null;
+    }
+  }
 }
 
 async function waitForActiveServiceWorker(
