@@ -737,27 +737,7 @@ export function MeseroView() {
               tables={tables}
               zones={zones}
               labels={labels}
-              customerName={customerName}
-              onCustomerNameChange={setCustomerName}
-              customerPhone={customerPhone}
-              onCustomerPhoneChange={setCustomerPhone}
-              deliveryAddress={deliveryAddress}
-              onDeliveryAddressChange={(value) => {
-                setDeliveryAddress(value);
-                setDeliveryConfirmed(false);
-                setDeliveryFee(0);
-                setDeliveryDistanceKm(null);
-                setDeliveryCoordinates({ latitude: null, longitude: null });
-              }}
-              deliveryReference={deliveryReference}
-              onDeliveryReferenceChange={setDeliveryReference}
               deliveryFee={deliveryFee}
-              deliveryDistanceKm={deliveryDistanceKm}
-              deliveryConfirmed={deliveryConfirmed}
-              deliveryLatitude={deliveryCoordinates.latitude}
-              deliveryLongitude={deliveryCoordinates.longitude}
-              onQuoteDelivery={() => void handleQuoteDelivery()}
-              deliveryQuoteLoading={deliveryQuoteLoading}
               onRequestSubmit={() => setDetailsOpen(true)}
             />
           </div>
@@ -812,27 +792,7 @@ export function MeseroView() {
                 tables={tables}
                 zones={zones}
                 labels={labels}
-                customerName={customerName}
-                onCustomerNameChange={setCustomerName}
-                customerPhone={customerPhone}
-                onCustomerPhoneChange={setCustomerPhone}
-                deliveryAddress={deliveryAddress}
-                onDeliveryAddressChange={(value) => {
-                  setDeliveryAddress(value);
-                  setDeliveryConfirmed(false);
-                  setDeliveryFee(0);
-                  setDeliveryDistanceKm(null);
-                  setDeliveryCoordinates({ latitude: null, longitude: null });
-                }}
-                deliveryReference={deliveryReference}
-                onDeliveryReferenceChange={setDeliveryReference}
                 deliveryFee={deliveryFee}
-                deliveryDistanceKm={deliveryDistanceKm}
-                deliveryConfirmed={deliveryConfirmed}
-                deliveryLatitude={deliveryCoordinates.latitude}
-                deliveryLongitude={deliveryCoordinates.longitude}
-                onQuoteDelivery={() => void handleQuoteDelivery()}
-                deliveryQuoteLoading={deliveryQuoteLoading}
                 onRequestSubmit={() => setDetailsOpen(true)}
                 onClose={() => setCartOpen(false)}
                 isMobile
