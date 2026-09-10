@@ -453,13 +453,13 @@ export function CocinaView() {
   }).format(now);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-background">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2 shadow-sm sm:px-5">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard"
             aria-label="Ir al panel principal"
-            className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl bg-ink text-white transition-colors hover:bg-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
+            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl bg-ink text-white transition-colors hover:bg-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
           >
             <ArrowLeft size={17} />
           </Link>
@@ -506,7 +506,7 @@ export function CocinaView() {
               type="button"
               onClick={() => void toggleFullscreen()}
               aria-label={isFullscreen ? "Salir de pantalla completa" : "Activar pantalla completa"}
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:border-brand/50 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
+              className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:border-brand/50 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
             >
               {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
@@ -534,7 +534,7 @@ export function CocinaView() {
               type="button"
               onClick={() => setFilter(option.id)}
               aria-pressed={filter === option.id}
-              className={`inline-flex h-10 shrink-0 touch-manipulation items-center gap-1.5 rounded-xl border px-3 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] ${
+              className={`inline-flex h-11 shrink-0 touch-manipulation items-center gap-1.5 rounded-xl border px-3 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] ${
                 filter === option.id
                   ? "border-brand bg-brand-light text-brand"
                   : "border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-foreground"
@@ -552,7 +552,7 @@ export function CocinaView() {
             onClick={() => void fetchActiveOrders()}
             disabled={loading}
             aria-label="Actualizar pedidos de cocina"
-            className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 disabled:cursor-wait disabled:opacity-50"
+            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 disabled:cursor-wait disabled:opacity-50"
           >
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
           </button>
@@ -572,7 +572,7 @@ export function CocinaView() {
                   ? "Toca para preparar el sonido local"
                   : "Sonido local pausado"
             }
-            className={`flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 ${
+            className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 ${
               soundEnabled && soundReady
                 ? "border-success/40 bg-success-light text-success"
                 : soundEnabled
@@ -585,7 +585,7 @@ export function CocinaView() {
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overscroll-y-contain overflow-y-auto p-4 sm:p-5">
+      <div className="pos-scroll min-h-0 min-w-0 flex-1 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto p-4 sm:p-5">
         {lastError ? (
           <div
             role="status"
@@ -597,7 +597,7 @@ export function CocinaView() {
               type="button"
               onClick={() => void fetchActiveOrders()}
               disabled={loading}
-              className="h-10 touch-manipulation rounded-xl border border-warning/35 px-3 font-heading text-xs font-bold hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] disabled:opacity-50"
+              className="h-11 touch-manipulation rounded-xl border border-warning/35 px-3 font-heading text-xs font-bold hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] disabled:opacity-50"
             >
               Reintentar
             </button>
@@ -692,7 +692,7 @@ function UpdateNotice({
           type="button"
           onClick={onDismiss}
           aria-label="Ocultar cambios del pedido"
-          className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg text-brand/70 hover:bg-brand/10 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
+          className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg text-brand/70 hover:bg-brand/10 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
         >
           <X size={14} />
         </button>
