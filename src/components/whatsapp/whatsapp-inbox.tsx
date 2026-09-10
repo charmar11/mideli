@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
   useTransition,
+  useLayoutEffect,
 } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -560,6 +561,17 @@ function ChatPanel({
   const [showContext, setShowContext] = useState(false);
   const contextTriggerRef = useRef<HTMLButtonElement>(null);
   const contextCloseRef = useRef<HTMLButtonElement>(null);
+  const draftInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const input = draftInputRef.current;
+    if (!input) return;
+
+    input.style.height = "auto";
+    const maxHeight = 128;
+    input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
+    input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [draft]);
 
   useEffect(() => {
     if (!showContext) return;
@@ -865,6 +877,7 @@ function ChatPanel({
             ) : null}
             <div className="flex items-end gap-2">
               <textarea
+                ref={draftInputRef}
                 value={draft}
                 onChange={(event) => onDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -876,7 +889,7 @@ function ChatPanel({
                 rows={1}
                 maxLength={1500}
                 placeholder="Escribe una respuesta..."
-                className="max-h-32 min-h-12 min-w-0 flex-1 resize-none rounded-2xl border border-input bg-background px-4 py-3 font-body text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-brand focus:ring-2 focus:ring-brand/20"
+                className="max-h-32 min-h-12 min-w-0 flex-1 resize-none overflow-hidden rounded-2xl border border-input bg-background px-4 py-3 font-body text-sm leading-6 text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-brand focus:ring-2 focus:ring-brand/20"
                 aria-label="Respuesta al cliente"
               />
               <Button
