@@ -595,7 +595,7 @@ function ChatPanel({
 
   return (
     <>
-      <header className="flex min-h-[60px] shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 py-1.5 sm:min-h-[68px] sm:gap-2 sm:px-3 sm:py-2">
+      <header className="flex min-h-[60px] shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 py-1.5 pt-[calc(0.375rem+env(safe-area-inset-top))] sm:min-h-[68px] sm:gap-2 sm:px-3 sm:py-2 sm:pt-2">
         <Button
           type="button"
           variant="ghost"
@@ -606,7 +606,7 @@ function ChatPanel({
         >
           <ArrowLeft aria-hidden size={19} />
         </Button>
-        <span className="hidden size-10 shrink-0 items-center justify-center rounded-full bg-success/15 font-heading text-sm font-bold text-success sm:flex">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success/15 font-heading text-sm font-bold text-success sm:size-10">
           {(conversation.customerName || conversation.phone).trim().charAt(0).toUpperCase() || "#"}
         </span>
         <div className="min-w-0 flex-1">
@@ -620,7 +620,7 @@ function ChatPanel({
             <span className={`inline-flex size-2 shrink-0 rounded-full sm:hidden ${statusDotTone(status.tone)}`}>
               <span className="sr-only">{status.label}</span>
             </span>
-            <span className="shrink-0 whitespace-nowrap font-data text-[10px] text-muted-foreground">
+            <span className="min-w-0 max-w-[8.5rem] truncate font-data text-[10px] text-muted-foreground sm:max-w-none">
               {formatPhoneForDisplay(conversation.phone)}
             </span>
           </div>
@@ -858,9 +858,9 @@ function ChatPanel({
         ) : (
           <>
             {conversation.botEnabled ? (
-            <p className="mb-2 hidden items-center gap-1.5 font-body text-[11px] text-muted-foreground sm:flex">
-                <Bot aria-hidden size={13} />
-                Al responder, tomarás la conversación y el bot se pausará.
+              <p className="mb-2 flex items-center gap-1.5 rounded-lg bg-warning/8 px-2 py-1.5 font-body text-[10px] leading-4 text-muted-foreground sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-[11px]">
+                <Bot aria-hidden className="shrink-0" size={13} />
+                <span>Al responder, tomarás la conversación y el bot se pausará.</span>
               </p>
             ) : null}
             <div className="flex items-end gap-2">

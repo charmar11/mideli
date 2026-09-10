@@ -330,7 +330,7 @@ export function OrderDetailsModal({
                         key={customer.id}
                         type="button"
                         onClick={() => onSelectCustomer(customer)}
-                        className={`flex min-h-12 w-full items-center justify-between gap-3 border-b border-border px-3 text-left last:border-b-0 hover:bg-surface-raised ${
+                        className={`flex min-h-12 w-full touch-manipulation items-center justify-between gap-3 border-b border-border px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset last:border-b-0 hover:bg-surface-raised ${
                           customer.id === customerId ? "bg-brand/10" : ""
                         }`}
                       >
@@ -358,7 +358,7 @@ export function OrderDetailsModal({
                       type="button"
                       onClick={() => setSavedAddressesOpen((open) => !open)}
                       aria-expanded={savedAddressesOpen}
-                      className="flex min-h-12 min-w-0 w-full items-center justify-between gap-3 text-left"
+                      className="flex min-h-12 min-w-0 w-full touch-manipulation items-center justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success focus-visible:ring-inset"
                     >
                       <span className="min-w-0 flex-1">
                         <span className="block font-heading text-[11px] font-bold uppercase tracking-wide text-success">
@@ -380,7 +380,7 @@ export function OrderDetailsModal({
                               onSelectCustomerAddress(address);
                               setSavedAddressesOpen(false);
                             }}
-                           className={`flex min-h-12 min-w-0 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left hover:border-success/50 ${selectedSavedAddress?.id === address.id ? "border-success/50 bg-success/10" : "border-border bg-background"}`}
+                           className={`flex min-h-12 min-w-0 w-full touch-manipulation items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success focus-visible:ring-inset hover:border-success/50 ${selectedSavedAddress?.id === address.id ? "border-success/50 bg-success/10" : "border-border bg-background"}`}
                           >
                             <span className="min-w-0 flex-1">
                               <span className="block break-words whitespace-normal font-heading text-xs font-bold leading-5 text-foreground">
