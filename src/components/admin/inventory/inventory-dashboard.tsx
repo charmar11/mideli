@@ -103,7 +103,7 @@ export function InventoryDashboard({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <section
         className={`overflow-hidden rounded-2xl border ${
           attentionCount > 0
@@ -210,7 +210,7 @@ export function InventoryDashboard({
               <button
                 type="button"
                 onClick={() => onNavigate("count")}
-                className="mt-1 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-brand font-heading text-xs font-bold text-white hover:bg-brand-hover"
+                className="mt-1 inline-flex h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-brand font-heading text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 hover:bg-brand-hover"
               >
                 <ClipboardCheck size={15} /> Conteo rápido
               </button>
@@ -250,7 +250,7 @@ function CompactMetric({ label, value, tone }: { label: string; value: number; t
 
 function TaskRow({ icon, tone = "normal", title, description, action, onClick }: { icon: React.ReactNode; tone?: "normal" | "warning" | "danger"; title: string; description: string; action: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-surface-raised/50 sm:px-5">
+    <button type="button" onClick={onClick} className="group flex min-h-16 w-full touch-manipulation items-center gap-3 px-4 py-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-surface-raised/50 sm:px-5">
       <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone === "warning" ? "bg-warning-light text-warning" : tone === "danger" ? "bg-destructive/10 text-destructive" : "bg-brand-light text-brand"}`}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block font-heading text-sm font-bold text-foreground">{title}</span>
@@ -274,5 +274,5 @@ function Routine({ checked, label }: { checked: boolean; label: string }) {
 }
 
 function ActionButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="h-10 rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white hover:bg-brand-hover">{label}</button>;
+  return <button type="button" onClick={onClick} className="h-11 touch-manipulation rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 hover:bg-brand-hover">{label}</button>;
 }
