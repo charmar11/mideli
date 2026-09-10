@@ -304,8 +304,8 @@ export function AnalyticsDashboard({
   }
 
   return (
-    <div className="h-full overflow-x-hidden overflow-y-auto">
-      <div className="mx-auto max-w-[1480px] space-y-5 p-3 pb-8 sm:p-5 lg:p-6">
+    <div className="h-full min-w-0 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto">
+      <div className="mx-auto min-w-0 max-w-[1480px] space-y-5 p-3 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-5 sm:pb-8 lg:p-6">
         <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-xl">
             <h1 className="text-balance font-heading text-2xl font-bold tracking-[-0.02em] sm:text-[1.75rem]">
@@ -330,7 +330,7 @@ export function AnalyticsDashboard({
           </div>
         </header>
 
-        <div className="pos-scroll flex overflow-x-auto rounded-xl bg-surface p-1.5 ring-1 ring-foreground/10">
+        <div className="pos-scroll flex touch-pan-x overscroll-x-contain overflow-x-auto rounded-xl bg-surface p-1.5 ring-1 ring-foreground/10">
           {SERVICE_FILTERS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -339,7 +339,7 @@ export function AnalyticsDashboard({
               disabled={isFiltering}
               aria-pressed={data.service === id}
               className={cn(
-                "flex h-10 min-w-max items-center gap-2 rounded-lg px-3 font-heading text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50",
+                "flex h-11 min-h-11 min-w-max touch-manipulation items-center gap-2 rounded-lg px-3 font-heading text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50",
                 data.service === id
                   ? "bg-brand text-white"
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
