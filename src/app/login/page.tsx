@@ -15,11 +15,11 @@ export default async function LoginPage({
   const params = await searchParams;
 
   return (
-    <div className="grid min-h-dvh bg-background lg:grid-cols-[0.94fr_1.06fr]">
+    <div className="grid min-h-dvh min-w-0 max-w-full overflow-x-hidden bg-background lg:grid-cols-[0.94fr_1.06fr]">
       <AccessBrandPanel compact />
 
-      <main className="flex items-center px-6 py-12 sm:px-12 lg:px-16">
-        <div className="mx-auto w-full max-w-md">
+      <main className="flex min-w-0 items-center px-6 py-12 sm:px-12 lg:px-16">
+        <div className="mx-auto min-w-0 w-full max-w-md">
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-light text-brand">
             <LockKeyhole size={22} />
           </span>

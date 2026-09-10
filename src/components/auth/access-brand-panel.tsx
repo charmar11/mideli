@@ -3,7 +3,7 @@ import { MapPin } from "lucide-react";
 
 export function AccessBrandPanel({ compact = false }: { compact?: boolean }) {
   return (
-    <aside className={`relative flex overflow-hidden bg-ink text-sidebar-foreground ${compact ? "min-h-72 lg:min-h-dvh" : "min-h-[26rem] lg:min-h-dvh"}`}>
+    <aside className={`relative flex min-w-0 max-w-full overflow-hidden bg-ink text-sidebar-foreground ${compact ? "min-h-72 lg:min-h-dvh" : "min-h-[26rem] lg:min-h-dvh"}`}>
       <div className="relative z-10 flex w-full flex-col justify-between px-7 py-8 sm:px-10 sm:py-10 lg:px-14 lg:py-12">
         <header className="flex items-center justify-between gap-4">
           <Link href="/" className="font-brand text-4xl text-brand sm:text-5xl">Mideli</Link>
