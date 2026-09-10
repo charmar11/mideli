@@ -309,7 +309,7 @@ export default function SettingsPage() {
       <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3 shadow-sm sm:px-6">
         <Link
           href="/dashboard"
-          className="rounded-xl bg-surface-raised p-2.5 text-muted-foreground transition-colors hover:text-foreground"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
           aria-label="Volver al dashboard"
         >
           <ChevronDown size={18} className="rotate-90" />
@@ -470,11 +470,12 @@ export default function SettingsPage() {
                           type="button"
                           onClick={() => setNewUser({ ...newUser, role })}
                           disabled={disabled}
+                          aria-pressed={selected}
                           className={`rounded-xl border p-3 text-left transition ${
                             selected
                               ? "border-brand bg-brand/10 shadow-sm"
                               : "border-border bg-background hover:border-brand/50"
-                          } ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer"}`}
+                          } ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"}`}
                         >
                           <span className="flex items-center justify-between gap-2">
                             <span className="font-heading text-xs font-bold text-foreground">
@@ -526,7 +527,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={() => void loadProfiles()}
                   disabled={loading || isPending}
-                  className="inline-flex h-9 items-center justify-center gap-2 self-start rounded-lg border border-border px-3 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground disabled:opacity-50 lg:self-auto"
+                  className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-xl border border-border px-3 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50 lg:self-auto"
                 >
                   <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
                   Actualizar
@@ -544,7 +545,7 @@ export default function SettingsPage() {
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Buscar por nombre o correo"
-                    className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 font-body text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                    className="h-11 w-full rounded-xl border border-border bg-background pl-9 pr-3 font-body text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
                   />
                 </label>
                 <div className="flex rounded-xl border border-border bg-background p-1">
@@ -559,7 +560,8 @@ export default function SettingsPage() {
                       key={value}
                       type="button"
                       onClick={() => setStatusFilter(value)}
-                      className={`rounded-lg px-3 py-1.5 font-heading text-[11px] font-bold transition ${
+                      aria-pressed={statusFilter === value}
+                      className={`min-h-11 rounded-lg px-3 py-1.5 font-heading text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
                         statusFilter === value
                           ? "bg-brand text-white shadow-sm"
                           : "text-muted-foreground hover:text-foreground"
@@ -648,7 +650,7 @@ export default function SettingsPage() {
                           type="button"
                           onClick={() => openMember(profile)}
                           disabled={isPending}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 font-heading text-xs font-bold text-muted-foreground transition hover:border-brand/40 hover:text-foreground disabled:opacity-50"
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border px-2.5 font-heading text-xs font-bold text-muted-foreground transition hover:border-brand/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50"
                           title="Editar permisos"
                         >
                           <Pencil size={14} />
@@ -658,7 +660,7 @@ export default function SettingsPage() {
                           type="button"
                           onClick={() => openPasswordDialog(profile)}
                           disabled={isPending}
-                          className="inline-flex h-9 items-center justify-center rounded-lg border border-border px-2.5 text-muted-foreground transition hover:border-gold/40 hover:text-gold disabled:opacity-50"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-border px-2.5 text-muted-foreground transition hover:border-gold/40 hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 disabled:opacity-50"
                           title="Definir contraseña"
                         >
                           <KeyRound size={14} />
@@ -668,7 +670,7 @@ export default function SettingsPage() {
                             type="button"
                             onClick={() => openPinDialog(profile)}
                             disabled={isPending}
-                            className="inline-flex h-9 items-center justify-center rounded-lg border border-border px-2.5 text-muted-foreground transition hover:border-brand/40 hover:text-brand disabled:opacity-50"
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-border px-2.5 text-muted-foreground transition hover:border-brand/40 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50"
                             title="Definir PIN de descuentos"
                           >
                             <ShieldCheck size={14} />
@@ -678,7 +680,7 @@ export default function SettingsPage() {
                           type="button"
                           onClick={() => askStatusChange(profile)}
                           disabled={isPending}
-                          className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 font-heading text-xs font-bold transition disabled:opacity-50 ${
+                          className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 font-heading text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50 ${
                             profile.is_active
                               ? "border-warning/25 text-warning hover:bg-warning-light"
                               : "border-success/20 text-success hover:bg-success/10"
@@ -712,7 +714,7 @@ export default function SettingsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="member-dialog-title"
-            className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl sm:p-6"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-5 overscroll-contain sm:p-6"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -731,7 +733,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => setSelectedMember(null)}
-                className="rounded-lg p-2 text-muted-foreground transition hover:bg-surface-raised hover:text-foreground"
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
                 aria-label="Cerrar"
               >
                 <X size={17} />
@@ -782,7 +784,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => askDeleteMember(selectedMember)}
                 disabled={isPending}
-                className="inline-flex h-9 items-center gap-2 rounded-lg px-2 font-heading text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-heading text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 disabled:opacity-50"
               >
                 <Trash2 size={14} />
                 Eliminar permanentemente
@@ -796,7 +798,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => setSelectedMember(null)}
-                className="h-10 rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground"
+                className="h-11 rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
               >
                 Cancelar
               </button>
@@ -804,7 +806,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleRoleSave}
                 disabled={isPending || roleDraft === selectedMember.role}
-                className="action-success inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                className="action-success inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isPending && <Loader2 size={14} className="animate-spin" />}
                 Guardar cambios
@@ -816,7 +818,7 @@ export default function SettingsPage() {
 
       {statusChange && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <section className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl sm:p-6">
+          <section className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-border bg-card p-5 overscroll-contain sm:p-6">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand/10 text-brand">
               {statusChange.action === "deactivate" ? <UserRoundX size={20} /> : <UserRoundCheck size={20} />}
             </div>
@@ -833,7 +835,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => setStatusChange(null)}
                 disabled={isPending}
-                className="h-10 rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+                className="h-11 rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50"
               >
                 Cancelar
               </button>
@@ -888,7 +890,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={confirmDeleteMember}
                 disabled={isPending}
-                className="action-danger inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                className="action-danger inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isPending && <Loader2 size={14} className="animate-spin" />}
                 Eliminar
@@ -904,7 +906,7 @@ export default function SettingsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="password-dialog-title"
-            className="w-full max-w-sm rounded-2xl border border-gold/25 bg-card p-5 shadow-2xl sm:p-6"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-gold/25 bg-card p-5 overscroll-contain sm:p-6"
           >
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gold/10 text-gold">
               <KeyRound size={20} />
@@ -933,7 +935,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((visible) => !visible)}
-                  className="mr-1 inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-surface-raised hover:text-foreground"
+                  className="mr-1 inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
                   aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -948,7 +950,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => setPasswordTarget(null)}
                 disabled={isPending}
-                className="h-10 rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+                className="h-11 rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50"
               >
                 Cancelar
               </button>
@@ -956,7 +958,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handlePasswordSave}
                 disabled={isPending || passwordDraft.length < 6}
-                className="action-success inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                className="action-success inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isPending && <Loader2 size={14} className="animate-spin" />}
                 Guardar contraseña
@@ -968,7 +970,7 @@ export default function SettingsPage() {
 
       {pinTarget && (
         <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <section role="dialog" aria-modal="true" aria-labelledby="pin-dialog-title" className="w-full max-w-sm rounded-2xl bg-card p-5 shadow-float sm:p-6">
+          <section role="dialog" aria-modal="true" aria-labelledby="pin-dialog-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-card p-5 shadow-float overscroll-contain sm:p-6">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-light text-brand">
               <ShieldCheck size={20} />
             </div>
