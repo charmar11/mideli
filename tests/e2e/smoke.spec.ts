@@ -60,6 +60,23 @@ test("inicio y acceso no generan desbordamiento horizontal", async ({ page }) =>
   }
 });
 
+test("el acceso se adapta al ancho real de un celular", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/login");
+
+  const sizes = await page.evaluate(() => {
+    const form = document.querySelector("form")?.getBoundingClientRect();
+    return {
+      viewport: window.innerWidth,
+      content: document.documentElement.scrollWidth,
+      formRight: form?.right ?? 0,
+    };
+  });
+
+  expect(sizes.content).toBeLessThanOrEqual(sizes.viewport + 1);
+  expect(sizes.formRight).toBeLessThanOrEqual(sizes.viewport);
+});
+
 test("el manifiesto PWA y sus iconos principales están disponibles", async ({ request }) => {
   const manifestResponse = await request.get("/manifest.webmanifest");
   expect(manifestResponse.ok()).toBeTruthy();
