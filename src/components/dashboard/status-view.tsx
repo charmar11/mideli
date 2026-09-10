@@ -267,7 +267,7 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
               <p className="font-heading text-sm font-bold">No se pudieron actualizar los pedidos</p>
               <p className="font-body text-xs text-muted-foreground">{lastError}</p>
             </div>
-            <button type="button" onClick={() => void fetchActiveOrders()} className="inline-flex h-10 shrink-0 touch-manipulation items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10">
+            <button type="button" onClick={() => void fetchActiveOrders()} className="inline-flex h-11 shrink-0 touch-manipulation items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10">
               <RefreshCw size={14} />
               Reintentar
             </button>
@@ -481,7 +481,7 @@ function StatusSection({
                         🕒 {new Intl.DateTimeFormat("es-MX", { hour: "numeric", minute: "2-digit" }).format(new Date(order.scheduled_for))}
                       </span>
                     ) : null}
-                    <button type="button" onClick={() => onEditOrder?.(order)} aria-label={`Editar pedido ${order.number}`} className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-brand-light hover:text-brand"><Pencil size={15} /></button>
+                    <button type="button" onClick={() => onEditOrder?.(order)} aria-label={`Editar pedido ${order.number}`} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-brand-light hover:text-brand"><Pencil size={15} /></button>
                   </div>
                 </div>
 
@@ -496,7 +496,7 @@ function StatusSection({
                         {order.customer_name || "Cliente"}
                       </p>
                       {order.customer_phone ? (
-                        <a href={`tel:+${order.customer_phone.replace(/^\+/, "")}`} className="inline-flex min-h-9 touch-manipulation items-center gap-1.5 text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-cream">
+                        <a href={`tel:+${order.customer_phone.replace(/^\+/, "")}`} className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-cream">
                           <Phone size={13} /> {formatPhoneForDisplay(order.customer_phone)}
                         </a>
                       ) : null}
@@ -541,7 +541,7 @@ function StatusSection({
 
                     <div className="grid grid-cols-2 gap-2">
                       {destinationMapHref ? (
-                        <a href={destinationMapHref} target="_blank" rel="noreferrer" className="inline-flex h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-border">
+                        <a href={destinationMapHref} target="_blank" rel="noreferrer" className="inline-flex h-11 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-border">
                           <ExternalLink size={13} /> Abrir Maps
                         </a>
                       ) : <span />}
@@ -549,7 +549,7 @@ function StatusSection({
                         href={whatsappShareHref}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-success font-heading text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-success/85"
+                        className="inline-flex h-11 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-success font-heading text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-success/85"
                       >
                         <MessageCircle size={13} /> Enviar a repartidor
                       </a>
@@ -608,7 +608,7 @@ function StatusSection({
                             type="button"
                             disabled={isBusy}
                             onClick={() => onRetryNotification?.(order, failedNotification.id)}
-                            className="col-span-2 inline-flex h-10 touch-manipulation items-center justify-center gap-2 rounded-xl border border-destructive/40 font-heading text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 disabled:opacity-60"
+                            className="col-span-2 inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-destructive/40 font-heading text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 disabled:opacity-60"
                           >
                             <RefreshCw size={13} /> Reintentar aviso al cliente
                           </button>
