@@ -135,7 +135,7 @@ export function CartPanel({
               data-tour="pos-table-selection"
               type="button"
               onClick={() => setClearConfirmOpen(true)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 font-heading text-[11px] font-bold text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className="inline-flex h-9 touch-manipulation items-center gap-1.5 rounded-lg px-2.5 font-heading text-[11px] font-bold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
               title="Vaciar pedido"
             >
               <Trash2 size={14} />
@@ -147,7 +147,7 @@ export function CartPanel({
               type="button"
               onClick={onClose}
               aria-label="Cerrar pedido"
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground hover:text-foreground"
+              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl bg-surface-raised text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"
             >
               <X size={18} />
             </button>
@@ -362,7 +362,7 @@ export function CartPanel({
                       type="button"
                       onClick={() => removeItem(item.id)}
                       aria-label={`Quitar ${item.name}`}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -394,8 +394,8 @@ export function CartPanel({
                       <button
                         type="button"
                         onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                        aria-label="Menos"
-                        className="flex h-10 w-10 items-center justify-center rounded-full bg-surface text-foreground shadow-sm hover:text-brand"
+                        aria-label={`Reducir ${item.name}`}
+                        className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
                       >
                         <Minus size={14} />
                       </button>
@@ -405,8 +405,8 @@ export function CartPanel({
                       <button
                         type="button"
                         onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                        aria-label="Más"
-                        className="flex h-10 w-10 items-center justify-center rounded-full bg-surface text-foreground shadow-sm hover:text-brand"
+                        aria-label={`Aumentar ${item.name}`}
+                        className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
                       >
                         <Plus size={14} />
                       </button>
@@ -443,7 +443,7 @@ export function CartPanel({
           type="button"
           onClick={onRequestSubmit}
           disabled={items.length === 0}
-          className="action-success flex w-full items-center justify-center gap-2 rounded-xl py-3.5 font-heading text-sm font-bold disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
+          className="action-success flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-xl py-3.5 font-heading text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
         >
           <Send size={16} />
           Continuar con datos
@@ -491,7 +491,7 @@ export function CartPanel({
               <button
                 type="button"
                 onClick={() => setClearConfirmOpen(false)}
-                className="h-10 rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground"
+                className="h-11 touch-manipulation rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"
               >
                 Cancelar
               </button>
@@ -501,7 +501,7 @@ export function CartPanel({
                   clearCart();
                   setClearConfirmOpen(false);
                 }}
-                className="action-danger inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold"
+                className="action-danger inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset"
               >
                 <Trash2 size={14} />
                 Vaciar pedido
