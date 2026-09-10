@@ -433,7 +433,7 @@ function OrderDetail({
               type="button"
               onClick={onDelete}
               aria-label={`Eliminar pedido ${order.number} del historial`}
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
             >
               <Trash2 size={17} />
             </button>
@@ -443,7 +443,7 @@ function OrderDetail({
               type="button"
               onClick={onClose}
               aria-label="Cerrar detalle"
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
             >
               <X size={18} />
             </button>
@@ -451,7 +451,7 @@ function OrderDetail({
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
+      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain p-5">
         <div className="mb-5 grid grid-cols-2 gap-2">
           <div className="rounded-xl border border-border bg-background/60 p-3">
             <p className="mb-1 font-body text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -534,7 +534,7 @@ function OrderDetail({
               {order.customer_phone ? (
                 <a
                   href={`tel:${order.customer_phone}`}
-                  className="mt-1 inline-flex items-center gap-1.5 font-data text-xs text-muted-foreground hover:text-foreground"
+                  className="mt-1 inline-flex min-h-9 touch-manipulation items-center gap-1.5 rounded-lg font-data text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                 >
                   <Phone size={13} />
                   {formatPhoneForDisplay(order.customer_phone)}
@@ -573,7 +573,7 @@ function OrderDetail({
                   href={mapHref}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand-light px-3 font-heading text-xs font-bold text-brand hover:bg-brand/20"
+                  className="mt-3 inline-flex min-h-10 touch-manipulation items-center gap-2 rounded-xl bg-brand-light px-3 font-heading text-xs font-bold text-brand hover:bg-brand/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98]"
                 >
                   <Navigation size={15} />
                   Abrir ubicación
@@ -676,7 +676,7 @@ function OrderDetail({
             <button
               type="button"
               onClick={onPay}
-              className="action-success mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold"
+              className="action-success mt-4 inline-flex h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.99]"
             >
               <CreditCard size={17} />
               Cobrar pedido
@@ -688,7 +688,7 @@ function OrderDetail({
                 <button
                   type="button"
                   onClick={onReceipt}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:bg-border"
+                  className="inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98]"
                 >
                   <Printer size={16} />
                   Ver tickets
@@ -698,7 +698,7 @@ function OrderDetail({
                 <button
                   type="button"
                   onClick={onCorrectPayment}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning hover:bg-warning/18"
+                  className="inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning hover:bg-warning/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98]"
                 >
                   <Pencil size={15} />
                   Corregir método
@@ -938,7 +938,7 @@ export function SalesHistory() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6">
+      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overscroll-y-contain overflow-y-auto p-3 sm:p-5 lg:p-6">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 pb-8">
           <header className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 shadow-card sm:flex-row sm:items-center sm:justify-between sm:p-5">
             <div className="flex items-center gap-3">
@@ -956,7 +956,7 @@ export function SalesHistory() {
               type="button"
               onClick={() => void loadHistory()}
               disabled={loading}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface-raised px-4 font-heading text-xs font-bold text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+              className="inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-border bg-surface-raised px-4 font-heading text-xs font-bold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
             >
               <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
               Actualizar
@@ -982,7 +982,7 @@ export function SalesHistory() {
                   setStatusFilter("all");
                   setPaymentFilter((current) => current === "pending" ? "all" : "pending");
                 }}
-                className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold transition-colors ${paymentFilter === "pending" ? "bg-warning text-ink shadow-md" : "border border-warning/40 text-warning hover:bg-warning/10"}`}
+                className={`inline-flex h-11 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] ${paymentFilter === "pending" ? "bg-warning text-ink shadow-md" : "border border-warning/40 text-warning hover:bg-warning/10"}`}
               >
                 {paymentFilter === "pending" ? "Quitar filtro" : "Ver pendientes"}
               </button>
@@ -1029,7 +1029,7 @@ export function SalesHistory() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Buscar folio, cliente, teléfono o dirección"
-                  className="h-11 w-full rounded-xl border border-border bg-background pl-10 pr-3 font-body text-sm outline-none placeholder:text-muted-foreground/70 focus:border-brand"
+                  className="h-11 w-full rounded-xl border border-border bg-background pl-10 pr-3 font-body text-sm outline-none placeholder:text-muted-foreground/70 focus:border-brand focus:ring-2 focus:ring-brand/20"
                 />
               </div>
             </div>
@@ -1316,7 +1316,7 @@ function FilterSelect({
   options: readonly (readonly [string, string])[];
 }) {
   return (
-    <label className="flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-3">
+    <label className="flex h-10 touch-manipulation items-center gap-2 rounded-xl border border-border bg-background px-3 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20">
       <span className="font-body text-[11px] text-muted-foreground">{label}</span>
       <select
         value={value}
@@ -1356,7 +1356,7 @@ function HistoryOrderRow({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full items-center gap-3 rounded-xl border border-l-4 p-3 text-left transition-colors sm:p-4 ${typeAccent} ${
+      className={`group flex w-full touch-manipulation items-center gap-3 rounded-xl border border-l-4 p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset active:scale-[0.995] sm:p-4 ${typeAccent} ${
         selected
           ? "border-brand/60 bg-brand-light/40"
           : "border-border bg-background/40 hover:border-border-strong hover:bg-background/80"
