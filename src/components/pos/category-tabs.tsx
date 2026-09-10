@@ -43,8 +43,8 @@ export const CategoryTabs = memo(function CategoryTabs() {
             <button
               type="button"
               onClick={() => setActiveCategory(null)}
-              aria-current={activeCategory === null ? "page" : undefined}
-              className={`flex h-10 shrink-0 touch-manipulation items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:text-sm ${
+              aria-pressed={activeCategory === null}
+              className={`flex h-11 min-h-11 shrink-0 touch-manipulation items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:text-sm ${
                 activeCategory === null
                   ? "bg-brand text-white shadow-md shadow-brand/20"
                   : "bg-surface text-muted-foreground ring-1 ring-border hover:bg-surface-raised hover:text-foreground"
@@ -52,7 +52,7 @@ export const CategoryTabs = memo(function CategoryTabs() {
             >
               <span>Todo el menú</span>
               <span className={activeCategory === null ? "text-white/70" : "text-muted-foreground"}>
-                {activeItemCount}
+                <span className="tabular-nums">{activeItemCount}</span>
               </span>
             </button>
 
@@ -63,9 +63,9 @@ export const CategoryTabs = memo(function CategoryTabs() {
                   key={category.id}
                   type="button"
                   onClick={() => setActiveCategory(category.id)}
-                  aria-current={isActive ? "page" : undefined}
+                  aria-pressed={isActive}
                   title={category.name}
-                  className={`flex h-10 shrink-0 touch-manipulation items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:text-sm ${
+                  className={`flex h-11 min-h-11 shrink-0 touch-manipulation items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:text-sm ${
                     isActive
                       ? "bg-brand text-white shadow-md shadow-brand/20"
                       : "bg-surface text-muted-foreground ring-1 ring-border hover:bg-surface-raised hover:text-foreground"
@@ -73,7 +73,7 @@ export const CategoryTabs = memo(function CategoryTabs() {
                 >
                   <span className="whitespace-nowrap">{category.name}</span>
                   <span className={isActive ? "text-white/70" : "text-muted-foreground"}>
-                    {itemCounts.get(category.id) ?? 0}
+                    <span className="tabular-nums">{itemCounts.get(category.id) ?? 0}</span>
                   </span>
                 </button>
               );
