@@ -168,7 +168,7 @@ export default function MenuPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    <div className="flex min-h-dvh min-w-0 max-w-full flex-col overflow-x-hidden bg-background">
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-surface/95 px-3 py-3 shadow-sm backdrop-blur sm:px-6">
         <div className="flex items-center gap-3">
           <Link
@@ -237,9 +237,10 @@ export default function MenuPage() {
             </button>
           </div>
 
-          <div className="pos-scroll flex min-h-16 flex-nowrap items-center gap-2 overflow-x-auto border-b border-border px-3 py-2 sm:flex-wrap sm:overflow-visible sm:px-4">
+          <div className="pos-scroll flex min-h-16 touch-pan-x flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain border-b border-border px-3 py-2 sm:flex-wrap sm:overflow-visible sm:px-4">
             <button
               onClick={() => setActiveCategory(null)}
+              aria-pressed={activeCategory === null}
               className={`min-h-11 shrink-0 rounded-xl px-4 py-2 font-heading text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand cursor-pointer ${
                 activeCategory === null
                   ? "bg-brand text-white"
@@ -252,6 +253,7 @@ export default function MenuPage() {
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
+                aria-pressed={activeCategory === cat.id}
                 className={`min-h-11 shrink-0 rounded-xl px-4 py-2 font-heading text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand cursor-pointer ${
                   activeCategory === cat.id
                     ? "bg-brand text-white"
