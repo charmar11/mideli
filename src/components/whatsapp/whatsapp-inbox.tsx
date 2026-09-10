@@ -226,7 +226,7 @@ function ConversationList({
               type="button"
               onClick={() => onFilter(item.id)}
               aria-pressed={filter === item.id}
-              className={`flex min-h-11 min-w-0 touch-manipulation items-center justify-between gap-2 rounded-xl px-3 font-heading text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:h-10 sm:min-h-0 sm:shrink-0 sm:px-3 ${
+              className={`flex min-h-11 min-w-0 touch-manipulation items-center justify-between gap-2 rounded-xl px-3 font-heading text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:shrink-0 sm:px-3 ${
                 filter === item.id
                   ? `${filterTone(item.id)} ring-1 ring-current/15`
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
@@ -361,7 +361,7 @@ function OrderContext({
         <p className="mt-2 font-heading text-sm font-bold">{customerLabel(conversation)}</p>
         <a
           href={`tel:+${normalizePhone(conversation.phone)}`}
-          className="mt-1 inline-flex min-h-9 max-w-full items-center gap-2 whitespace-nowrap font-data text-xs text-muted-foreground hover:text-cream"
+          className="mt-1 inline-flex min-h-11 max-w-full items-center gap-2 whitespace-nowrap font-data text-xs text-muted-foreground hover:text-cream"
         >
           <Phone aria-hidden size={14} />
           {formatPhoneForDisplay(conversation.phone)}
@@ -700,7 +700,7 @@ function ChatPanel({
         <button
           ref={contextTriggerRef}
           type="button"
-          className="flex min-h-10 w-full items-center gap-2 rounded-xl px-1 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-12"
+          className="flex min-h-11 w-full items-center gap-2 rounded-xl px-1 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-12"
           onClick={() => setShowContext(true)}
           aria-haspopup="dialog"
         >
@@ -772,7 +772,7 @@ function ChatPanel({
                 <Button
                   type="button"
                   variant="danger"
-                  className="h-10"
+                  className="h-11"
                   disabled={pending}
                   onClick={() => {
                     setConfirmClear(false);
@@ -784,7 +784,7 @@ function ChatPanel({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-10"
+                  className="h-11"
                   disabled={pending}
                   onClick={() => setConfirmClear(false)}
                 >
@@ -853,7 +853,7 @@ function ChatPanel({
         {showNewMessages ? (
           <Button
             type="button"
-            className="absolute bottom-3 left-1/2 h-10 -translate-x-1/2 gap-2 rounded-full bg-cream px-4 text-ink shadow-float hover:bg-cream/90"
+            className="absolute bottom-3 left-1/2 min-h-11 -translate-x-1/2 gap-2 rounded-full bg-cream px-4 text-ink shadow-float hover:bg-cream/90"
             onClick={onScrollToLatest}
           >
             <ArrowDown aria-hidden size={15} />

@@ -131,7 +131,7 @@ export function WhatsAppControlCenter({ data }: Props) {
   }
 
   return (
-    <div className={`h-full w-full max-w-full bg-background ${ownsVerticalScroll ? "flex min-h-0 flex-col overflow-hidden overscroll-none" : "pos-scroll overflow-x-hidden overflow-y-auto"}`}>
+    <div className={`h-full min-w-0 w-full max-w-full bg-background ${ownsVerticalScroll ? "flex min-h-0 flex-col overflow-hidden overscroll-none" : "pos-scroll overflow-x-hidden overflow-y-auto"}`}>
       <div className={`mx-auto w-full min-w-0 max-w-[1500px] px-3 py-3 sm:px-5 sm:py-5 ${mobileInboxChatOpen ? "max-w-none px-0 py-0" : ""} ${ownsVerticalScroll ? "flex min-h-0 flex-1 flex-col" : "min-h-full"}`}>
         <header className={`mb-4 flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${mobileInboxChatOpen ? "hidden" : ""}`}>
           <div className="flex items-center gap-3">
@@ -156,7 +156,7 @@ export function WhatsAppControlCenter({ data }: Props) {
                     ? "Atención manual"
                     : "Canal pausado"}
             </span>
-            <Button variant="outline" size="icon" className="size-10 shrink-0 sm:w-auto sm:px-4" onClick={refresh} disabled={isPending} aria-label="Actualizar WhatsApp">
+            <Button variant="outline" size="icon" className="size-11 shrink-0 sm:w-auto sm:px-4" onClick={refresh} disabled={isPending} aria-label="Actualizar WhatsApp">
               <RefreshCw aria-hidden size={15} className={isPending ? "animate-spin" : ""} />
               <span className="hidden sm:inline">Actualizar</span>
             </Button>
@@ -176,7 +176,7 @@ export function WhatsAppControlCenter({ data }: Props) {
         ) : null}
 
         <nav className={`mb-4 flex min-w-0 shrink-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5 ${mobileInboxChatOpen ? "hidden" : ""}`} aria-label="Secciones de WhatsApp">
-          <div className="pos-scroll flex min-w-0 flex-1 touch-pan-x gap-1 overflow-x-auto overscroll-contain">
+          <div className="pos-scroll flex min-w-0 flex-1 touch-pan-x gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain">
             {PRIMARY_TABS.filter((item) => !item.adminOnly || admin).map((item) => {
               const Icon = item.icon;
               return (
