@@ -1187,7 +1187,7 @@ export function SalesHistory() {
 
       {ticketOrder ? (
         <div className="fixed inset-0 z-[75] flex items-end justify-center bg-ink/70 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !ticketLoading) setTicketOrder(null); }}>
-          <div role="dialog" aria-modal="true" aria-label="Tickets del pedido" className="w-full max-w-lg rounded-t-2xl bg-surface p-5 shadow-float sm:rounded-2xl">
+          <div role="dialog" aria-modal="true" aria-label="Tickets del pedido" className="pos-scroll max-h-[calc(100dvh-1rem)] w-full max-w-lg touch-pan-y overscroll-y-contain overflow-y-auto rounded-t-2xl bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-float sm:rounded-2xl">
             <div className="mb-4 flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-light text-brand"><ReceiptText size={19} /></span>
               <div className="min-w-0 flex-1">
@@ -1200,7 +1200,7 @@ export function SalesHistory() {
                     : "Cada pago parcial conserva su propio comprobante."}
                 </p>
               </div>
-              <button type="button" onClick={() => setTicketOrder(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised"><X size={18} /></button>
+              <button type="button" onClick={() => setTicketOrder(null)} aria-label="Cerrar tickets" className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"><X size={18} /></button>
             </div>
             {ticketLoading && ticketChoices.length === 0 ? <div className="flex h-32 items-center justify-center"><RefreshCw size={22} className="animate-spin text-brand" /></div> : (
               <div className="space-y-2">
@@ -1220,14 +1220,14 @@ export function SalesHistory() {
                           setTicketOrder(null);
                           setTicketChoices([]);
                         }}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning hover:bg-warning/18"
+                        className="inline-flex h-10 touch-manipulation items-center justify-center gap-2 rounded-xl bg-warning/12 px-3 font-heading text-xs font-bold text-warning hover:bg-warning/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-inset active:scale-[0.98]"
                       >
                         <Pencil size={15} />
                         Corregir
                       </button>
                     ) : null}
-                    {(viewerRole === "owner" || viewerRole === "admin") && ticket.status === "completed" ? <button type="button" onClick={() => void voidPayment(ticket.id)} aria-label={`Anular ticket ${ticket.folio}`} className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Ban size={16} /></button> : null}
-                    <button type="button" onClick={() => void viewReceipt(ticket.id)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:bg-border"><Printer size={15} /> Ver</button>
+                    {(viewerRole === "owner" || viewerRole === "admin") && ticket.status === "completed" ? <button type="button" onClick={() => void voidPayment(ticket.id)} aria-label={`Anular ticket ${ticket.folio}`} className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-inset active:scale-95"><Ban size={16} /></button> : null}
+                    <button type="button" onClick={() => void viewReceipt(ticket.id)} className="inline-flex h-10 touch-manipulation items-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset active:scale-[0.98]"><Printer size={15} /> Ver</button>
                   </div>
                 ))}
               </div>
