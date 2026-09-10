@@ -459,7 +459,7 @@ export function CocinaView() {
           <Link
             href="/dashboard"
             aria-label="Ir al panel principal"
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-ink text-white transition-colors hover:bg-brand"
+            className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl bg-ink text-white transition-colors hover:bg-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
           >
             <ArrowLeft size={17} />
           </Link>
@@ -506,7 +506,7 @@ export function CocinaView() {
               type="button"
               onClick={() => void toggleFullscreen()}
               aria-label={isFullscreen ? "Salir de pantalla completa" : "Activar pantalla completa"}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:border-brand/50 hover:text-brand"
+              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:border-brand/50 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
             >
               {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
@@ -514,43 +514,45 @@ export function CocinaView() {
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-background px-4 py-2.5 sm:px-5">
-        <span className="mr-1 font-heading text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-          Ver
-        </span>
-        {(
-          [
-            { id: "pending" as const, label: "Pendientes", count: stats.pendientes },
-            { id: "new" as const, label: "Nuevos", count: stats.nuevos },
-            { id: "in_kitchen" as const, label: "Preparando", count: stats.preparando },
-            { id: "ready" as const, label: "Listos sin entregar", count: stats.listos },
-            { id: "urgent" as const, label: "Urgentes", count: urgentCount },
-          ] as const
-        ).map((option) => (
-          <button
-            data-tour={option.id === "pending" ? "kds-pending" : undefined}
-            key={option.id}
-            type="button"
-            onClick={() => setFilter(option.id)}
-            aria-pressed={filter === option.id}
-            className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 font-heading text-xs font-bold transition-colors ${
-              filter === option.id
-                ? "border-brand bg-brand-light text-brand"
-                : "border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-foreground"
-            }`}
-          >
-            {option.label}
-            <span className="font-data text-[10px]">{option.count}</span>
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-1.5">
+      <div className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-background px-4 py-2.5 sm:px-5">
+        <div className="pos-scroll flex min-w-0 w-full touch-pan-x items-center gap-2 overflow-x-auto overscroll-x-contain pb-0.5 sm:w-auto sm:flex-1">
+          <span className="mr-1 shrink-0 font-heading text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Ver
+          </span>
+          {(
+            [
+              { id: "pending" as const, label: "Pendientes", count: stats.pendientes },
+              { id: "new" as const, label: "Nuevos", count: stats.nuevos },
+              { id: "in_kitchen" as const, label: "Preparando", count: stats.preparando },
+              { id: "ready" as const, label: "Listos sin entregar", count: stats.listos },
+              { id: "urgent" as const, label: "Urgentes", count: urgentCount },
+            ] as const
+          ).map((option) => (
+            <button
+              data-tour={option.id === "pending" ? "kds-pending" : undefined}
+              key={option.id}
+              type="button"
+              onClick={() => setFilter(option.id)}
+              aria-pressed={filter === option.id}
+              className={`inline-flex h-10 shrink-0 touch-manipulation items-center gap-1.5 rounded-xl border px-3 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] ${
+                filter === option.id
+                  ? "border-brand bg-brand-light text-brand"
+                  : "border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-foreground"
+              }`}
+            >
+              {option.label}
+              <span className="font-data text-[10px]">{option.count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
           <PushNotificationControl topic="kitchen" />
           <button
             type="button"
             onClick={() => void fetchActiveOrders()}
             disabled={loading}
             aria-label="Actualizar pedidos de cocina"
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-brand disabled:cursor-wait disabled:opacity-50"
+            className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 disabled:cursor-wait disabled:opacity-50"
           >
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
           </button>
@@ -570,7 +572,7 @@ export function CocinaView() {
                   ? "Toca para preparar el sonido local"
                   : "Sonido local pausado"
             }
-            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
+            className={`flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 ${
               soundEnabled && soundReady
                 ? "border-success/40 bg-success-light text-success"
                 : soundEnabled
@@ -583,7 +585,7 @@ export function CocinaView() {
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overscroll-y-contain overflow-y-auto p-4 sm:p-5">
         {lastError ? (
           <div
             role="status"
@@ -595,7 +597,7 @@ export function CocinaView() {
               type="button"
               onClick={() => void fetchActiveOrders()}
               disabled={loading}
-              className="h-9 rounded-xl border border-warning/35 px-3 font-heading text-xs font-bold hover:bg-warning/10 disabled:opacity-50"
+              className="h-10 touch-manipulation rounded-xl border border-warning/35 px-3 font-heading text-xs font-bold hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] disabled:opacity-50"
             >
               Reintentar
             </button>
@@ -616,7 +618,7 @@ export function CocinaView() {
             </p>
           </div>
         ) : (
-          <div data-tour="kds-order-grid" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+          <div data-tour="kds-order-grid" className="grid min-w-0 items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
               {visibleOrders.map((order) => (
                 <OrderCard
                   key={order.id}
@@ -690,7 +692,7 @@ function UpdateNotice({
           type="button"
           onClick={onDismiss}
           aria-label="Ocultar cambios del pedido"
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-brand/70 hover:bg-brand/10 hover:text-brand"
+          className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg text-brand/70 hover:bg-brand/10 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-95"
         >
           <X size={14} />
         </button>
@@ -770,7 +772,7 @@ function OrderCard({
 
   return (
     <article
-      className={`flex flex-col overflow-hidden rounded-2xl border bg-surface shadow-card transition-shadow ${newOrderClass} ${
+      className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-surface shadow-card transition-shadow ${newOrderClass} ${
         update
           ? "kds-update-flash border-brand ring-2 ring-brand/20 shadow-[0_0_0_4px_rgba(245,20,95,0.08)]"
           : "border-border"
@@ -816,7 +818,7 @@ function OrderCard({
         {update ? (
           <UpdateNotice update={update} onDismiss={onDismissUpdate} />
         ) : null}
-        <ul className="mb-4 flex-1 space-y-3">
+        <ul className="mb-4 min-w-0 flex-1 space-y-3">
           {order.items.map((item, i) => (
             <li
               key={i}
@@ -826,14 +828,14 @@ function OrderCard({
                   : undefined
               }
             >
-              <div className="flex items-baseline gap-2">
-                <span className="font-data text-lg font-bold text-brand">{item.quantity}x</span>
-                <p className="font-heading text-base font-bold leading-snug">
+              <div className="flex min-w-0 items-baseline gap-2">
+                <span className="shrink-0 font-data text-lg font-bold text-brand">{item.quantity}x</span>
+                <p className="min-w-0 break-words font-heading text-base font-bold leading-snug">
                   {getItemName(item.menu_item_id)}
                 </p>
               </div>
               {item.selected_modifiers?.length ? (
-                <p className="ml-8 font-body text-sm text-muted-foreground">
+                <p className="ml-8 break-words font-body text-sm text-muted-foreground">
                   {item.selected_modifiers
                     .map((m) =>
                       m.description ? `${m.option} (${m.description})` : m.option
@@ -842,7 +844,7 @@ function OrderCard({
                 </p>
               ) : null}
               {item.notes ? (
-                <p className="ml-8 mt-1 rounded-lg bg-brand-light px-2 py-1 font-body text-xs font-semibold text-brand">
+                <p className="ml-8 mt-1 break-words rounded-lg bg-brand-light px-2 py-1 font-body text-xs font-semibold text-brand">
                   Nota: {item.notes}
                 </p>
               ) : null}
@@ -854,7 +856,7 @@ function OrderCard({
           <button
             type="button"
             onClick={() => onStartPreparing(order.id)}
-            className="action-warning flex h-14 w-full items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold"
+            className="action-warning flex h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.99]"
           >
             <Flame size={18} />
             Empezar a preparar
@@ -865,7 +867,7 @@ function OrderCard({
           <button
             type="button"
             onClick={() => onMarkReady(order.id)}
-            className="action-success flex h-14 w-full items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold"
+            className="action-success flex h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.99]"
           >
             <CheckCircle2 size={18} />
             Marcar como listo
