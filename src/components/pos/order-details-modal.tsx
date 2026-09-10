@@ -383,7 +383,7 @@ export function OrderDetailsModal({
                       <ChevronDown size={17} className={`shrink-0 text-success transition-transform ${savedAddressesOpen ? "rotate-180" : ""}`} />
                     </button>
                     {savedAddressesOpen ? (
-                      <div className="mt-2 grid max-h-48 gap-2 overflow-y-auto border-t border-success/15 pt-2">
+                      <div className="mt-2 grid max-h-48 touch-pan-y gap-2 overflow-y-auto overscroll-contain border-t border-success/15 pt-2">
                         {selectedCustomer.addresses.map((address) => (
                           <button
                             key={address.id}
