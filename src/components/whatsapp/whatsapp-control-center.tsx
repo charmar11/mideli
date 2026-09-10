@@ -92,7 +92,7 @@ function Toggle({
   disabled?: boolean;
 }) {
   return (
-    <label className={`flex items-center gap-4 rounded-xl bg-background p-4 ${disabled ? "opacity-55" : "cursor-pointer"}`}>
+    <label className={`flex touch-manipulation items-center gap-4 rounded-xl bg-background p-4 ${disabled ? "opacity-55" : "cursor-pointer"}`}>
       <input
         type="checkbox"
         className="peer sr-only"
@@ -100,7 +100,7 @@ function Toggle({
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
-      <span className="relative h-7 w-12 shrink-0 rounded-full bg-surface-raised ring-1 ring-border transition-colors peer-checked:bg-success after:absolute after:left-1 after:top-1 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-5" />
+      <span className="relative h-7 w-12 shrink-0 rounded-full bg-surface-raised ring-1 ring-border transition-colors peer-checked:bg-success peer-focus-visible:ring-2 peer-focus-visible:ring-brand/70 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background after:absolute after:left-1 after:top-1 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-5" />
       <span className="min-w-0 flex-1">
         <span className="block font-heading text-sm font-bold">{label}</span>
         <span className="mt-0.5 block font-body text-xs text-muted-foreground">{description}</span>
