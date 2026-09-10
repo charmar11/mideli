@@ -258,7 +258,9 @@ export function TablePicker({
               tables={tables}
               labels={labels}
               selectedTableId={pendingTableId}
-              onSelectTable={(table) => setPendingTableId(table.id)}
+              onSelectTable={chooseTable}
+              selectionMode
+              className="h-full min-h-0 w-full"
             />
 
             <aside className="flex min-h-0 flex-col rounded-2xl border border-border bg-surface p-4">
