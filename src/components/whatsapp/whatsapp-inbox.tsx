@@ -352,7 +352,7 @@ function OrderContext({
   }
 
   const content = (
-    <div className={compact ? "space-y-3 pt-3" : "whatsapp-scroll-y min-h-0 flex-1 space-y-4 overflow-y-auto p-4"}>
+    <div className={compact ? "space-y-4 pt-4" : "whatsapp-scroll-y min-h-0 flex-1 space-y-4 overflow-y-auto p-4"}>
       <div>
         <p className="font-heading text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
           Cliente
@@ -360,7 +360,7 @@ function OrderContext({
         <p className="mt-2 font-heading text-sm font-bold">{customerLabel(conversation)}</p>
         <a
           href={`tel:+${conversation.phone}`}
-          className="mt-1 inline-flex min-h-9 items-center gap-2 font-data text-xs text-muted-foreground hover:text-cream"
+          className="mt-1 inline-flex min-h-9 max-w-full items-center gap-2 whitespace-nowrap font-data text-xs text-muted-foreground hover:text-cream"
         >
           <Phone aria-hidden size={14} />
           {formatPhoneForDisplay(conversation.phone)}
@@ -392,9 +392,9 @@ function OrderContext({
         ) : null}
         <div className="mt-3 space-y-2">
           {items.length > 0 ? items.map((item, index) => (
-            <div key={`${item.name}-${index}`} className="flex items-start gap-2 font-body text-xs">
-              <span className="font-data font-bold text-brand">{item.quantity}x</span>
-              <span className="min-w-0 flex-1 text-cream">
+            <div key={`${item.name}-${index}`} className="flex min-w-0 items-start gap-2 rounded-lg bg-background/45 px-2.5 py-2 font-body text-xs">
+              <span className="shrink-0 font-data font-bold text-brand">{item.quantity}x</span>
+              <span className="min-w-0 flex-1 break-words text-cream">
                 {item.name}
                 {item.notes ? (
                   <span className="mt-0.5 block text-[11px] text-warning">Indicación: {item.notes}</span>
@@ -422,20 +422,20 @@ function OrderContext({
             </p>
           </div>
           <div className="mt-2 space-y-1 font-data text-xs tabular-nums">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground">Productos para Mideli</span>
-              <strong className="text-brand">${productTotal}</strong>
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <span className="min-w-0 flex-1 break-words text-muted-foreground">Productos para Mideli</span>
+              <strong className="shrink-0 text-brand">${productTotal}</strong>
             </div>
             {isDelivery && deliveryFee > 0 ? (
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-warning">Envío externo · lo cobra repartidor</span>
-                <strong className="text-warning">${deliveryFee}</strong>
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <span className="min-w-0 flex-1 break-words text-warning">Envío externo · lo cobra repartidor</span>
+                <strong className="shrink-0 text-warning">${deliveryFee}</strong>
               </div>
             ) : null}
             {isDelivery && deliveryFee > 0 ? (
-              <div className="flex items-center justify-between gap-3 border-t border-border pt-1.5">
-                <span className="font-heading text-[10px] font-bold uppercase text-muted-foreground">Total cliente</span>
-                <strong className="text-lg text-brand">${customerTotal}</strong>
+              <div className="flex min-w-0 items-end justify-between gap-3 border-t border-border pt-1.5">
+                <span className="min-w-0 flex-1 break-words font-heading text-[10px] font-bold uppercase text-muted-foreground">Total cliente</span>
+                <strong className="shrink-0 text-lg text-brand">${customerTotal}</strong>
               </div>
             ) : null}
           </div>
