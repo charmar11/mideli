@@ -341,7 +341,7 @@ function MobileMoreDrawer({ pathname }: { pathname: string }) {
                 </div>
                 <Drawer.Close
                   aria-label="Cerrar herramientas"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+                  className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
                 >
                   <X aria-hidden size={18} />
                 </Drawer.Close>
@@ -539,7 +539,7 @@ export function DashboardShell({
           type="button"
           onClick={startTour}
           aria-label="Abrir ayuda y tutorial"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+          className="inline-flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
         >
           <HelpCircle aria-hidden size={17} />
         </button>
@@ -548,7 +548,7 @@ export function DashboardShell({
           onClick={handleLogout}
           aria-label="Cerrar sesión"
           title={userName || "Cerrar sesión"}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+          className="inline-flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
         >
           <LogOut aria-hidden size={17} />
         </button>
@@ -572,7 +572,7 @@ export function DashboardShell({
             type="button"
             onClick={startTour}
             aria-label="Abrir ayuda y tutorial"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+            className="inline-flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
           >
             <HelpCircle aria-hidden size={17} />
           </button>
@@ -581,7 +581,7 @@ export function DashboardShell({
             onClick={handleLogout}
             aria-label="Cerrar sesión"
             title={userName || "Cerrar sesión"}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+            className="inline-flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
           >
             <LogOut aria-hidden size={17} />
           </button>
