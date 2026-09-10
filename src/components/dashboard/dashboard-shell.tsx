@@ -5,7 +5,7 @@ import { Drawer } from "@base-ui/react/drawer";
 import { Menu } from "@base-ui/react/menu";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   Boxes,
@@ -134,7 +134,7 @@ function SidebarLink({ item, pathname }: { item: NavItem; pathname: string }) {
       href={item.href}
       title={item.label}
       aria-current={active ? "page" : undefined}
-      className={`flex h-12 items-center gap-3 rounded-xl px-3 font-heading text-sm font-semibold transition-colors ${
+      className={`flex h-12 items-center gap-3 rounded-xl px-3 font-heading text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar ${
         active
           ? "bg-brand text-white shadow-md shadow-brand/25"
           : "text-sidebar-foreground/70 hover:bg-white/5 hover:text-white"
@@ -199,7 +199,7 @@ function HeaderLink({ item, pathname }: { item: NavItem; pathname: string }) {
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
-      className={`flex h-11 shrink-0 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold transition-colors ${
+      className={`flex h-11 shrink-0 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
         active
           ? "bg-brand text-white shadow-md shadow-brand/20"
           : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
@@ -289,7 +289,7 @@ function MobileLink({
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      className={`flex min-w-[4.5rem] flex-1 shrink-0 flex-col items-center justify-center gap-0.5 py-2 font-heading text-[10px] font-semibold ${
+      className={`flex min-h-16 min-w-[4.5rem] flex-1 shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 py-2 font-heading text-[10px] font-semibold focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
         active ? "text-brand" : "text-muted-foreground"
       }`}
     >
@@ -312,7 +312,7 @@ function MobileMoreDrawer({ pathname }: { pathname: string }) {
   return (
     <Drawer.Root open={open} onOpenChange={setOpen} swipeDirection="down">
       <Drawer.Trigger
-        className={`flex min-w-[4.5rem] flex-1 shrink-0 flex-col items-center justify-center gap-0.5 py-2 font-heading text-[10px] font-semibold ${
+        className={`flex min-h-16 min-w-[4.5rem] flex-1 shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 py-2 font-heading text-[10px] font-semibold focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
           active ? "text-brand" : "text-muted-foreground"
         }`}
       >
@@ -420,6 +420,16 @@ export function DashboardShell({
     ...(canUseWhatsapp ? [WHATSAPP_ITEM] : []),
     ...(isAdmin ? [ANALYTICS_ITEM] : []),
   ];
+  const operationHrefs = operationItems.map((item) => item.href).join("|");
+
+  useEffect(() => {
+    const hrefs = operationHrefs.split("|").filter(Boolean);
+    const prefetchTimer = window.setTimeout(() => {
+      hrefs.forEach((href) => router.prefetch(href));
+    }, 250);
+
+    return () => window.clearTimeout(prefetchTimer);
+  }, [operationHrefs, router]);
 
   function startTour() {
     window.dispatchEvent(new CustomEvent("mideli:start-tour"));
@@ -504,7 +514,7 @@ export function DashboardShell({
         <Link href="/dashboard" className="mr-1 shrink-0 font-brand text-2xl text-brand">
           Mideli
         </Link>
-        <nav className="flex min-w-0 flex-1 items-center gap-1" aria-label="Navegación principal">
+        <nav className="pos-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-contain" aria-label="Navegación principal">
           {operationItems.map((item) => (
             <HeaderLink key={item.href} item={item} pathname={pathname} />
           ))}
@@ -616,7 +626,7 @@ export function DashboardShell({
           className={
             isKitchenFocus
               ? "hidden"
-              : "mideli-mobile-bottom-nav flex shrink-0 items-stretch border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+              : "mideli-mobile-bottom-nav flex min-h-16 shrink-0 touch-manipulation items-stretch border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
           }
           aria-label="Navegación"
         >

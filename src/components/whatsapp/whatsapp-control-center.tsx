@@ -176,7 +176,7 @@ export function WhatsAppControlCenter({ data }: Props) {
         ) : null}
 
         <nav className={`mb-4 flex min-w-0 shrink-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5 ${mobileInboxChatOpen ? "hidden" : ""}`} aria-label="Secciones de WhatsApp">
-          <div className="flex min-w-0 flex-1 gap-1">
+          <div className="pos-scroll flex min-w-0 flex-1 touch-pan-x gap-1 overflow-x-auto overscroll-contain">
             {PRIMARY_TABS.filter((item) => !item.adminOnly || admin).map((item) => {
               const Icon = item.icon;
               return (
@@ -184,7 +184,7 @@ export function WhatsAppControlCenter({ data }: Props) {
                   key={item.id}
                   type="button"
                   onClick={() => selectTab(item.id)}
-                  className={`flex h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 font-heading text-[9px] font-bold transition-colors sm:h-11 sm:flex-none sm:flex-row sm:gap-2 sm:px-3 sm:text-xs ${tab === item.id ? "bg-brand text-white shadow-md shadow-brand/20" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
+                  className={`flex h-12 min-w-[4.75rem] shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-xl px-2 font-heading text-[10px] font-bold transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:h-11 sm:min-w-0 sm:flex-none sm:flex-row sm:gap-2 sm:px-3 sm:text-xs ${tab === item.id ? "bg-brand text-white shadow-md shadow-brand/20" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
                 >
                   <Icon aria-hidden size={16} />
                   {item.label}
@@ -193,7 +193,7 @@ export function WhatsAppControlCenter({ data }: Props) {
             })}
           </div>
           <details className="group relative shrink-0">
-            <summary className={`flex size-12 cursor-pointer list-none items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold transition-colors sm:h-11 sm:w-auto sm:px-3 [&::-webkit-details-marker]:hidden ${CONFIG_TABS.some((item) => item.id === tab) ? "bg-brand text-white" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>
+            <summary className={`flex size-12 cursor-pointer touch-manipulation list-none items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:h-11 sm:w-auto sm:px-3 [&::-webkit-details-marker]:hidden ${CONFIG_TABS.some((item) => item.id === tab) ? "bg-brand text-white" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>
               <Settings2 aria-hidden size={16} />
               <span className="hidden sm:inline">Configurar</span>
               <ChevronRight aria-hidden size={14} className="hidden rotate-90 transition-transform group-open:-rotate-90 sm:block" />
@@ -209,7 +209,7 @@ export function WhatsAppControlCenter({ data }: Props) {
                       selectTab(item.id);
                       event.currentTarget.closest("details")?.removeAttribute("open");
                     }}
-                    className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left font-heading text-xs font-bold transition-colors ${tab === item.id ? "bg-brand/15 text-brand" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
+                    className={`flex min-h-11 w-full touch-manipulation items-center gap-3 rounded-lg px-3 text-left font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${tab === item.id ? "bg-brand/15 text-brand" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
                   >
                     <Icon aria-hidden size={16} />
                     {item.label}

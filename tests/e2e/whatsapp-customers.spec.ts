@@ -4,6 +4,7 @@ import {
   exactOrderNumberFromSearch,
   normalizeWhatsappCustomerSearch,
 } from "@/lib/whatsapp/customers";
+import { whatsappActionErrorMessage } from "@/lib/whatsapp/action-errors";
 
 test.describe("directorio de clientes de WhatsApp", () => {
   test("normaliza búsquedas y reconoce un folio exacto", () => {
@@ -77,5 +78,14 @@ test.describe("directorio de clientes de WhatsApp", () => {
     );
 
     expect(customers.map((customer) => customer.id)).toEqual(["recent", "old"]);
+  });
+
+  test("conserva los mensajes seguros de una RPC aunque Supabase los devuelva como objeto", () => {
+    expect(
+      whatsappActionErrorMessage(
+        { code: "P0001", message: "No se puede eliminar este cliente porque tiene pedidos activos: 203" },
+        "No se pudo completar la operación"
+      )
+    ).toBe("No se puede eliminar este cliente porque tiene pedidos activos: 203");
   });
 });

@@ -33,6 +33,7 @@ import {
   getWhatsappCustomersAction,
   clearWhatsappConversationMessagesAction,
   deleteWhatsappCustomerAddressAction,
+  deleteWhatsappCustomerAction,
   saveWhatsappCustomerAddressAction,
   updateWhatsappCustomerAction,
 } from "@/lib/actions/whatsapp";
@@ -189,7 +190,7 @@ function CustomerList({
               key={customer.id}
               type="button"
               onClick={() => onSelect(customer)}
-              className={`mb-1.5 w-full rounded-xl p-3 text-left transition-[background-color,transform] active:scale-[0.99] ${selected ? "bg-brand/15 ring-1 ring-brand/35" : "bg-background hover:bg-surface-raised"}`}
+              className={`mb-1.5 w-full touch-manipulation rounded-xl p-3 text-left transition-[background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset active:scale-[0.99] ${selected ? "bg-brand/15 ring-1 ring-brand/35" : "bg-background hover:bg-surface-raised"}`}
             >
               <div className="flex min-w-0 items-start gap-3">
                 <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-brand text-white" : "bg-surface-raised text-muted-foreground"}`}>
@@ -268,12 +269,16 @@ function CustomerDetail({
   onBack,
   onRefresh,
   onOpenConversation,
+  onDeleteCustomer,
+  deletingCustomer,
 }: {
   detail: WhatsappCustomerDetail | null;
   loading: boolean;
   onBack: () => void;
   onRefresh: () => void;
   onOpenConversation: (conversationId: string) => void;
+  onDeleteCustomer: () => void;
+  deletingCustomer: boolean;
 }) {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -416,9 +421,22 @@ function CustomerDetail({
                 <h2 className="truncate font-heading text-lg font-bold">{customer.displayName || "Cliente sin nombre"}</h2>
                 <p className="mt-0.5 font-mono text-xs text-muted-foreground">{formatPhoneForDisplay(customer.phone)}</p>
               </div>
-              <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0" onClick={() => { setNameDraft(customer.displayName); setEditingName(true); }} aria-label="Editar nombre">
-                <Pencil size={16} />
-              </Button>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => { setNameDraft(customer.displayName); setEditingName(true); }} aria-label="Editar nombre">
+                  <Pencil size={16} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 text-danger hover:bg-danger/10 hover:text-danger"
+                  onClick={onDeleteCustomer}
+                  disabled={deletingCustomer || pending}
+                  aria-label="Eliminar cliente"
+                  title="Eliminar cliente"
+                >
+                  <Trash2 size={16} />
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -483,7 +501,7 @@ function CustomerDetail({
             <div className="space-y-2">
               {addresses.map((address) => (
                 <details key={address.id} open={address.isDefault} className="group rounded-xl bg-background">
-                  <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 p-3 [&::-webkit-details-marker]:hidden">
+                  <summary className="flex min-h-16 cursor-pointer touch-manipulation list-none items-center gap-3 p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
                     <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${address.isDefault ? "bg-gold/15 text-gold" : "bg-surface-raised text-muted-foreground"}`}>
                       {address.isDefault ? <Star size={16} /> : <Home size={16} />}
                     </span>
@@ -548,7 +566,7 @@ function CustomerDetail({
                 const orderState = whatsappOrderStatus(order.status, order.deliveryStatus);
                 return (
                   <details key={order.id} className="group rounded-xl bg-background">
-                    <summary className="grid min-h-16 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 [&::-webkit-details-marker]:hidden">
+                    <summary className="grid min-h-16 cursor-pointer touch-manipulation list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-raised font-mono text-xs font-bold text-brand">#{order.number}</span>
                       <span className="min-w-0 flex-1">
                         <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -603,6 +621,7 @@ export function WhatsappCustomers({ onOpenConversation }: Props) {
   const [listLoading, setListLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
+  const [deletingCustomer, setDeletingCustomer] = useState(false);
   const directoryRequest = useRef(0);
   const detailRequest = useRef(0);
   const selectedIdRef = useRef<string | null>(null);
@@ -671,6 +690,39 @@ export function WhatsappCustomers({ onOpenConversation }: Props) {
     }
   }
 
+  async function deleteSelectedCustomer() {
+    if (!detail) return;
+    const customer = detail.customer;
+    const name = customer.displayName || "Cliente sin nombre";
+    const orderNote = customer.orderCount > 0
+      ? `\n\nSus ${customer.orderCount} pedidos históricos se conservarán en Historial sin datos de cliente vinculados.`
+      : "";
+    const conversationNote = "\nTambién se eliminarán sus conversaciones y mensajes asociados, si existen.";
+    if (!window.confirm(
+      `¿Eliminar permanentemente a ${name}?\nTeléfono: ${formatPhoneForDisplay(customer.phone)}\n\nSe eliminarán sus domicilios.${conversationNote}${orderNote}\n\nEsta acción no se puede deshacer.`
+    )) return;
+
+    setDeletingCustomer(true);
+    const result = await deleteWhatsappCustomerAction(customer.id);
+    setDeletingCustomer(false);
+    if (!result.success) {
+      toast.error(result.error);
+      return;
+    }
+
+    toast.success(
+      result.data.ordersPreserved > 0
+        ? `Cliente eliminado. ${result.data.ordersPreserved} pedidos históricos conservados`
+        : "Cliente eliminado"
+    );
+    selectedIdRef.current = null;
+    detailCustomerIdRef.current = null;
+    setSelectedId(null);
+    setDetail(null);
+    setMobileDetail(false);
+    void loadDirectory(query, false);
+  }
+
   function refreshSelected() {
     void loadDirectory(query);
     if (selectedId) void loadDetail(selectedId);
@@ -697,6 +749,8 @@ export function WhatsappCustomers({ onOpenConversation }: Props) {
           onBack={() => setMobileDetail(false)}
           onRefresh={refreshSelected}
           onOpenConversation={onOpenConversation}
+          onDeleteCustomer={() => void deleteSelectedCustomer()}
+          deletingCustomer={deletingCustomer}
         />
       </div>
     </div>

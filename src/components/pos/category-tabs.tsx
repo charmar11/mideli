@@ -44,7 +44,7 @@ export const CategoryTabs = memo(function CategoryTabs() {
               type="button"
               onClick={() => setActiveCategory(null)}
               aria-current={activeCategory === null ? "page" : undefined}
-              className={`flex h-10 shrink-0 items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors sm:text-sm ${
+              className={`flex h-10 shrink-0 touch-manipulation items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:text-sm ${
                 activeCategory === null
                   ? "bg-brand text-white shadow-md shadow-brand/20"
                   : "bg-surface text-muted-foreground ring-1 ring-border hover:bg-surface-raised hover:text-foreground"
@@ -65,7 +65,7 @@ export const CategoryTabs = memo(function CategoryTabs() {
                   onClick={() => setActiveCategory(category.id)}
                   aria-current={isActive ? "page" : undefined}
                   title={category.name}
-                  className={`flex h-10 shrink-0 items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors sm:text-sm ${
+                  className={`flex h-10 shrink-0 touch-manipulation items-center gap-3 rounded-xl px-3.5 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:text-sm ${
                     isActive
                       ? "bg-brand text-white shadow-md shadow-brand/20"
                       : "bg-surface text-muted-foreground ring-1 ring-border hover:bg-surface-raised hover:text-foreground"

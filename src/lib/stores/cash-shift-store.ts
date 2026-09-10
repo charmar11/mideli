@@ -10,6 +10,7 @@ import type {
   CashShift,
   CashShiftDeletionImpact,
   CashShiftDetail,
+  CashMovementRecord,
 } from "@/types/cash";
 
 interface CashShiftResult<T> {
@@ -64,6 +65,16 @@ interface CashShiftState {
   }) => Promise<CashShiftResult<CashShift>>;
   listHistory: () => Promise<CashShiftResult<CashShift[]>>;
   getDetail: (shiftId: string) => Promise<CashShiftResult<CashShiftDetail>>;
+  listMovements: (input?: {
+    since?: string | null;
+    until?: string | null;
+  }) => Promise<CashShiftResult<CashMovementRecord[]>>;
+  correctMovement: (input: {
+    movementId: string;
+    correctedAmount: number;
+    reason: string;
+    authorization: string;
+  }) => Promise<CashShiftResult<{ movement_id: string; shift_id: string; corrected_amount: number; correction_status: "corrected" | "voided" }>>;
   recordAdjustment: (input: {
     shiftId: string;
     paymentMethod: "efectivo" | "tarjeta" | "transferencia" | "otro";
@@ -267,6 +278,49 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
       return { data: null, error: message(error, "No se pudo cargar el corte") };
     }
     return { data: data as CashShiftDetail, error: null };
+  },
+
+  listMovements: async ({ since = null, until = null } = {}) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("list_cash_movements", {
+      p_since: since,
+      p_until: until,
+      p_limit: 500,
+      p_offset: 0,
+    });
+    if (error) {
+      return {
+        data: null,
+        error: message(error, "No se pudieron cargar los gastos y movimientos"),
+      };
+    }
+    return { data: (data ?? []) as unknown as CashMovementRecord[], error: null };
+  },
+
+  correctMovement: async ({ movementId, correctedAmount, reason, authorization }) => {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("correct_cash_movement", {
+      p_movement_id: movementId,
+      p_corrected_amount: correctedAmount,
+      p_reason: reason,
+      p_authorization: authorization,
+    });
+    if (error || !data) {
+      return {
+        data: null,
+        error: message(error, "No se pudo corregir el movimiento"),
+      };
+    }
+    currentShiftFetchedAt = 0;
+    return {
+      data: data as {
+        movement_id: string;
+        shift_id: string;
+        corrected_amount: number;
+        correction_status: "corrected" | "voided";
+      },
+      error: null,
+    };
   },
 
   recordAdjustment: async ({

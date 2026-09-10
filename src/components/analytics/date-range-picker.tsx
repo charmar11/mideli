@@ -51,6 +51,7 @@ const MONTHS = [
 
 interface DateRangePickerProps {
   period: AnalyticsPeriod;
+  onChange?: (period: AnalyticsPeriod) => void;
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -59,18 +60,15 @@ function isSameDay(a: Date, b: Date): boolean {
 
 function calendarDays(displayMonth: Date): Date[] {
   const first = new Date(
-    displayMonth.getFullYear(),
-    displayMonth.getMonth(),
-    1,
-    12
+    Date.UTC(displayMonth.getUTCFullYear(), displayMonth.getUTCMonth(), 1, 12)
   );
-  const mondayOffset = (first.getDay() + 6) % 7;
+  const mondayOffset = (first.getUTCDay() + 6) % 7;
   const start = new Date(first);
-  start.setDate(start.getDate() - mondayOffset);
+  start.setUTCDate(start.getUTCDate() - mondayOffset);
 
   return Array.from({ length: 42 }, (_, index) => {
     const date = new Date(start);
-    date.setDate(start.getDate() + index);
+    date.setUTCDate(start.getUTCDate() + index);
     return date;
   });
 }
@@ -93,7 +91,7 @@ function viewContextLabel(view: AnalyticsPeriodView): string {
   }[view];
 }
 
-export function DateRangePicker({ period }: DateRangePickerProps) {
+export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -106,9 +104,13 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
   const today = useMemo(() => parseDateKey(todayKey), [todayKey]);
   const days = useMemo(() => calendarDays(displayMonth), [displayMonth]);
   const selectedFrom = parseDateKey(draft.from);
-  const yearBlockStart = Math.floor(displayMonth.getFullYear() / 12) * 12;
+  const yearBlockStart = Math.floor(displayMonth.getUTCFullYear() / 12) * 12;
 
   function navigate(next: AnalyticsPeriod) {
+    if (onChange) {
+      onChange(next);
+      return;
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.set("vista", next.view);
     params.set("desde", next.from);
@@ -119,8 +121,9 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
   }
 
   function openPicker() {
-    setDraft(period);
-    setDisplayMonth(parseDateKey(period.from));
+    const current = periodFromAnchor(period.view, today, today);
+    setDraft(current);
+    setDisplayMonth(parseDateKey(current.from));
     dialogRef.current?.showModal();
   }
 
@@ -129,8 +132,7 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
   }
 
   function chooseView(view: AnalyticsPeriodView, applyImmediately = false) {
-    const anchor = applyImmediately ? parseDateKey(period.from) : parseDateKey(draft.from);
-    const next = periodFromAnchor(view, anchor, today);
+    const next = periodFromAnchor(view, today, today);
     setDraft(next);
     setDisplayMonth(parseDateKey(next.from));
     if (applyImmediately) navigate(next);
@@ -159,9 +161,10 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
     draft.view === "anio"
       ? `${yearBlockStart} a ${yearBlockStart + 11}`
       : draft.view === "mes"
-        ? String(displayMonth.getFullYear())
+        ? String(displayMonth.getUTCFullYear())
         : new Intl.DateTimeFormat("es-MX", {
-            month: "long",
+          timeZone: "UTC",
+          month: "long",
             year: "numeric",
           }).format(displayMonth);
 
@@ -292,9 +295,9 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
                 className="rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
                 onClick={() => {
                   const next = new Date(displayMonth);
-                  if (draft.view === "anio") next.setFullYear(next.getFullYear() - 12);
-                  else if (draft.view === "mes") next.setFullYear(next.getFullYear() - 1);
-                  else next.setMonth(next.getMonth() - 1);
+                  if (draft.view === "anio") next.setUTCFullYear(next.getUTCFullYear() - 12);
+                  else if (draft.view === "mes") next.setUTCFullYear(next.getUTCFullYear() - 1);
+                  else next.setUTCMonth(next.getUTCMonth() - 1);
                   setDisplayMonth(next);
                 }}
                 aria-label="Anterior"
@@ -311,19 +314,19 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
                 className="rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
                 onClick={() => {
                   const next = new Date(displayMonth);
-                  if (draft.view === "anio") next.setFullYear(next.getFullYear() + 12);
-                  else if (draft.view === "mes") next.setFullYear(next.getFullYear() + 1);
-                  else next.setMonth(next.getMonth() + 1);
+                  if (draft.view === "anio") next.setUTCFullYear(next.getUTCFullYear() + 12);
+                  else if (draft.view === "mes") next.setUTCFullYear(next.getUTCFullYear() + 1);
+                  else next.setUTCMonth(next.getUTCMonth() + 1);
                   setDisplayMonth(next);
                 }}
                 disabled={
                   draft.view === "anio"
-                    ? yearBlockStart + 12 > today.getFullYear()
+                    ? yearBlockStart + 12 > today.getUTCFullYear()
                     : draft.view === "mes"
-                      ? displayMonth.getFullYear() >= today.getFullYear()
+                      ? displayMonth.getUTCFullYear() >= today.getUTCFullYear()
                       : new Date(
-                            displayMonth.getFullYear(),
-                            displayMonth.getMonth() + 1,
+                          displayMonth.getUTCFullYear(),
+                            displayMonth.getUTCMonth() + 1,
                             1,
                             12
                           ) > today
@@ -349,7 +352,7 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
                 <div className="grid grid-cols-7 gap-y-1">
                   {days.map((date) => {
                     const key = toDateKey(date);
-                    const inMonth = date.getMonth() === displayMonth.getMonth();
+                    const inMonth = date.getUTCMonth() === displayMonth.getUTCMonth();
                     const inRange = key >= draft.from && key <= draft.to;
                     const selected =
                       draft.view === "dia"
@@ -372,7 +375,7 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
                             : "hover:bg-surface-raised hover:text-foreground"
                         )}
                       >
-                        {date.getDate()}
+                        {date.getUTCDate()}
                       </button>
                     );
                   })}
@@ -383,10 +386,10 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
             {draft.view === "mes" ? (
               <div className="grid grid-cols-3 gap-2 py-2">
                 {MONTHS.map((month, index) => {
-                  const date = new Date(displayMonth.getFullYear(), index, 1, 12);
+                  const date = new Date(Date.UTC(displayMonth.getUTCFullYear(), index, 1, 12));
                   const selected =
-                    selectedFrom.getFullYear() === date.getFullYear() &&
-                    selectedFrom.getMonth() === index;
+                    selectedFrom.getUTCFullYear() === date.getUTCFullYear() &&
+                    selectedFrom.getUTCMonth() === index;
                   const future = date > today;
                   return (
                     <button
@@ -413,13 +416,13 @@ export function DateRangePicker({ period }: DateRangePickerProps) {
               <div className="grid grid-cols-3 gap-2 py-2">
                 {Array.from({ length: 12 }, (_, index) => yearBlockStart + index).map(
                   (year) => {
-                    const selected = selectedFrom.getFullYear() === year;
+                    const selected = selectedFrom.getUTCFullYear() === year;
                     return (
                       <button
                         key={year}
                         type="button"
-                        disabled={year > today.getFullYear()}
-                        onClick={() => chooseAnchor(new Date(year, 0, 1, 12))}
+                        disabled={year > today.getUTCFullYear()}
+                        onClick={() => chooseAnchor(new Date(Date.UTC(year, 0, 1, 12)))}
                         aria-pressed={selected}
                         className={cn(
                           "h-12 rounded-xl font-data text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-20",

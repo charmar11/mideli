@@ -33,6 +33,7 @@ import { isMissingWhatsappSchema } from "@/lib/whatsapp/schema-compat";
 import type { WhatsappChannelSettings } from "@/types/database";
 import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 import { normalizeAddressForComparison } from "@/lib/whatsapp/normalize";
+import { whatsappActionErrorMessage } from "@/lib/whatsapp/action-errors";
 
 const CHANNEL_ROLES = new Set(["owner", "admin", "waiter", "supervisor"]);
 const ADMIN_ROLES = new Set(["owner", "admin"]);
@@ -61,7 +62,7 @@ async function requireChannelUser(adminOnly = false) {
 }
 
 function message(error: unknown) {
-  return error instanceof Error ? error.message : "No se pudo completar la operación";
+  return whatsappActionErrorMessage(error, "No se pudo completar la operación");
 }
 
 function conversationStateAtStage(value: unknown, stage: "ordering" | "handoff") {
@@ -1234,6 +1235,38 @@ export async function getWhatsappCustomerDetailAction(
   try {
     const { admin } = await requireChannelUser(true);
     return { success: true, data: await loadWhatsappCustomerDetail(admin, customerId) };
+  } catch (error) {
+    return { success: false, error: message(error) };
+  }
+}
+
+type DeletedWhatsappCustomer = {
+  id: string;
+  displayName: string;
+  phone: string;
+  addressesDeleted: number;
+  conversationsDeleted: number;
+  messagesDeleted: number;
+  ordersPreserved: number;
+};
+
+export async function deleteWhatsappCustomerAction(
+  customerId: string
+): Promise<WhatsappActionResult<DeletedWhatsappCustomer>> {
+  try {
+    const { userId, admin } = await requireChannelUser(true);
+    const deleted = await admin.rpc("delete_whatsapp_customer", {
+      p_customer_id: customerId,
+      p_actor_id: userId,
+    });
+    if (deleted.error) throw deleted.error;
+    if (!deleted.data || typeof deleted.data !== "object") {
+      throw new Error("No se pudo confirmar la eliminación del cliente");
+    }
+
+    const data = deleted.data as unknown as DeletedWhatsappCustomer;
+    revalidatePath("/dashboard/whatsapp");
+    return { success: true, data };
   } catch (error) {
     return { success: false, error: message(error) };
   }

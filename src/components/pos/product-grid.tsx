@@ -136,7 +136,7 @@ export const ProductGrid = memo(function ProductGrid({
                 type="button"
                 data-product-id={item.id}
                 onClick={() => onProductClick(item)}
-                className={`group relative flex min-h-[9rem] flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float active:scale-[0.985] ${
+                className={`group relative flex min-h-[9rem] touch-manipulation flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition-[border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float active:scale-[0.985] ${
                   wasJustAdded
                     ? "pos-product-added border-success/70"
                     : "border-border/80"

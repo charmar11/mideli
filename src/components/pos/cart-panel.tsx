@@ -163,8 +163,9 @@ export function CartPanel({
             <button
               key={type.value}
               type="button"
+              aria-pressed={isActive}
               onClick={() => onOrderTypeChange(type.value)}
-              className={`flex h-14 flex-col items-center justify-center gap-1 rounded-xl border transition-[background-color,border-color,color,box-shadow] ${
+              className={`flex h-14 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl border transition-[background-color,border-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
                 isActive
                   ? ORDER_TYPE_VISUALS[type.value].selected
                   : "border-border bg-background text-muted-foreground hover:border-border-strong hover:text-foreground"

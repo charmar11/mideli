@@ -24,9 +24,19 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { CashShiftReport } from "@/components/cash/cash-shift-report";
+import { CashMovementsManager } from "@/components/admin/cash-movements-manager";
+import { DatePeriodPicker } from "@/components/shared/date-period-picker";
 import { useCashShiftStore } from "@/lib/stores";
 import { validateOpeningFloatCorrection } from "@/lib/cash-close";
 import { buildCashShiftShareText } from "@/lib/cash-shift-report";
+import {
+  addDays,
+  getTodayKey,
+  parseDateKey,
+  periodFromAnchor,
+  periodTimestamps,
+  type DatePeriod,
+} from "@/lib/date-period";
 import type {
   CashAuthorizer,
   CashShift,
@@ -53,13 +63,6 @@ function duration(shift: CashShift) {
   const end = shift.closed_at ? new Date(shift.closed_at).getTime() : Date.now();
   const minutes = Math.max(0, Math.floor((end - new Date(shift.opened_at).getTime()) / 60000));
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
-}
-
-function localDateValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function ShiftStatus({ shift }: { shift: CashShift }) {
@@ -94,11 +97,14 @@ export function CashHistoryManager() {
   const [shifts, setShifts] = useState<CashShift[]>([]);
   const [selected, setSelected] = useState<CashShiftDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"shifts" | "movements">("shifts");
   const [detailLoading, setDetailLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "open" | "closed" | "archived">("all");
   const [period, setPeriod] = useState<"all" | "today" | "yesterday" | "7days" | "date">("all");
-  const [selectedDate, setSelectedDate] = useState(() => localDateValue(new Date()));
+  const [selectedPeriod, setSelectedPeriod] = useState<DatePeriod>(() =>
+    periodFromAnchor("dia", parseDateKey(getTodayKey()))
+  );
   const [responsible, setResponsible] = useState("all");
   const [attention, setAttention] = useState<"all" | "balanced" | "difference" | "pending">("all");
   const [adjusting, setAdjusting] = useState(false);
@@ -136,9 +142,10 @@ export function CashHistoryManager() {
   }, [listHistory]);
 
   useEffect(() => {
+    if (activeTab !== "shifts") return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [activeTab, load]);
 
   async function choose(shift: CashShift) {
     setDetailLoading(true);
@@ -376,17 +383,25 @@ export function CashHistoryManager() {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    const customDay = selectedDate ? new Date(`${selectedDate}T00:00:00`) : null;
-    const customDayEnd = customDay ? new Date(customDay) : null;
-    customDayEnd?.setDate(customDayEnd.getDate() + 1);
+    const today = parseDateKey(getTodayKey());
+    const todayKey = getTodayKey();
+    const rangePeriod = {
+      view: "dia" as const,
+      from: addDays(today, -6).toISOString().slice(0, 10),
+      to: todayKey,
+    };
+    const selectedRange =
+      period === "today"
+        ? periodTimestamps(periodFromAnchor("dia", today))
+        : period === "yesterday"
+          ? periodTimestamps(periodFromAnchor("dia", addDays(today, -1), today))
+          : period === "7days"
+            ? periodTimestamps(rangePeriod)
+            : period === "date"
+              ? periodTimestamps(selectedPeriod)
+              : null;
+    const rangeStart = selectedRange ? new Date(selectedRange.desde) : null;
+    const rangeEnd = selectedRange ? new Date(selectedRange.hasta) : null;
 
     return shifts.filter((shift) => {
       const isArchived = Boolean(shift.archived_at);
@@ -397,10 +412,7 @@ export function CashHistoryManager() {
       const openedAt = new Date(shift.opened_at);
       const matchesPeriod =
         period === "all" ||
-        (period === "today" && openedAt >= today && openedAt < tomorrow) ||
-        (period === "yesterday" && openedAt >= yesterday && openedAt < today) ||
-        (period === "7days" && openedAt >= sevenDaysAgo && openedAt < tomorrow) ||
-        (period === "date" && customDay && customDayEnd && openedAt >= customDay && openedAt < customDayEnd);
+        (rangeStart && rangeEnd && openedAt >= rangeStart && openedAt <= rangeEnd);
       const difference = Math.abs(Number(shift.difference ?? 0));
       const matchesAttention =
         attention === "all" ||
@@ -411,7 +423,7 @@ export function CashHistoryManager() {
       const matchesResponsible = responsible === "all" || shiftResponsible === responsible;
       return matchesStatus && matchesPeriod && matchesAttention && matchesResponsible && (!query || searchable.includes(query));
     });
-  }, [attention, period, responsible, search, selectedDate, shifts, status]);
+  }, [attention, period, responsible, search, selectedPeriod, shifts, status]);
 
   const responsibles = useMemo(
     () => Array.from(new Set(shifts.map((shift) => shift.closed_by_name ?? shift.opened_by_name))).sort((a, b) => a.localeCompare(b, "es")),
@@ -436,13 +448,18 @@ export function CashHistoryManager() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <header className="flex min-h-16 items-center gap-3 border-b border-border bg-surface px-3 py-2 sm:px-6 print:hidden">
-        <Link href="/dashboard/mesero" aria-label="Volver al punto de venta" className="flex h-11 w-11 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground hover:text-foreground"><ArrowLeft size={19} /></Link>
+        <Link href="/dashboard/mesero" aria-label="Volver al punto de venta" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl bg-surface-raised text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"><ArrowLeft size={19} /></Link>
         <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-light text-brand"><Landmark size={20} /></span>
         <div className="min-w-0 flex-1"><h1 className="font-heading text-lg font-black">Caja y cortes</h1><p className="truncate font-body text-xs text-muted-foreground">Turnos, diferencias y auditoría de cobros</p></div>
-        <button type="button" onClick={() => void load()} aria-label="Actualizar" className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground"><RefreshCw size={17} /></button>
+        <button type="button" onClick={() => void load()} aria-label="Actualizar" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-border text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"><RefreshCw size={17} /></button>
       </header>
 
-      <main className="mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-6">
+      <nav className="pos-scroll mx-auto flex max-w-[1500px] touch-pan-x gap-2 overflow-x-auto overscroll-contain px-3 pt-3 sm:px-5 lg:px-6 print:hidden" aria-label="Secciones de caja">
+        <button type="button" onClick={() => setActiveTab("shifts")} className={`shrink-0 touch-manipulation rounded-xl px-4 py-3 font-heading text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${activeTab === "shifts" ? "bg-brand text-white" : "bg-surface text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>Turnos y cortes</button>
+        <button type="button" onClick={() => setActiveTab("movements")} className={`shrink-0 touch-manipulation rounded-xl px-4 py-3 font-heading text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${activeTab === "movements" ? "bg-brand text-white" : "bg-surface text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>Gastos y movimientos</button>
+      </nav>
+
+      {activeTab === "movements" ? <CashMovementsManager /> : <main className="mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-6">
         <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4 print:hidden">
           <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Cortes visibles</p><p className="mt-2 font-data text-2xl font-black">{summary.count}</p></div>
           <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Venta neta</p><p className="mt-2 font-data text-2xl font-black text-gold">{money(summary.net)}</p></div>
@@ -460,7 +477,7 @@ export function CashHistoryManager() {
                     key={value}
                     type="button"
                     onClick={() => setStatus(value)}
-                    className={`h-9 rounded-lg font-heading text-[11px] font-bold ${status === value ? "bg-brand text-white" : "text-muted-foreground"}`}
+                    className={`h-9 touch-manipulation rounded-lg font-heading text-[11px] font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${status === value ? "bg-brand text-white" : "text-muted-foreground"}`}
                   >
                     {value === "all" ? "Todos" : value === "open" ? "Abiertos" : value === "closed" ? "Cerrados" : `Archivados${archivedCount > 0 ? ` ${archivedCount}` : ""}`}
                   </button>
@@ -469,17 +486,17 @@ export function CashHistoryManager() {
               <div className="grid grid-cols-2 gap-2">
                 <label className="min-w-0">
                   <span className="mb-1 block font-data text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Periodo</span>
-                  <select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-background px-2 font-heading text-xs font-bold outline-none focus:border-brand">
+                  <select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-background px-2 font-heading text-xs font-bold outline-none focus:border-brand focus-visible:ring-2 focus-visible:ring-brand">
                     <option value="all">Todo el historial</option>
                     <option value="today">Hoy</option>
                     <option value="yesterday">Ayer</option>
                     <option value="7days">Últimos 7 días</option>
-                    <option value="date">Elegir fecha</option>
+                    <option value="date">Elegir periodo</option>
                   </select>
                 </label>
                 <label className="min-w-0">
                   <span className="mb-1 block font-data text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Revisión</span>
-                  <select value={attention} onChange={(event) => setAttention(event.target.value as typeof attention)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-background px-2 font-heading text-xs font-bold outline-none focus:border-brand">
+                  <select value={attention} onChange={(event) => setAttention(event.target.value as typeof attention)} className="h-10 w-full min-w-0 rounded-xl border border-border bg-background px-2 font-heading text-xs font-bold outline-none focus:border-brand focus-visible:ring-2 focus-visible:ring-brand">
                     <option value="all">Todos</option>
                     <option value="balanced">Cuadrados</option>
                     <option value="difference">Con diferencia</option>
@@ -488,14 +505,11 @@ export function CashHistoryManager() {
                 </label>
               </div>
               {period === "date" ? (
-                <label className="block">
-                  <span className="mb-1 block font-data text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Fecha del corte</span>
-                  <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="h-11 w-full rounded-xl border border-brand/35 bg-background px-3 font-data text-sm font-bold text-foreground outline-none focus:border-brand" />
-                </label>
+                <DatePeriodPicker period={selectedPeriod} onChange={setSelectedPeriod} />
               ) : null}
               <label className="block">
                 <span className="mb-1 block font-data text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Responsable</span>
-                <select value={responsible} onChange={(event) => setResponsible(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 font-heading text-xs font-bold outline-none focus:border-brand">
+                <select value={responsible} onChange={(event) => setResponsible(event.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 font-heading text-xs font-bold outline-none focus:border-brand focus-visible:ring-2 focus-visible:ring-brand">
                   <option value="all">Todo el equipo</option>
                   {responsibles.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
@@ -503,7 +517,7 @@ export function CashHistoryManager() {
             </div>
             <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-2">
               {loading ? <div className="flex h-48 items-center justify-center"><Loader2 className="animate-spin text-brand" /></div> : filtered.length === 0 ? <div className="flex h-48 flex-col items-center justify-center text-center"><ReceiptText className="mb-2 text-muted-foreground/40" /><p className="font-heading text-sm font-bold">Sin cortes en este filtro</p></div> : filtered.map((shift) => (
-                <button key={shift.id} type="button" onClick={() => void choose(shift)} className="mb-2 flex w-full items-start gap-3 rounded-xl border border-transparent bg-background/60 p-3 text-left transition-colors hover:border-brand/35">
+                <button key={shift.id} type="button" onClick={() => void choose(shift)} className="mb-2 flex w-full touch-manipulation items-start gap-3 rounded-xl border border-transparent bg-background/60 p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:border-brand/35">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised font-data text-sm font-black">#{shift.number}</span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2"><strong className="truncate font-heading text-sm">{shift.opened_by_name}</strong><ShiftStatus shift={shift} /></span>
@@ -562,7 +576,7 @@ export function CashHistoryManager() {
             ) : <div className="flex flex-1 flex-col items-center justify-center text-center"><span className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-raised text-muted-foreground"><Landmark size={25} /></span><h2 className="font-heading text-base font-bold">Selecciona un corte</h2><p className="mt-1 font-body text-sm text-muted-foreground">Aquí verás el detalle completo y su auditoría.</p></div>}
           </section>
         </div>
-      </main>
+      </main>}
 
       {editingOpeningFloat && selected?.status === "open" ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/80 sm:items-center sm:p-4">

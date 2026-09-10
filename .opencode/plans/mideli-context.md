@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-09-02
+Actualizado: 2026-09-07
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para cualquier agente de IA, no solo OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -169,6 +169,7 @@ Caja compartida del local con apertura y cierre explícitos (migración `2026080
 - Los pedidos guardan snapshot de ubicación (zona y mesa) para mostrarla en Estado, Historial, cuentas, cobro y tickets aunque el plano cambie después (`src/lib/order-location.ts`).
 - El conteo por denominaciones tiene botones grandes para aumentar y disminuir. El cierre no se descarta al tocar fuera del modal.
 - Desde la migración `20260906160106_cash_shift_digital_close.sql`, quien cierra un turno puede consultar su corte digital durante las dos horas siguientes. Al terminar el cierre, la interfaz carga el detalle persistido con ventas por tipo de servicio, métodos de pago, arqueo, pendientes y auditoría. El mismo reporte se reutiliza en `/settings/caja`, cuyo historial permite filtrar por periodo y por cortes cuadrados, con diferencia o con pendientes.
+- Desde `20260907090000_cash_movements_management.sql`, `/settings/caja` incluye la pestaña `Gastos y movimientos` para owner/admin. Permite consultar gastos, retiros, fondos y correcciones por mes, semana y día, además de tipo, estado y búsqueda; corregir un importe o anularlo exige autorización con PIN. El movimiento original nunca se borra: `cash_movement_corrections` conserva el importe, motivo, solicitante y autorizador, y los totales del turno usan el importe corregido. La agrupación usa la zona horaria operativa de Hermosillo y no distingue todavía entre gasto externo y salida de caja.
 - El selector de mesas usa la composición compacta hasta 1023 px. En tablet vertical, el plano ya no oculta el resumen ni la confirmación; la acción permanece visible y muestra el nombre de la mesa seleccionada.
 
 ### Cobro unificado y tickets
@@ -289,6 +290,8 @@ El layout del dashboard cambia la navegación según el tamaño:
 | `src/components/payments/payment-flow.tsx` | Flujo táctil de cobro: descuento, división, propina, métodos combinados |
 | `src/components/payments/payment-method-correction-dialog.tsx` | Corrección auditada de métodos de pago y autorización por PIN para mesero |
 | `src/components/cash/cash-shift-control.tsx` y `src/lib/stores/cash-shift-store.ts` | Apertura, movimientos y cierre de caja |
+| `src/components/admin/cash-movements-manager.tsx` | Consulta, corrección y anulación auditada de gastos y movimientos |
+| `src/lib/cash-movement-periods.ts` | Agrupación de movimientos por mes, semana y día en la zona horaria del local |
 | `src/components/license-heartbeat.tsx`, `src/lib/license.ts`, `src/lib/license-server.ts` | Vigencia de licencia en cliente y servidor |
 | `src/proxy.ts` | Sesión, licencia y control de rutas por rol (reemplaza a `src/middleware.ts`) |
 | `src/lib/push-notifications.ts`, `src/components/dashboard/push-notification-control.tsx`, `src/components/dashboard/ready-order-notifier.tsx` | Suscripciones Push por dispositivo, temas de cocina y pedidos listos, y aviso sonoro |
@@ -342,11 +345,11 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- El repositorio local contiene 54 migraciones, hasta `20260906160106_cash_shift_digital_close.sql`. Verificado el 2026-09-06 con `npx supabase migration list`; la migración del corte digital se aplicó al proyecto remoto y debe confirmarse nuevamente con `npx supabase db push --linked --dry-run` antes de cerrar esta tarea.
+- El repositorio local contiene 55 migraciones, hasta `20260907090000_cash_movements_management.sql`. La migración de gastos y correcciones se aplicó al proyecto remoto y `npx supabase db push --linked --dry-run` confirmó que la base quedó al día el 2026-09-07.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
-`profiles`, `categories`, `menu_items`, `orders`, `order_items`, `order_status_log`, `order_folio_counter`, `table_zones`, `restaurant_tables`, `table_map_labels`, `inventory_items`, `inventory_recipes`, `inventory_movements`, `inventory_lots`, `inventory_receipts`, `inventory_receipt_lines`, `inventory_purchase_orders`, `inventory_purchase_order_lines`, `inventory_counts`, `inventory_count_lines`, `payment_transactions`, `payment_tenders`, `payment_order_allocations`, `payment_item_allocations`, `cash_shifts`, `cash_movements`, `cash_shift_adjustments`, `cash_shift_opening_float_changes`, `cash_shift_pending_orders`, `app_license`, `push_subscriptions`, `user_onboarding_progress`.
+`profiles`, `categories`, `menu_items`, `orders`, `order_items`, `order_status_log`, `order_folio_counter`, `table_zones`, `restaurant_tables`, `table_map_labels`, `inventory_items`, `inventory_recipes`, `inventory_movements`, `inventory_lots`, `inventory_receipts`, `inventory_receipt_lines`, `inventory_purchase_orders`, `inventory_purchase_order_lines`, `inventory_counts`, `inventory_count_lines`, `payment_transactions`, `payment_tenders`, `payment_order_allocations`, `payment_item_allocations`, `cash_shifts`, `cash_movements`, `cash_movement_corrections`, `cash_shift_adjustments`, `cash_shift_opening_float_changes`, `cash_shift_pending_orders`, `app_license`, `push_subscriptions`, `user_onboarding_progress`.
 
 Enums:
 
@@ -398,7 +401,7 @@ La política es de privacidad estricta: no recolecta identidad, cookies, headers
 
 ### Control diario y rentabilidad
 
-Analíticas incorpora un centro de control para owner/admin con alertas de caja, cocina, inventario, cobertura de recetas, productos sin movimiento y márgenes estimados. El reporte del día anterior puede enviarse a un único correo reemplazable, con una ruta cron protegida y registro idempotente por fecha. Para entregar a correos distintos a la cuenta de prueba, el proveedor necesita un remitente verificado. Antes de desplegar esta fase, Vercel debe tener `CRON_SECRET` configurado.
+Analíticas incorpora un centro de control para owner/admin con alertas de caja, cocina, inventario, cobertura de recetas, productos sin movimiento y márgenes estimados. El selector de fechas inicia en el día actual cuando no hay periodo explícito, permite cambiar a semana, mes o año tomando como ancla el día actual y usa la zona horaria operativa de Hermosillo para evitar desplazamientos entre dispositivos. El mismo selector reutilizable se comparte con Historial de ventas y Caja/cortes; Gastos y movimientos conserva su navegación mes → semana → día sobre la misma lógica. Las funciones comunes viven en `src/lib/date-period.ts` y el control visual se expone como `DatePeriodPicker`. El reporte del día anterior puede enviarse a un único correo reemplazable, con una ruta cron protegida y registro idempotente por fecha. Para entregar a correos distintos a la cuenta de prueba, el proveedor necesita un remitente verificado. Antes de desplegar esta fase, Vercel debe tener `CRON_SECRET` configurado.
 
 La disponibilidad manual de productos fue eliminada por decisión del dueño. Menú, Cocina y POS ya no muestran ni bloquean estados Disponible, Limitado o Agotado. El inventario se descuenta por recetas y puede quedar negativo.
 

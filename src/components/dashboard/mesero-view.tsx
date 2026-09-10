@@ -650,7 +650,7 @@ export function MeseroView() {
             type="button"
             aria-pressed={mode === "pos"}
             onClick={handleStartNewOrder}
-            className={`inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 font-heading text-xs font-bold transition-colors sm:h-10 sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
+            className={`inline-flex h-10 min-w-0 flex-1 touch-manipulation items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:h-10 sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
               mode === "pos"
                 ? "bg-brand text-white shadow-md shadow-brand/25"
                 : "text-muted-foreground hover:text-foreground"
@@ -665,7 +665,7 @@ export function MeseroView() {
             type="button"
             aria-pressed={mode === "status"}
             onClick={() => setMode("status")}
-            className={`inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 font-heading text-xs font-bold transition-colors sm:h-10 sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
+            className={`inline-flex h-10 min-w-0 flex-1 touch-manipulation items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:h-10 sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
               mode === "status"
                 ? "bg-brand text-white shadow-md shadow-brand/25"
                 : "text-muted-foreground hover:text-foreground"
@@ -683,7 +683,7 @@ export function MeseroView() {
             type="button"
             aria-pressed={mode === "history"}
             onClick={() => setMode("history")}
-            className={`inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 font-heading text-xs font-bold transition-colors sm:h-10 sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
+            className={`inline-flex h-10 min-w-0 flex-1 touch-manipulation items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:h-10 sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
               mode === "history"
                 ? "bg-brand text-white shadow-md shadow-brand/25"
                 : "text-muted-foreground hover:text-foreground"
@@ -772,7 +772,7 @@ export function MeseroView() {
                 : ""
             }`}
             style={{ bottom: "calc(4.75rem + env(safe-area-inset-bottom))" }}
-            className="mobile-cart-dock fixed inset-x-3 z-30 flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-brand px-4 text-white shadow-float active:scale-[0.985] md:inset-x-auto md:right-4 md:min-w-72 xl:hidden"
+            className="mobile-cart-dock fixed inset-x-3 z-30 flex h-14 touch-manipulation items-center gap-3 rounded-2xl border border-white/10 bg-brand px-4 text-white shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.985] md:inset-x-auto md:right-4 md:min-w-72 xl:hidden"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15">
               <ShoppingBag size={19} />

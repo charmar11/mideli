@@ -117,7 +117,7 @@ export function TablePicker({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground hover:text-foreground"
+            className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl bg-surface-raised text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"
             aria-label="Cerrar selector de mesa"
           >
             <X size={19} />
@@ -139,7 +139,7 @@ export function TablePicker({
                         type="button"
                         aria-pressed={active}
                         onClick={() => chooseMobileZone(zone)}
-                        className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 text-left transition-colors ${
+                        className={`flex min-h-11 min-w-0 touch-manipulation items-center justify-between gap-2 rounded-xl border px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
                           active ? "border-brand bg-brand-light text-brand" : "border-border bg-surface text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -157,7 +157,7 @@ export function TablePicker({
                 type="button"
                 aria-pressed={mobileView === "map"}
                 onClick={() => setMobileView("map")}
-                className={`flex min-h-11 items-center justify-center gap-2 rounded-lg font-heading text-xs font-bold transition-colors ${mobileView === "map" ? "bg-brand text-white" : "text-muted-foreground hover:text-foreground"}`}
+                className={`flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-lg font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${mobileView === "map" ? "bg-brand text-white" : "text-muted-foreground hover:text-foreground"}`}
               >
                 <Map size={16} /> Mapa
               </button>
@@ -165,7 +165,7 @@ export function TablePicker({
                 type="button"
                 aria-pressed={mobileView === "list"}
                 onClick={() => setMobileView("list")}
-                className={`flex min-h-11 items-center justify-center gap-2 rounded-lg font-heading text-xs font-bold transition-colors ${mobileView === "list" ? "bg-brand text-white" : "text-muted-foreground hover:text-foreground"}`}
+                className={`flex min-h-11 touch-manipulation items-center justify-center gap-2 rounded-lg font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${mobileView === "list" ? "bg-brand text-white" : "text-muted-foreground hover:text-foreground"}`}
               >
                 <List size={16} /> Lista
               </button>
@@ -195,7 +195,7 @@ export function TablePicker({
                             type="button"
                             aria-pressed={active}
                             onClick={() => chooseTable(table)}
-                            className={`flex min-h-14 items-center justify-between gap-3 rounded-xl border px-3 text-left transition-colors ${
+                            className={`flex min-h-14 touch-manipulation items-center justify-between gap-3 rounded-xl border px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
                               active ? "border-brand bg-brand-light text-brand" : "border-border bg-background text-foreground hover:border-brand/60"
                             }`}
                           >
@@ -234,7 +234,7 @@ export function TablePicker({
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-14 rounded-xl border border-border px-3 font-heading text-sm font-bold text-muted-foreground hover:text-foreground"
+                className="min-h-14 touch-manipulation rounded-xl border border-border px-3 font-heading text-sm font-bold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"
               >
                 Cancelar
               </button>
@@ -242,7 +242,7 @@ export function TablePicker({
                 type="button"
                 disabled={!selectedTable}
                 onClick={() => selectedTable && onConfirm(selectedTable)}
-                className="action-success inline-flex min-h-14 items-center justify-center gap-2 rounded-xl px-3 font-heading text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+                className="action-success inline-flex min-h-14 touch-manipulation items-center justify-center gap-2 rounded-xl px-3 font-heading text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Check size={18} />
                 {selectedTable ? `Confirmar ${selectedTable.name}` : "Confirmar mesa"}
@@ -282,7 +282,7 @@ export function TablePicker({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="min-h-12 flex-1 rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground hover:text-foreground"
+                  className="min-h-12 flex-1 touch-manipulation rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"
                 >
                   Cancelar
                 </button>
@@ -290,7 +290,7 @@ export function TablePicker({
                   type="button"
                   disabled={!selectedTable}
                   onClick={() => selectedTable && onConfirm(selectedTable)}
-                  className="action-success inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+                  className="action-success inline-flex min-h-12 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl font-heading text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Check size={16} /> Confirmar
                 </button>

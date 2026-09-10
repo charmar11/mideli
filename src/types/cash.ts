@@ -6,6 +6,7 @@ export type CashMovementType =
   | "expense"
   | "correction";
 export type CashDirection = "in" | "out";
+export type CashMovementCorrectionStatus = "active" | "corrected" | "voided";
 export type CashAuthorizationAction =
   | "cash_movement"
   | "close_difference"
@@ -89,6 +90,20 @@ export interface CashMovement {
   authorized_by: string;
   authorized_by_name: string;
   created_at: string;
+}
+
+export interface CashMovementRecord extends CashMovement {
+  shift_number: number;
+  shift_status: CashShiftStatus;
+  shift_archived_at: string | null;
+  corrected_amount: number | null;
+  correction_reason: string | null;
+  corrected_by: string | null;
+  corrected_by_name: string | null;
+  correction_authorized_by: string | null;
+  correction_authorized_by_name: string | null;
+  corrected_at: string | null;
+  correction_status: CashMovementCorrectionStatus;
 }
 
 export interface CashPendingOrder {

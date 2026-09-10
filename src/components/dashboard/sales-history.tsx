@@ -8,8 +8,6 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  ChevronLeft,
-  ChevronRight as ChevronRightIcon,
   CircleAlert,
   CreditCard,
   ExternalLink,
@@ -56,6 +54,14 @@ import {
 import { useCashShiftStore } from "@/lib/stores";
 import { PaymentMethodCorrectionDialog } from "@/components/payments/payment-method-correction-dialog";
 import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import { DatePeriodPicker } from "@/components/shared/date-period-picker";
+import {
+  getTodayKey,
+  parseDateKey,
+  periodFromAnchor,
+  periodTimestamps,
+  type DatePeriod,
+} from "@/lib/date-period";
 import {
   DELIVERY_STATUS_VISUALS,
   ORDER_STATUS_VISUALS,
@@ -108,22 +114,6 @@ const DELIVERY_STATUS_META: Record<
   driver_on_way: { label: "En camino", className: DELIVERY_STATUS_VISUALS.driver_on_way },
   customer_received: { label: "Cliente recibió", className: DELIVERY_STATUS_VISUALS.customer_received },
 };
-
-function toInputDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getDateRange(dateValue: string) {
-  const selected = new Date(`${dateValue}T12:00:00`);
-  const start = new Date(selected);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(selected);
-  end.setHours(23, 59, 59, 999);
-  return { desde: start.toISOString(), hasta: end.toISOString() };
-}
 
 function formatMoney(value: number) {
   return `$${value.toLocaleString("es-MX", {
@@ -723,7 +713,9 @@ function OrderDetail({
 }
 
 export function SalesHistory() {
-  const [selectedDate, setSelectedDate] = useState(() => toInputDate(new Date()));
+  const [period, setPeriod] = useState<DatePeriod>(() =>
+    periodFromAnchor("dia", parseDateKey(getTodayKey()))
+  );
   const [orders, setOrders] = useState<SalesHistoryOrder[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<SalesHistoryOrder | null>(null);
   const [search, setSearch] = useState("");
@@ -750,8 +742,8 @@ export function SalesHistory() {
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
 
   const range = useMemo(
-    () => getDateRange(selectedDate),
-    [selectedDate]
+    () => periodTimestamps(period),
+    [period]
   );
 
   const loadHistory = useCallback(async () => {
@@ -1027,7 +1019,7 @@ export function SalesHistory() {
           <section className="rounded-2xl border border-border bg-surface p-3 shadow-card sm:p-4">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-wrap items-center gap-2">
-                <DayCalendar value={selectedDate} onChange={setSelectedDate} />
+                <DatePeriodPicker period={period} onChange={setPeriod} />
               </div>
 
               <div className="relative min-w-0 xl:w-72">
@@ -1306,164 +1298,6 @@ export function SalesHistory() {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function parseCalendarDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function formatCalendarDate(value: string) {
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(parseCalendarDate(value));
-}
-
-function DayCalendar({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const selectedDate = parseCalendarDate(value);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const [open, setOpen] = useState(false);
-  const [viewMonth, setViewMonth] = useState(
-    () => new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1)
-  );
-  const monthStart = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
-  const firstWeekday = (monthStart.getDay() + 6) % 7;
-  const daysInMonth = new Date(
-    viewMonth.getFullYear(),
-    viewMonth.getMonth() + 1,
-    0
-  ).getDate();
-  const canGoNext = monthStart < currentMonth;
-
-  function selectDay(day: number) {
-    const date = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day);
-    if (date > today) return;
-    onChange(toInputDate(date));
-    setOpen(false);
-  }
-
-  function goToToday() {
-    onChange(toInputDate(today));
-    setViewMonth(currentMonth);
-    setOpen(false);
-  }
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-background px-3.5 font-heading text-xs font-bold text-foreground transition-colors hover:border-border-strong focus:border-brand focus:outline-none"
-      >
-        <CalendarDays size={16} className="text-brand" />
-        <span>{formatCalendarDate(value)}</span>
-      </button>
-
-      {open ? (
-        <div
-          role="dialog"
-          aria-label="Seleccionar día del historial"
-          className="absolute left-0 top-full z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-surface p-3 shadow-float"
-        >
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <p className="font-heading text-sm font-bold capitalize">
-              {new Intl.DateTimeFormat("es-MX", {
-                month: "long",
-                year: "numeric",
-              }).format(viewMonth)}
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                aria-label="Mes anterior"
-                onClick={() =>
-                  setViewMonth(
-                    new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1)
-                  )
-                }
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-raised hover:text-foreground"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                type="button"
-                aria-label="Mes siguiente"
-                disabled={!canGoNext}
-                onClick={() =>
-                  setViewMonth(
-                    new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1)
-                  )
-                }
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                <ChevronRightIcon size={16} />
-              </button>
-            </div>
-          </div>
-
-          <div className="mb-1 grid grid-cols-7 text-center">
-            {["lu", "ma", "mi", "ju", "vi", "sá", "do"].map((day) => (
-              <span key={day} className="py-1 font-data text-[10px] uppercase text-muted-foreground">
-                {day}
-              </span>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: firstWeekday }).map((_, index) => (
-              <span key={`empty-${index}`} className="h-9" aria-hidden="true" />
-            ))}
-            {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => {
-              const date = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day);
-              const dateValue = toInputDate(date);
-              const isSelected = dateValue === value;
-              const isToday = date.getTime() === today.getTime();
-              const isFuture = date > today;
-              return (
-                <button
-                  key={dateValue}
-                  type="button"
-                  disabled={isFuture}
-                  aria-label={`${day} de ${new Intl.DateTimeFormat("es-MX", { month: "long" }).format(date)}`}
-                  aria-pressed={isSelected}
-                  onClick={() => selectDay(day)}
-                  className={`flex h-9 items-center justify-center rounded-lg font-data text-xs transition-colors ${
-                    isSelected
-                      ? "bg-brand font-bold text-white"
-                      : isToday
-                        ? "bg-brand-light font-bold text-brand"
-                        : "text-foreground hover:bg-surface-raised"
-                  } ${isFuture ? "cursor-not-allowed opacity-25" : ""}`}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={goToToday}
-            className="mt-3 h-9 w-full rounded-lg border border-border bg-background font-heading text-xs font-bold text-muted-foreground hover:border-brand hover:text-brand"
-          >
-            Ir a hoy
-          </button>
         </div>
       ) : null}
     </div>

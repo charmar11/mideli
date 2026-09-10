@@ -419,7 +419,7 @@ export function OrderDetailsModal({
                   <button
                     type="button"
                     onClick={() => setTablePickerOpen(true)}
-                    className="flex h-12 w-full items-center justify-between rounded-xl border border-border bg-background px-3 text-left transition-colors hover:border-brand/60"
+                    className="flex h-12 w-full touch-manipulation items-center justify-between rounded-xl border border-border bg-background px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:border-brand/60"
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <UtensilsCrossed size={17} className={selectedTable ? "text-brand" : "text-muted-foreground"} />
@@ -487,7 +487,7 @@ export function OrderDetailsModal({
                       type="button"
                       onClick={onQuoteDelivery}
                       disabled={deliveryQuoteLoading || deliveryAddress.trim().length < 8}
-                      className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-success px-3 font-heading text-sm font-bold text-white transition-colors hover:bg-success/85 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-success px-3 font-heading text-sm font-bold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:bg-success/85 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <MapPin size={16} />
                       {deliveryQuoteLoading ? "Localizando domicilio..." : "Buscar y confirmar domicilio"}
@@ -566,7 +566,7 @@ export function OrderDetailsModal({
                   type="button"
                   onClick={onPayAndSubmit}
                   disabled={isSubmitting || !canSubmit}
-                  className="order-2 flex min-h-16 min-w-0 items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 font-heading text-sm font-bold transition-colors hover:bg-white/15 active:scale-[0.99] disabled:opacity-60 sm:order-1 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
+                  className="order-2 flex min-h-16 min-w-0 touch-manipulation items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 font-heading text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-white/15 active:scale-[0.99] disabled:opacity-60 sm:order-1 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
                 >
                   <CreditCard size={18} /> Cobrar y enviar
                 </button>
@@ -575,7 +575,7 @@ export function OrderDetailsModal({
                 type="button"
                 onClick={onSubmit}
                 disabled={isSubmitting || !canSubmit}
-                className="action-success order-1 flex min-h-16 min-w-0 items-center justify-center gap-2 rounded-2xl px-4 font-heading text-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 sm:order-2 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
+                className="action-success order-1 flex min-h-16 min-w-0 touch-manipulation items-center justify-center gap-2 rounded-2xl px-4 font-heading text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 sm:order-2 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
               >
                 {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                 {isEditing ? "Guardar cambios" : "Enviar a cocina"}

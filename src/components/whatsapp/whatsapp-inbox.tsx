@@ -225,7 +225,7 @@ function ConversationList({
               type="button"
               onClick={() => onFilter(item.id)}
               aria-pressed={filter === item.id}
-              className={`flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl px-3 font-heading text-[11px] font-bold transition-colors sm:h-10 sm:min-h-0 sm:shrink-0 sm:px-3 ${
+              className={`flex min-h-11 min-w-0 touch-manipulation items-center justify-between gap-2 rounded-xl px-3 font-heading text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:h-10 sm:min-h-0 sm:shrink-0 sm:px-3 ${
                 filter === item.id
                   ? `${filterTone(item.id)} ring-1 ring-current/15`
                   : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
@@ -260,7 +260,7 @@ function ConversationList({
               type="button"
               onClick={() => onSelect(conversation)}
               aria-current={selected ? "true" : undefined}
-              className={`mb-1.5 w-full rounded-xl border border-transparent p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 active:scale-[0.99] sm:p-3 ${
+              className={`mb-1.5 w-full touch-manipulation rounded-xl border border-transparent p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset active:scale-[0.99] sm:p-3 ${
                 selected
                   ? "border-brand/30 bg-brand/12 shadow-[inset_3px_0_0_var(--brand)]"
                 : conversation.status === "handoff"
@@ -653,7 +653,7 @@ function ChatPanel({
         ) : null}
 
         <details className="group relative shrink-0">
-          <summary className="flex size-11 cursor-pointer list-none items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <summary className="flex size-11 cursor-pointer touch-manipulation list-none items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
             <MoreVertical aria-hidden size={18} />
             <span className="sr-only">Más acciones</span>
           </summary>
@@ -663,7 +663,7 @@ function ChatPanel({
                 type="button"
                 onClick={() => onRun("close")}
                 disabled={pending}
-                className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left font-heading text-xs font-bold text-muted-foreground hover:bg-surface-raised hover:text-foreground disabled:opacity-50"
+                className="flex min-h-11 w-full touch-manipulation items-center gap-3 rounded-lg px-3 text-left font-heading text-xs font-bold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-surface-raised hover:text-foreground disabled:opacity-50"
               >
                 <CheckCheck aria-hidden size={16} />
                 Cerrar conversación
@@ -674,7 +674,7 @@ function ChatPanel({
                 type="button"
                 onClick={() => setConfirmClear(true)}
                 disabled={pending}
-                className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left font-heading text-xs font-bold text-danger hover:bg-danger/10 disabled:opacity-50"
+                className="flex min-h-11 w-full touch-manipulation items-center gap-3 rounded-lg px-3 text-left font-heading text-xs font-bold text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-danger/10 disabled:opacity-50"
               >
                 <Trash2 aria-hidden size={16} />
                 Limpiar mensajes
@@ -818,7 +818,7 @@ function ChatPanel({
                       : "rounded-br-md bg-brand text-white"
                     : "rounded-bl-md bg-surface text-foreground ring-1 ring-border/80"
                 }`}>
-                  <p className="font-body text-sm leading-relaxed">
+                  <p className="break-words font-body text-sm leading-relaxed [overflow-wrap:anywhere]">
                     {item.body ? (
                       <WhatsappMessageText body={item.body} />
                     ) : (
