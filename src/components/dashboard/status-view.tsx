@@ -267,7 +267,7 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
               <p className="font-heading text-sm font-bold">No se pudieron actualizar los pedidos</p>
               <p className="font-body text-xs text-muted-foreground">{lastError}</p>
             </div>
-            <button type="button" onClick={() => void fetchActiveOrders()} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold text-destructive hover:bg-destructive/10">
+            <button type="button" onClick={() => void fetchActiveOrders()} className="inline-flex h-10 shrink-0 touch-manipulation items-center gap-2 rounded-xl px-3 font-heading text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10">
               <RefreshCw size={14} />
               Reintentar
             </button>
@@ -481,7 +481,7 @@ function StatusSection({
                         🕒 {new Intl.DateTimeFormat("es-MX", { hour: "numeric", minute: "2-digit" }).format(new Date(order.scheduled_for))}
                       </span>
                     ) : null}
-                    <button type="button" onClick={() => onEditOrder?.(order)} aria-label={`Editar pedido ${order.number}`} className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:bg-brand-light hover:text-brand"><Pencil size={15} /></button>
+                    <button type="button" onClick={() => onEditOrder?.(order)} aria-label={`Editar pedido ${order.number}`} className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-brand-light hover:text-brand"><Pencil size={15} /></button>
                   </div>
                 </div>
 
@@ -496,13 +496,13 @@ function StatusSection({
                         {order.customer_name || "Cliente"}
                       </p>
                       {order.customer_phone ? (
-                        <a href={`tel:${order.customer_phone}`} className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-cream">
+                        <a href={`tel:+${order.customer_phone.replace(/^\+/, "")}`} className="inline-flex min-h-9 touch-manipulation items-center gap-1.5 text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-cream">
                           <Phone size={13} /> {formatPhoneForDisplay(order.customer_phone)}
                         </a>
                       ) : null}
-                      <p className="flex items-start gap-1.5 text-muted-foreground">
+                      <p className="flex min-w-0 items-start gap-1.5 text-muted-foreground">
                         <MapPin size={13} className="mt-0.5 shrink-0" />
-                        <span>{address || "Domicilio no disponible"}</span>
+                        <span className="min-w-0 break-words">{address || "Domicilio no disponible"}</span>
                       </p>
                       {reference ? <p className="pl-[19px] text-muted-foreground">Referencia: {reference}</p> : null}
                     </div>
@@ -541,7 +541,7 @@ function StatusSection({
 
                     <div className="grid grid-cols-2 gap-2">
                       {destinationMapHref ? (
-                        <a href={destinationMapHref} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream hover:bg-border">
+                        <a href={destinationMapHref} target="_blank" rel="noreferrer" className="inline-flex h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-border">
                           <ExternalLink size={13} /> Abrir Maps
                         </a>
                       ) : <span />}
@@ -549,7 +549,7 @@ function StatusSection({
                         href={whatsappShareHref}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-success font-heading text-xs font-bold text-white hover:bg-success/85"
+                        className="inline-flex h-10 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-success font-heading text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-success/85"
                       >
                         <MessageCircle size={13} /> Enviar a repartidor
                       </a>
@@ -572,7 +572,7 @@ function StatusSection({
                             type="button"
                             disabled={isBusy}
                             onClick={() => onFinalizeDelivery?.(order)}
-                            className="action-success col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold disabled:opacity-60"
+                            className="action-success col-span-2 inline-flex h-12 touch-manipulation items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset disabled:opacity-60"
                           >
                             {isBusy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
                             Finalizar entrega
@@ -582,7 +582,7 @@ function StatusSection({
                             type="button"
                             disabled={isBusy}
                             onClick={() => onDriverOnWay?.(order)}
-                            className="col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors hover:bg-warning/25 disabled:opacity-60"
+                            className="col-span-2 inline-flex h-12 touch-manipulation items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-inset hover:bg-warning/25 disabled:opacity-60"
                           >
                             {isBusy ? <Loader2 size={15} className="animate-spin" /> : <Bike size={15} />}
                             Repartidor en camino
@@ -592,14 +592,14 @@ function StatusSection({
                             type="button"
                             disabled={isBusy}
                             onClick={() => onStartDriverSearch?.(order)}
-                            className="col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors hover:bg-warning/25 disabled:opacity-60"
+                            className="col-span-2 inline-flex h-12 touch-manipulation items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-inset hover:bg-warning/25 disabled:opacity-60"
                           >
                             {isBusy ? <Loader2 size={15} className="animate-spin" /> : <Bike size={15} />}
                             Iniciar búsqueda de repartidor
                           </button>
                         )}
                         {!isPaid ? (
-                          <button type="button" disabled={isBusy} onClick={() => onPay?.(order)} className="col-span-2 inline-flex h-12 items-center justify-center gap-1.5 rounded-xl bg-ink font-heading text-xs font-bold text-white transition-colors hover:bg-ink/85 disabled:opacity-60">
+                          <button type="button" disabled={isBusy} onClick={() => onPay?.(order)} className="col-span-2 inline-flex h-12 touch-manipulation items-center justify-center gap-1.5 rounded-xl bg-ink font-heading text-xs font-bold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-ink/85 disabled:opacity-60">
                             <Banknote size={14} /> Cobrar productos {formatPaymentMoney(balance)}
                           </button>
                         ) : null}
@@ -608,7 +608,7 @@ function StatusSection({
                             type="button"
                             disabled={isBusy}
                             onClick={() => onRetryNotification?.(order, failedNotification.id)}
-                            className="col-span-2 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-destructive/40 font-heading text-xs font-bold text-destructive hover:bg-destructive/10 disabled:opacity-60"
+                            className="col-span-2 inline-flex h-10 touch-manipulation items-center justify-center gap-2 rounded-xl border border-destructive/40 font-heading text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 disabled:opacity-60"
                           >
                             <RefreshCw size={13} /> Reintentar aviso al cliente
                           </button>
@@ -616,11 +616,11 @@ function StatusSection({
                       </>
                     ) : (
                       <>
-                        <button type="button" onClick={() => onDeliver?.(order.id, order.number)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${order.type === "para_llevar" && !isPaid ? "order-2 bg-surface-raised text-muted-foreground transition-colors hover:text-foreground" : "action-success"} ${isPaid ? "col-span-2" : ""}`}>
+                        <button type="button" onClick={() => onDeliver?.(order.id, order.number)} className={`inline-flex h-12 touch-manipulation items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${order.type === "para_llevar" && !isPaid ? "order-2 bg-surface-raised text-muted-foreground transition-colors hover:text-foreground" : "action-success"} ${isPaid ? "col-span-2" : ""}`}>
                           <Hand size={14} /> Entregar
                         </button>
                         {!isPaid ? (
-                          <button type="button" onClick={() => onPay?.(order)} className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold ${order.type === "para_llevar" ? "action-success order-1" : "bg-ink text-white transition-colors hover:bg-ink/85"}`}>
+                          <button type="button" onClick={() => onPay?.(order)} className={`inline-flex h-12 touch-manipulation items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset ${order.type === "para_llevar" ? "action-success order-1" : "bg-ink text-white transition-colors hover:bg-ink/85"}`}>
                             <CreditCard size={14} />
                             {order.type === "para_llevar" ? "Cobrar y entregar" : `Cobrar ${formatPaymentMoney(balance)}`}
                           </button>
