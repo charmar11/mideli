@@ -83,7 +83,7 @@ export function InventoryItemsPanel({
           <div className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-xl border border-border bg-background px-3 focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10">
             <Search size={17} className="shrink-0 text-muted-foreground" />
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar insumo" className="min-w-0 flex-1 bg-transparent font-body text-sm text-foreground outline-none placeholder:text-muted-foreground" />
-            {search ? <button type="button" onClick={() => setSearch("")} aria-label="Limpiar búsqueda" className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:text-foreground"><X size={16} /></button> : null}
+            {search ? <button type="button" onClick={() => setSearch("")} aria-label="Limpiar búsqueda" className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"><X size={16} /></button> : null}
           </div>
           <div className="grid grid-cols-3 gap-1 rounded-xl bg-background p-1" aria-label="Filtrar insumos por estado">
             {([
@@ -91,7 +91,7 @@ export function InventoryItemsPanel({
               ["archived", "Archivados", statusCounts.archived],
               ["all", "Todos", items.length],
             ] as const).map(([value, label, count]) => (
-              <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)} className={`h-9 rounded-lg px-2 font-heading text-[10px] font-bold transition-colors sm:px-3 ${statusFilter === value ? "bg-brand text-white" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>
+              <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)} className={`min-h-11 rounded-lg px-2 font-heading text-[10px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 sm:px-3 ${statusFilter === value ? "bg-brand text-white" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>
                 {label} <span className="font-data">{count}</span>
               </button>
             ))}
@@ -131,13 +131,13 @@ export function InventoryItemsPanel({
                 </div>
                 {isAdmin ? (
                   <div className="flex items-center gap-1 justify-self-end">
-                    <button type="button" onClick={() => setEditingItem(item)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted-foreground hover:border-brand/35 hover:text-brand" aria-label={`Editar ${item.name}`}><Pencil size={15} /></button>
+                    <button type="button" onClick={() => setEditingItem(item)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-muted-foreground hover:border-brand/35 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60" aria-label={`Editar ${item.name}`}><Pencil size={15} /></button>
                     {item.is_active ? (
-                      <button type="button" onClick={() => void handleDeactivate(item)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted-foreground hover:border-warning/35 hover:text-warning" aria-label={`Archivar ${item.name}`} title="Archivar"><Archive size={15} /></button>
+                      <button type="button" onClick={() => void handleDeactivate(item)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-muted-foreground hover:border-warning/35 hover:text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning/60" aria-label={`Archivar ${item.name}`} title="Archivar"><Archive size={15} /></button>
                     ) : (
                       <>
-                        <button type="button" onClick={() => void handleReactivate(item)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted-foreground hover:border-success/35 hover:text-success" aria-label={`Reactivar ${item.name}`} title="Reactivar"><RotateCcw size={15} /></button>
-              <button type="button" onClick={() => setDeletingItem(item)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label={`Eliminar definitivamente ${item.name}`} title="Eliminar definitivamente"><Trash2 size={15} /></button>
+                        <button type="button" onClick={() => void handleReactivate(item)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-muted-foreground hover:border-success/35 hover:text-success focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60" aria-label={`Reactivar ${item.name}`} title="Reactivar"><RotateCcw size={15} /></button>
+              <button type="button" onClick={() => setDeletingItem(item)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60" aria-label={`Eliminar definitivamente ${item.name}`} title="Eliminar definitivamente"><Trash2 size={15} /></button>
                       </>
                     )}
                   </div>

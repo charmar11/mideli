@@ -105,7 +105,7 @@ export function InventoryPurchasePanel({
                     </label>
                     <label className="block">
                       <span className="mb-1 block font-heading text-[10px] font-bold text-muted-foreground">Comprar {item.purchase_unit}</span>
-                      <input type="number" min="0.0001" step="0.0001" disabled={!selected[item.id]} value={quantities[item.id] ?? String(packages)} onChange={(event) => setQuantities((current) => ({ ...current, [item.id]: event.target.value }))} className="form-input h-10 disabled:opacity-40" />
+                      <input type="number" min="0.0001" step="0.0001" disabled={!selected[item.id]} value={quantities[item.id] ?? String(packages)} onChange={(event) => setQuantities((current) => ({ ...current, [item.id]: event.target.value }))} className="form-input h-11 disabled:opacity-40" />
                       <span className="mt-1 block text-right font-data text-[10px] text-muted-foreground">{formatInventoryMoney(Math.max(0, currentQuantity) * packageCost)} estimado</span>
                     </label>
                   </div>
@@ -132,9 +132,9 @@ export function InventoryPurchasePanel({
               const estimated = lines.reduce((total, line) => total + line.ordered_purchase_quantity * line.expected_package_cost, 0);
               return (
                 <div key={order.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-light text-brand"><PackageCheck size={18} /></span>
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-light text-brand"><PackageCheck size={18} /></span>
                   <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-heading text-sm font-bold">Compra #{order.number}</p><span className="rounded-full bg-surface-raised px-2 py-0.5 font-heading text-[10px] font-bold text-muted-foreground">{order.status === "partially_received" ? "Recepción parcial" : "En camino"}</span></div><p className="mt-1 truncate font-body text-xs text-muted-foreground">{order.supplier || "Proveedor sin definir"} · {remaining.map((line) => itemMap.get(line.inventory_item_id)?.name).filter(Boolean).slice(0, 3).join(", ")}</p><p className="mt-1 font-data text-xs font-bold text-foreground">{formatInventoryMoney(estimated)}</p></div>
-              <button type="button" onClick={() => onReceive(order.id)} className="action-success inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold"><Check size={15} /> Recibir mercancía</button>
+              <button type="button" onClick={() => onReceive(order.id)} className="action-success inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60"><Check size={15} /> Recibir mercancía</button>
                 </div>
               );
             })}
