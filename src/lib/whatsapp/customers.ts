@@ -1,4 +1,5 @@
-import type { WhatsappCustomerSummary } from "./admin-types";
+import type { WhatsappCustomerAddress, WhatsappCustomerSummary } from "./admin-types";
+import { normalizeAddressForComparison } from "./normalize";
 
 export type WhatsappCustomerSource = {
   id: string;
@@ -38,6 +39,40 @@ export function exactOrderNumberFromSearch(value: string) {
   if (!/^\d{1,7}$/.test(normalized)) return null;
   const orderNumber = Number(normalized);
   return Number.isSafeInteger(orderNumber) && orderNumber > 0 ? orderNumber : null;
+}
+
+function addressPriority(address: WhatsappCustomerAddress) {
+  return [
+    address.confirmed ? 1 : 0,
+    address.isDefault ? 1 : 0,
+    address.lastUsedAt || "",
+  ] as const;
+}
+
+function shouldKeepAddress(candidate: WhatsappCustomerAddress, current: WhatsappCustomerAddress) {
+  const candidatePriority = addressPriority(candidate);
+  const currentPriority = addressPriority(current);
+  if (candidatePriority[0] !== currentPriority[0]) return candidatePriority[0] > currentPriority[0];
+  if (candidatePriority[1] !== currentPriority[1]) return candidatePriority[1] > currentPriority[1];
+  return candidatePriority[2] > currentPriority[2];
+}
+
+/**
+ * Hides legacy duplicate rows without mutating the customer data.
+ * The canonical address is the formatted Maps result when available,
+ * otherwise the text captured by the team.
+ */
+export function deduplicateWhatsappCustomerAddresses(
+  addresses: WhatsappCustomerAddress[]
+) {
+  const unique = new Map<string, WhatsappCustomerAddress>();
+  for (const address of addresses) {
+    const source = address.formattedAddress || address.addressText;
+    const key = normalizeAddressForComparison(source) || `id:${address.id}`;
+    const current = unique.get(key);
+    if (!current || shouldKeepAddress(address, current)) unique.set(key, address);
+  }
+  return [...unique.values()];
 }
 
 export function buildWhatsappCustomerSummaries(

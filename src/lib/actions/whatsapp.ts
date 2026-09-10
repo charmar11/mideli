@@ -32,6 +32,7 @@ import { recordOutboundMessage } from "@/lib/whatsapp/repository.server";
 import { isMissingWhatsappSchema } from "@/lib/whatsapp/schema-compat";
 import type { WhatsappChannelSettings } from "@/types/database";
 import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
+import { deduplicateWhatsappCustomerAddresses } from "@/lib/whatsapp/customers";
 import { normalizeAddressForComparison } from "@/lib/whatsapp/normalize";
 import { whatsappActionErrorMessage } from "@/lib/whatsapp/action-errors";
 
@@ -975,7 +976,10 @@ export async function searchPosCustomersByPhoneAction(
         confirmed: Boolean(address.confirmed_at),
         lastUsedAt: address.last_used_at,
       });
-      addressesByCustomer.set(address.customer_id, current);
+      addressesByCustomer.set(
+        address.customer_id,
+        deduplicateWhatsappCustomerAddresses(current)
+      );
     }
 
     const matches = customers

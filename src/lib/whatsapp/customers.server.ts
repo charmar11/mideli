@@ -9,6 +9,7 @@ import type {
 } from "./admin-types";
 import {
   buildWhatsappCustomerSummaries,
+  deduplicateWhatsappCustomerAddresses,
   exactOrderNumberFromSearch,
   normalizeWhatsappCustomerSearch,
   type WhatsappCustomerConversationSource,
@@ -300,7 +301,7 @@ export async function loadWhatsappCustomerDetail(
   )[0];
   if (!customer) throw new Error("No se pudo preparar la ficha del cliente");
 
-  const addresses = (addressResult.data ?? []).map((address) => ({
+  const addresses = deduplicateWhatsappCustomerAddresses((addressResult.data ?? []).map((address) => ({
     id: address.id,
     label: address.label ?? "",
     addressText: address.address_text,
@@ -313,7 +314,7 @@ export async function loadWhatsappCustomerDetail(
     isDefault: address.is_default,
     confirmed: Boolean(address.confirmed_at),
     lastUsedAt: address.last_used_at,
-  })) satisfies WhatsappCustomerAddress[];
+  })) satisfies WhatsappCustomerAddress[]);
 
   return { customer, addresses, orders };
 }

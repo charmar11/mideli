@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   buildWhatsappCustomerSummaries,
+  deduplicateWhatsappCustomerAddresses,
   exactOrderNumberFromSearch,
   normalizeWhatsappCustomerSearch,
 } from "@/lib/whatsapp/customers";
@@ -87,5 +88,41 @@ test.describe("directorio de clientes de WhatsApp", () => {
         "No se pudo completar la operación"
       )
     ).toBe("No se puede eliminar este cliente porque tiene pedidos activos: 203");
+  });
+
+  test("oculta domicilios equivalentes y conserva el confirmado más reciente", () => {
+    const addresses = deduplicateWhatsappCustomerAddresses([
+      {
+        id: "captured",
+        label: "Casa",
+        addressText: "C. Yaqui 404, Col. Centro",
+        reference: "Portón negro",
+        formattedAddress: "Calle Yaqui 404, Centro, Ciudad Obregón",
+        colony: "Centro",
+        latitude: 27.5,
+        longitude: -109.9,
+        deliveryFee: 30,
+        isDefault: false,
+        confirmed: false,
+        lastUsedAt: "2026-08-01T10:00:00.000Z",
+      },
+      {
+        id: "confirmed",
+        label: "Casa principal",
+        addressText: "Calle Yaqui 404, Centro",
+        reference: "Portón negro",
+        formattedAddress: "Calle Yaqui 404, Centro, Ciudad Obregón",
+        colony: "Centro",
+        latitude: 27.5,
+        longitude: -109.9,
+        deliveryFee: 30,
+        isDefault: true,
+        confirmed: true,
+        lastUsedAt: "2026-08-02T10:00:00.000Z",
+      },
+    ]);
+
+    expect(addresses).toHaveLength(1);
+    expect(addresses[0]?.id).toBe("confirmed");
   });
 });
