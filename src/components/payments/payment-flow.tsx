@@ -588,7 +588,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
         role="dialog"
         aria-modal="true"
         aria-labelledby="payment-flow-title"
-        className="flex max-h-[96dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl bg-surface shadow-float sm:max-h-[92dvh] sm:rounded-2xl"
+        className="flex max-h-[calc(96dvh-env(safe-area-inset-top))] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl bg-surface shadow-float sm:max-h-[92dvh] sm:rounded-2xl"
       >
         <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 sm:px-5">
           {stage === "method" ? (
@@ -596,7 +596,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
               type="button"
               onClick={() => setStage("account")}
               aria-label="Volver a la cuenta"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground hover:text-foreground"
+              className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
             >
               <ArrowLeft size={18} />
             </button>
@@ -634,7 +634,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
               onClick={() => setShowPaymentGuide(true)}
               aria-label="Abrir guía de cobro"
               title="Guía de cobro"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-brand"
+              className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
             >
               <CircleHelp aria-hidden size={18} />
             </button>
@@ -644,7 +644,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
             onClick={onClose}
             disabled={submitting}
             aria-label="Cerrar cobro"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground disabled:opacity-40"
+            className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-40"
           >
             <X size={19} />
           </button>
@@ -692,9 +692,9 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
                           <p className="font-body text-xs text-muted-foreground">Cobra una parte y continúa con la siguiente.</p>
                         </div>
                         <div className="flex items-center gap-2 rounded-xl bg-surface p-1">
-                          <button type="button" onClick={() => setEqualParts((value) => Math.max(2, value - 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-raised"><Minus size={15} /></button>
+                          <button type="button" onClick={() => setEqualParts((value) => Math.max(2, value - 1))} aria-label="Reducir partes" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"><Minus size={15} /></button>
                           <span className="w-7 text-center font-data text-base font-bold">{equalParts}</span>
-                          <button type="button" onClick={() => setEqualParts((value) => Math.min(12, value + 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-raised"><Plus size={15} /></button>
+                          <button type="button" onClick={() => setEqualParts((value) => Math.min(12, value + 1))} aria-label="Aumentar partes" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"><Plus size={15} /></button>
                         </div>
                       </div>
                       <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
@@ -722,9 +722,9 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
                                 </p>
                               </div>
                               <div className="flex items-center gap-1 rounded-xl bg-surface p-1">
-                                <button type="button" onClick={() => updateProductQuantity(line, -1)} disabled={selected <= 0} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-raised disabled:opacity-30"><Minus size={14} /></button>
+                                <button type="button" onClick={() => updateProductQuantity(line, -1)} disabled={selected <= 0} aria-label={`Quitar ${line.item.menu_item_name ?? "producto"}`} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-30"><Minus size={14} /></button>
                                 <span className="w-8 text-center font-data text-sm font-bold">{formatQuantity(selected)}</span>
-                                <button type="button" onClick={() => updateProductQuantity(line, 1)} disabled={selected >= line.remainingQuantity} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-raised disabled:opacity-30"><Plus size={14} /></button>
+                                <button type="button" onClick={() => updateProductQuantity(line, 1)} disabled={selected >= line.remainingQuantity} aria-label={`Agregar ${line.item.menu_item_name ?? "producto"}`} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-30"><Plus size={14} /></button>
                               </div>
                             </div>
                           );
@@ -743,8 +743,8 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
                     </div>
                     <div className="grid grid-cols-[auto_1fr] gap-2">
                       <div className="flex rounded-xl bg-surface p-1">
-                        <button type="button" onClick={() => setDiscountKind("percent")} aria-pressed={discountKind === "percent"} className={`flex h-10 w-10 items-center justify-center rounded-lg ${discountKind === "percent" ? "bg-brand text-white" : "text-muted-foreground"}`}><Percent size={15} /></button>
-                        <button type="button" onClick={() => setDiscountKind("fixed")} aria-pressed={discountKind === "fixed"} className={`flex h-10 w-10 items-center justify-center rounded-lg ${discountKind === "fixed" ? "bg-brand text-white" : "text-muted-foreground"}`}><Banknote size={15} /></button>
+                        <button type="button" onClick={() => setDiscountKind("percent")} aria-label="Descuento por porcentaje" aria-pressed={discountKind === "percent"} className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${discountKind === "percent" ? "bg-brand text-white" : "text-muted-foreground"}`}><Percent size={15} /></button>
+                        <button type="button" onClick={() => setDiscountKind("fixed")} aria-label="Descuento por monto fijo" aria-pressed={discountKind === "fixed"} className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${discountKind === "fixed" ? "bg-brand text-white" : "text-muted-foreground"}`}><Banknote size={15} /></button>
                       </div>
                       <label className="relative">
                         <span className="sr-only">Valor del descuento</span>
@@ -760,7 +760,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
                         </select>
                         <div className="grid grid-cols-[1fr_auto] gap-2">
                           <input type="password" inputMode="numeric" maxLength={4} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="PIN de 4 dígitos" className="form-input" />
-                          <button type="button" onClick={() => void authorizeDiscount()} disabled={authorizing || pin.length !== 4} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-surface-raised px-4 font-heading text-xs font-bold text-foreground hover:bg-border disabled:opacity-40">
+                          <button type="button" onClick={() => void authorizeDiscount()} disabled={authorizing || pin.length !== 4} className="inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl bg-surface-raised px-4 font-heading text-xs font-bold text-foreground transition-colors hover:bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-40">
                             {authorizing ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
                             Autorizar
                           </button>
@@ -773,9 +773,9 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
                     <h3 className="mb-3 font-heading text-sm font-bold">Propina opcional</h3>
                     <div className="grid grid-cols-5 gap-1.5">
                       {[0, 10, 15, 20].map((value) => (
-                        <button key={value} type="button" onClick={() => setTipChoice(value as 0 | 10 | 15 | 20)} className={`h-10 rounded-xl font-data text-xs font-bold ${tipChoice === value ? "bg-brand text-white" : "bg-surface text-muted-foreground hover:text-foreground"}`}>{value}%</button>
+                        <button key={value} type="button" onClick={() => setTipChoice(value as 0 | 10 | 15 | 20)} className={`h-11 touch-manipulation rounded-xl font-data text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${tipChoice === value ? "bg-brand text-white" : "bg-surface text-muted-foreground hover:text-foreground"}`}>{value}%</button>
                       ))}
-                      <button type="button" onClick={() => setTipChoice("custom")} className={`h-10 rounded-xl font-heading text-[10px] font-bold ${tipChoice === "custom" ? "bg-brand text-white" : "bg-surface text-muted-foreground hover:text-foreground"}`}>Otra</button>
+                      <button type="button" onClick={() => setTipChoice("custom")} className={`h-11 touch-manipulation rounded-xl font-heading text-[10px] font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${tipChoice === "custom" ? "bg-brand text-white" : "bg-surface text-muted-foreground hover:text-foreground"}`}>Otra</button>
                     </div>
                     {tipChoice === "custom" ? <input inputMode="decimal" value={customTip} onChange={(event) => setCustomTip(event.target.value)} placeholder="Monto de propina" className="form-input mt-2" /> : null}
                   </section>
@@ -798,10 +798,10 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
                   {tenderMode === "combined" ? (
                     <div className="mt-4 space-y-2 rounded-2xl bg-background p-4">
                       {(Object.keys(METHOD_LABELS) as PaymentMethod[]).map((method) => (
-                        <div key={method} className="grid grid-cols-[7.5rem_1fr_auto] items-center gap-2">
-                          <span className="font-heading text-xs font-bold">{METHOD_LABELS[method]}</span>
+                        <div key={method} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:grid-cols-[7.5rem_1fr_auto]">
+                          <span className="col-span-2 font-heading text-xs font-bold sm:col-span-1">{METHOD_LABELS[method]}</span>
                           <input inputMode="decimal" value={combinedAmounts[method]} onChange={(event) => { const value = event.target.value; setCombinedAmounts((current) => ({ ...current, [method]: value })); if (method === "efectivo" && !cashReceived) setCashReceived(value); }} placeholder="$0" className="form-input text-right font-data" />
-                          <button type="button" onClick={() => fillTender(method)} className="h-10 rounded-xl px-3 font-heading text-[10px] font-bold text-brand hover:bg-brand-light">Completar</button>
+                          <button type="button" onClick={() => fillTender(method)} className="h-11 touch-manipulation rounded-xl px-3 font-heading text-[10px] font-bold text-brand transition-colors hover:bg-brand-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60">Completar</button>
                         </div>
                       ))}
                       <div className="flex items-center justify-between border-t border-border pt-3">
@@ -818,7 +818,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
                         <input id="cash-received" inputMode="decimal" value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} className="form-input w-32 text-right font-data text-base font-bold" />
                       </div>
                       <div className="grid grid-cols-4 gap-1.5">
-                        {nextCashSuggestions(cashApplied).map((suggestion) => <button key={suggestion} type="button" onClick={() => setCashReceived(String(suggestion))} className="h-10 rounded-xl bg-surface font-data text-xs font-bold text-muted-foreground hover:text-foreground">{formatPaymentMoney(suggestion)}</button>)}
+                        {nextCashSuggestions(cashApplied).map((suggestion) => <button key={suggestion} type="button" onClick={() => setCashReceived(String(suggestion))} className="h-11 touch-manipulation rounded-xl bg-surface font-data text-xs font-bold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60">{formatPaymentMoney(suggestion)}</button>)}
                       </div>
                       <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
                         <span className="font-body text-xs text-muted-foreground">Cambio</span>
@@ -845,18 +845,18 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
         )}
 
         {stage !== "receipt" ? (
-          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-4 py-3 sm:px-5">
+          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:pb-3">
             <div className="min-w-0">
               <p className="font-body text-[11px] text-muted-foreground">{stage === "account" ? "Total de esta parte" : "Total a registrar"}</p>
               <p className="font-data text-xl font-bold text-foreground">{formatPaymentMoney(paymentTotal)}</p>
             </div>
             {stage === "account" ? (
-              <button type="button" onClick={goToMethod} disabled={accountLoading || selectedGross <= 0} className="inline-flex h-12 min-w-44 items-center justify-center gap-2 rounded-xl bg-brand px-5 font-heading text-sm font-bold text-white shadow-lg shadow-brand/20 hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" onClick={goToMethod} disabled={accountLoading || selectedGross <= 0} className="inline-flex h-12 min-w-0 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl bg-brand px-4 font-heading text-sm font-bold text-white shadow-lg shadow-brand/20 transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:flex-none sm:min-w-44 sm:px-5">
                 {accountLoading ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={16} />}
                 Continuar
               </button>
             ) : (
-              <button type="button" onClick={() => void finalizePayment()} disabled={submitting} className="action-success inline-flex h-12 min-w-44 items-center justify-center gap-2 rounded-xl px-5 font-heading text-sm font-bold disabled:cursor-wait disabled:opacity-50">
+              <button type="button" onClick={() => void finalizePayment()} disabled={submitting} className="action-success inline-flex h-12 min-w-0 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl px-4 font-heading text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60 disabled:cursor-wait disabled:opacity-50 sm:w-auto sm:flex-none sm:min-w-44 sm:px-5">
                 {submitting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
                 {submitting ? "Registrando..." : "Confirmar pago"}
               </button>
@@ -936,7 +936,7 @@ function PaymentGuide({ onClose }: { onClose: () => void }) {
 
 function SplitModeButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={active} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl px-2 text-center font-heading text-[11px] font-bold transition-colors sm:text-xs ${active ? "bg-brand text-white shadow-md shadow-brand/20" : "bg-background text-muted-foreground hover:text-foreground"}`}>
+    <button type="button" onClick={onClick} aria-pressed={active} className={`flex min-h-20 touch-manipulation flex-col items-center justify-center gap-2 rounded-xl px-2 text-center font-heading text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 sm:text-xs ${active ? "bg-brand text-white shadow-md shadow-brand/20" : "bg-background text-muted-foreground hover:text-foreground"}`}>
       {icon}
       {label}
     </button>
@@ -945,7 +945,7 @@ function SplitModeButton({ active, onClick, icon, label }: { active: boolean; on
 
 function TenderModeButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={active} className={`flex h-20 flex-col items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold transition-colors ${active ? "bg-brand text-white shadow-md shadow-brand/20" : "bg-background text-muted-foreground hover:text-foreground"}`}>
+    <button type="button" onClick={onClick} aria-pressed={active} className={`flex h-20 touch-manipulation flex-col items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${active ? "bg-brand text-white shadow-md shadow-brand/20" : "bg-background text-muted-foreground hover:text-foreground"}`}>
       {icon}
       {label}
     </button>
@@ -1016,7 +1016,7 @@ export function ReceiptDialog({ receipt, onClose, reprint = true }: { receipt: P
             <ReceiptPaper receipt={receipt} reprint={reprint} />
           </div>
         </div>
-        <footer className="flex gap-2 border-t border-border px-4 py-3"><button type="button" onClick={onClose} className="h-12 flex-1 rounded-xl font-heading text-sm font-bold text-muted-foreground hover:bg-surface-raised">Cerrar</button><button type="button" onClick={() => window.print()} className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-brand font-heading text-sm font-bold text-white"><Printer size={17} /> Imprimir</button></footer>
+        <footer className="flex gap-2 border-t border-border px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:pb-3"><button type="button" onClick={onClose} className="h-12 flex-1 touch-manipulation rounded-xl font-heading text-sm font-bold text-muted-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60">Cerrar</button><button type="button" onClick={() => window.print()} className="inline-flex h-12 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl bg-brand font-heading text-sm font-bold text-white transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"><Printer size={17} /> Imprimir</button></footer>
       </div>
     </div>
   );
