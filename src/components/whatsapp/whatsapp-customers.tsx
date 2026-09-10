@@ -398,7 +398,7 @@ function CustomerDetail({
 
   const { customer, addresses, orders } = detail;
   return (
-    <Panel className="flex h-full flex-col">
+    <Panel className="flex h-full min-h-0 flex-col">
       <div className="flex items-start gap-3 border-b border-border p-4">
         <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 lg:hidden" onClick={onBack} aria-label="Regresar al directorio">
           <ArrowLeft size={18} />

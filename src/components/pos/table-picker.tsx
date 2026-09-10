@@ -30,7 +30,9 @@ export function TablePicker({
   const [pendingTableId, setPendingTableId] = useState(selectedTableId);
   const [mobileZoneId, setMobileZoneId] = useState(initialZoneId);
   const [mobileView, setMobileView] = useState<MobileTableView>("map");
-  const [usesCompactLayout, setUsesCompactLayout] = useState(false);
+  const [usesCompactLayout, setUsesCompactLayout] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia(COMPACT_TABLE_PICKER_MEDIA_QUERY).matches
+  );
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(COMPACT_TABLE_PICKER_MEDIA_QUERY);
