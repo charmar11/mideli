@@ -216,7 +216,7 @@ export function PaymentMethodCorrectionDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="payment-correction-title"
-        className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:rounded-2xl"
+        className="flex max-h-[94dvh] min-w-0 w-full max-w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:max-w-lg sm:rounded-2xl"
       >
         <header className="flex items-start gap-3 border-b border-border p-4 sm:p-5">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-warning/12 text-warning">
@@ -241,7 +241,7 @@ export function PaymentMethodCorrectionDialog({
           </button>
         </header>
 
-        <div className="pos-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-5">
+        <div className="pos-scroll min-h-0 min-w-0 flex-1 touch-pan-y space-y-5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-4 sm:p-5">
           {loading ? (
             <div className="flex min-h-48 items-center justify-center text-brand">
               <Loader2 aria-label="Cargando métodos" size={24} className="animate-spin" />

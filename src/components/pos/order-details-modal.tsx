@@ -464,12 +464,12 @@ export function OrderDetailsModal({
 
               {orderType === "domicilio" ? (
                 <>
-                  <label className="sm:col-span-2 flex items-center gap-2.5 rounded-xl border border-brand/20 bg-brand/5 px-3 py-2">
+                  <label className="sm:col-span-2 flex min-h-12 touch-manipulation items-center gap-2.5 rounded-xl border border-brand/20 bg-brand/5 px-3 py-2 transition-colors has-[:focus-visible]:border-brand/60 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand/40">
                     <input
                       type="checkbox"
                       checked={whatsappStatusOptIn}
                       onChange={(event) => onWhatsappStatusOptInChange(event.target.checked)}
-                      className="h-4 w-4 shrink-0 accent-brand"
+                      className="h-4 w-4 shrink-0 accent-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     />
                     <span className="min-w-0">
                       <span className="block font-heading text-xs font-bold text-foreground">Avisar por WhatsApp cuando salga</span>

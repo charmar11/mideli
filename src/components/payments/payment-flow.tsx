@@ -588,7 +588,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
         role="dialog"
         aria-modal="true"
         aria-labelledby="payment-flow-title"
-        className="flex max-h-[calc(96dvh-env(safe-area-inset-top))] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl bg-surface shadow-float sm:max-h-[92dvh] sm:rounded-2xl"
+        className="flex max-h-[calc(96dvh-env(safe-area-inset-top))] min-w-0 w-full max-w-full flex-col overflow-hidden rounded-t-2xl bg-surface shadow-float sm:max-h-[92dvh] sm:max-w-4xl sm:rounded-2xl"
       >
         <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 sm:px-5">
           {stage === "method" ? (
@@ -658,7 +658,7 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
             onContinue={continueWithRemaining}
           />
         ) : (
-          <div className="pos-scroll min-h-0 flex-1 overflow-y-auto">
+          <div className="pos-scroll min-h-0 min-w-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-y-contain">
             {stage === "account" ? (
               <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,.75fr)]">
                 <div className="space-y-5">
