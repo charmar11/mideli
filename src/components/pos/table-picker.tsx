@@ -127,11 +127,11 @@ export function TablePicker({
         </header>
 
         {usesCompactLayout ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
             {zones.length > 1 ? (
               <div className="shrink-0">
                 <p className="mb-2 font-data text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Zona</p>
-                <div className="grid max-h-28 grid-cols-2 gap-2 overflow-y-auto">
+                <div className="grid max-h-28 touch-pan-y grid-cols-2 gap-2 overflow-y-auto overscroll-contain">
                   {zones.map((zone) => {
                     const zoneTableCount = tables.filter((table) => table.zone_id === zone.id).length;
                     const active = mobileZone?.id === zone.id;
