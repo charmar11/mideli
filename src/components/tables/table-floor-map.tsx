@@ -877,6 +877,7 @@ export function TableFloorMap({
                       type="button"
                       aria-label={`${selectionMode ? "Seleccionar" : "Editar"} mesa ${table.name}`}
                       aria-pressed={tableSelected}
+                      title={table.name}
                       onClick={(event) => {
                         event.stopPropagation();
                         selectAfterTap(() => onSelectTable?.(table, event));
@@ -892,12 +893,12 @@ export function TableFloorMap({
                         onEditTable?.(table);
                       }}
                       onPointerDown={(event) => startTableDrag(event, table)}
-                      className={`flex h-full w-full touch-none flex-col items-center justify-center gap-1 border-2 px-2 shadow-card transition-shadow ${shapeClass(table.shape)} ${
+                      className={`flex h-full w-full touch-none flex-col items-center justify-center gap-1 border-2 px-2 shadow-card transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${shapeClass(table.shape)} ${
                         tableSelected
                           ? "border-brand bg-brand text-white shadow-float ring-2 ring-brand/30"
                           : "border-ink/20 bg-surface text-foreground hover:border-brand/60"
                       } ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-                      style={selectionMode ? { minWidth: 52, minHeight: 52 } : undefined}
+                      style={selectionMode ? { minWidth: 56, minHeight: 56 } : undefined}
                     >
                       <span className={`max-w-full font-heading font-bold ${selectionMode ? "whitespace-normal break-words text-center text-[11px] leading-tight" : "truncate text-xs"}`}>
                         {table.name}
