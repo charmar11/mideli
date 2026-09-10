@@ -101,7 +101,7 @@ export function CashHistoryManager() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "open" | "closed" | "archived">("all");
-  const [period, setPeriod] = useState<"all" | "today" | "yesterday" | "7days" | "date">("all");
+  const [period, setPeriod] = useState<"all" | "today" | "yesterday" | "7days" | "date">("today");
   const [selectedPeriod, setSelectedPeriod] = useState<DatePeriod>(() =>
     periodFromAnchor("dia", parseDateKey(getTodayKey()))
   );
