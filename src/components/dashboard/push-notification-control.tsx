@@ -153,7 +153,7 @@ export function PushNotificationControl({ topic }: PushNotificationControlProps)
       title={statusCopy(status, topic)}
       aria-label={statusCopy(status, topic)}
       aria-pressed={status === "enabled"}
-      className={`relative flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-wait disabled:opacity-70 ${
+      className={`relative flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-wait disabled:opacity-70 ${
         status === "enabled"
           ? "border-success/35 bg-success/10 text-success"
           : status === "paused"
