@@ -258,8 +258,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   }
 
   return (
-    <div className="pos-scroll h-full overflow-y-auto p-3 sm:p-4">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 pb-8">
+    <div className="pos-scroll h-full min-w-0 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto p-3 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-8">
+      <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-8 pb-2">
         {lastError ? (
           <div className="flex items-center gap-3 rounded-2xl bg-destructive/10 p-4">
             <AlertCircle size={20} className="shrink-0 text-destructive" />
