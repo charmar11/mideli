@@ -69,7 +69,7 @@ export function CartPanel({
 
   return (
     <div
-      className={`flex flex-col bg-surface ${
+      className={`flex min-w-0 flex-col bg-surface ${
         isMobile
           ? "h-[88dvh] w-full rounded-t-3xl shadow-float md:h-[min(88dvh,48rem)] md:max-w-2xl md:rounded-3xl"
           : "h-full w-[min(26rem,40vw)] shrink-0 border-l border-border"
@@ -95,7 +95,7 @@ export function CartPanel({
               data-tour="pos-table-selection"
               type="button"
               onClick={() => setClearConfirmOpen(true)}
-              className="inline-flex h-9 touch-manipulation items-center gap-1.5 rounded-lg px-2.5 font-heading text-[11px] font-bold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
+              className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg px-2.5 font-heading text-[11px] font-bold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
               title="Vaciar pedido"
             >
               <Trash2 size={14} />
@@ -138,7 +138,7 @@ export function CartPanel({
         })}
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div className="pos-scroll min-h-0 min-w-0 flex-1 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto px-3 py-3">
         {items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-background/50 p-6 text-center">
             <ShoppingBag size={32} className="text-muted-foreground/35" />
@@ -172,7 +172,7 @@ export function CartPanel({
                       type="button"
                       onClick={() => removeItem(item.id)}
                       aria-label={`Quitar ${item.name}`}
-                      className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
+                      className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -205,7 +205,7 @@ export function CartPanel({
                         type="button"
                         onClick={() => updateQuantity(item.id, item.quantity - 1)}
                         aria-label={`Reducir ${item.name}`}
-                        className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
+                        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
                       >
                         <Minus size={14} />
                       </button>
@@ -216,7 +216,7 @@ export function CartPanel({
                         type="button"
                         onClick={() => updateQuantity(item.id, item.quantity + 1)}
                         aria-label={`Aumentar ${item.name}`}
-                        className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
+                        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
                       >
                         <Plus size={14} />
                       </button>
@@ -231,7 +231,7 @@ export function CartPanel({
                     value={item.notes}
                     onChange={(event) => updateNotes(item.id, event.target.value)}
                     placeholder="Notas (sin cebolla...)"
-                    className="mt-3 h-10 w-full rounded-xl border border-border bg-surface px-3 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
+                    className="mt-3 h-11 w-full rounded-xl border border-border bg-surface px-3 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
                   />
                 </li>
               );
