@@ -86,6 +86,18 @@ function paymentLabel(method: PaymentMethod) {
   return "Sin indicar";
 }
 
+function detailsTitle(orderType: OrderType) {
+  if (orderType === "domicilio") return "Información de entrega";
+  if (orderType === "para_llevar") return "Datos para recoger";
+  return "Información del comedor";
+}
+
+function detailsDescription(orderType: OrderType) {
+  if (orderType === "domicilio") return "Confirma el domicilio y completa lo necesario";
+  if (orderType === "para_llevar") return "Completa lo necesario para entregar en mostrador";
+  return "Completa la mesa y los datos que ayuden al equipo";
+}
+
 export function OrderDetailsModal({
   items,
   orderType,
@@ -180,7 +192,7 @@ export function OrderDetailsModal({
               onClick={onClose}
               disabled={isSubmitting}
               aria-label="Volver al pedido"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground disabled:opacity-50"
             >
               <ArrowLeft size={18} />
             </button>
@@ -198,7 +210,7 @@ export function OrderDetailsModal({
             onClick={onClose}
             disabled={isSubmitting}
             aria-label="Cerrar"
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground disabled:opacity-50"
+            className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-xl text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-surface-raised hover:text-foreground disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -292,8 +304,8 @@ export function OrderDetailsModal({
           <div className="min-h-0 min-w-0 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-surface p-3 sm:p-6">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-heading text-sm font-bold text-foreground">Información de entrega</p>
-                <p className="mt-1 font-body text-xs text-muted-foreground">Solo completa lo que aplique</p>
+                <p className="font-heading text-sm font-bold text-foreground">{detailsTitle(orderType)}</p>
+                <p className="mt-1 font-body text-xs text-muted-foreground">{detailsDescription(orderType)}</p>
               </div>
               {paymentMethod ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/10 px-2.5 py-1.5 font-heading text-[10px] font-bold text-gold">
@@ -303,7 +315,7 @@ export function OrderDetailsModal({
             </div>
 
             <div className="mt-3 grid min-w-0 gap-2.5 sm:mt-4 sm:grid-cols-2 sm:gap-3">
-              <label className="sm:col-span-2">
+              <div className="sm:col-span-2">
                   <span className="mb-1.5 flex items-center gap-1.5 font-heading text-xs font-bold text-muted-foreground">
                   <Phone size={13} className="text-brand" /> Teléfono del cliente {orderType === "comedor" ? "(opcional)" : null}
                 </span>
@@ -401,7 +413,7 @@ export function OrderDetailsModal({
                     ) : null}
                   </div>
                 ) : null}
-              </label>
+              </div>
 
               <label className="sm:col-span-2">
                 <span className="mb-1.5 block font-heading text-xs font-bold text-muted-foreground">Nombre del cliente <span className="font-body font-normal">(opcional)</span></span>
