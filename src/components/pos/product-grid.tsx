@@ -98,7 +98,7 @@ export const ProductGrid = memo(function ProductGrid({
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-40 sm:px-4 md:pb-24 xl:pb-4">
+      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overscroll-contain overflow-y-auto px-3 pb-[calc(10rem+env(safe-area-inset-bottom))] sm:px-4 md:pb-24 xl:pb-4">
         {filteredItems.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-surface shadow-card">
@@ -169,7 +169,7 @@ export const ProductGrid = memo(function ProductGrid({
 
                 <div className="flex flex-1 flex-col gap-1 p-3">
                   <div className="flex items-start justify-between gap-1">
-                    <span className="font-heading text-sm font-bold leading-snug text-foreground">
+                    <span className="min-w-0 break-words font-heading text-sm font-bold leading-snug text-foreground [overflow-wrap:anywhere]">
                       {item.name}
                     </span>
                     {item.modifiers?.length ? (

@@ -751,8 +751,7 @@ export function MeseroView() {
                 ? `, ${cartItemCount} ${cartItemCount === 1 ? "artículo" : "artículos"}`
                 : ""
             }`}
-            style={{ bottom: "calc(4.75rem + env(safe-area-inset-bottom))" }}
-            className="mobile-cart-dock fixed inset-x-3 z-30 flex h-14 touch-manipulation items-center gap-3 rounded-2xl border border-white/10 bg-brand px-4 text-white shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.985] md:inset-x-auto md:right-4 md:min-w-72 xl:hidden"
+            className="mobile-cart-dock fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] inset-x-3 z-30 flex h-14 touch-manipulation items-center gap-3 rounded-2xl border border-white/10 bg-brand px-4 text-white shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.985] md:bottom-4 md:inset-x-auto md:right-4 md:min-w-72 xl:hidden"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15">
               <ShoppingBag size={19} />
