@@ -175,7 +175,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
           type="button"
           variant="ghost"
           size="icon-lg"
-          className="h-11 w-10 rounded-lg text-muted-foreground hover:bg-card hover:text-foreground"
+          className="h-11 w-10 touch-manipulation rounded-lg text-muted-foreground hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand active:scale-95"
           onClick={() => navigate(shiftPeriod(period, -1, today))}
           disabled={isPending}
           aria-label="Periodo anterior"
@@ -186,7 +186,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
         <button
           type="button"
           onClick={openPicker}
-          className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-lg bg-card px-3 text-left ring-1 ring-foreground/10 transition-[background-color,transform] duration-150 hover:bg-surface active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:min-w-48"
+          className="flex h-11 min-w-0 flex-1 touch-manipulation items-center gap-2 rounded-lg bg-card px-3 text-left ring-1 ring-foreground/10 transition-[background-color,transform] duration-150 hover:bg-surface active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:min-w-48"
           aria-haspopup="dialog"
         >
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-light text-brand">
@@ -207,7 +207,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
           type="button"
           variant="ghost"
           size="icon-lg"
-          className="h-11 w-10 rounded-lg text-muted-foreground hover:bg-card hover:text-foreground"
+          className="h-11 w-10 touch-manipulation rounded-lg text-muted-foreground hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand active:scale-95"
           onClick={() => navigate(shiftPeriod(period, 1, today))}
           disabled={!canGoNext || isPending}
           aria-label="Periodo siguiente"
@@ -225,7 +225,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
             aria-label={`Ver por ${option.label.toLowerCase()}`}
             aria-pressed={period.view === option.id}
             className={cn(
-              "flex h-11 min-w-11 items-center justify-center rounded-lg font-heading text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+              "flex h-11 min-w-11 touch-manipulation items-center justify-center rounded-lg font-heading text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
               period.view === option.id
                 ? "bg-brand text-white shadow-sm"
                 : "text-muted-foreground hover:bg-card hover:text-foreground"
@@ -238,13 +238,14 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
 
       <dialog
         ref={dialogRef}
+        aria-modal="true"
         aria-labelledby="analytics-period-title"
         onClick={(event) => {
           if (event.target === dialogRef.current) closePicker();
         }}
         className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-md overflow-hidden rounded-2xl bg-surface p-0 text-foreground shadow-float ring-1 ring-foreground/15 backdrop:bg-black/75"
       >
-        <div className="pos-scroll max-h-[calc(100dvh-2rem)] overflow-y-auto p-4 sm:p-5">
+        <div className="pos-scroll max-h-[calc(100dvh-2rem)] touch-pan-y overscroll-y-contain overflow-y-auto p-4 sm:p-5">
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 id="analytics-period-title" className="font-heading text-lg font-bold">
@@ -260,7 +261,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
               size="icon-lg"
               onClick={closePicker}
               aria-label="Cerrar selector"
-              className="shrink-0 rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+              className="shrink-0 touch-manipulation rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand active:scale-95"
             >
               <X />
             </Button>
@@ -292,7 +293,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
                 type="button"
                 variant="ghost"
                 size="icon-lg"
-                className="rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+                  className="touch-manipulation rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand active:scale-95"
                 onClick={() => {
                   const next = new Date(displayMonth);
                   if (draft.view === "anio") next.setUTCFullYear(next.getUTCFullYear() - 12);
@@ -311,7 +312,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
                 type="button"
                 variant="ghost"
                 size="icon-lg"
-                className="rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+                className="touch-manipulation rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand active:scale-95"
                 onClick={() => {
                   const next = new Date(displayMonth);
                   if (draft.view === "anio") next.setUTCFullYear(next.getUTCFullYear() + 12);
@@ -367,7 +368,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
                         onClick={() => chooseAnchor(date)}
                         aria-pressed={selected}
                         className={cn(
-                          "mx-auto flex size-10 items-center justify-center rounded-xl font-data text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-20",
+                          "mx-auto flex size-10 touch-manipulation items-center justify-center rounded-xl font-data text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-20",
                           !inMonth && "text-muted-foreground/45",
                           inRange && draft.view === "semana" && "bg-brand-light text-brand",
                           selected
@@ -399,7 +400,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
                       onClick={() => chooseAnchor(date)}
                       aria-pressed={selected}
                       className={cn(
-                        "h-12 rounded-xl font-heading text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-20",
+                        "h-12 touch-manipulation rounded-xl font-heading text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-20",
                         selected
                           ? "bg-brand text-white shadow-sm"
                           : "hover:bg-surface-raised"
@@ -425,7 +426,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
                         onClick={() => chooseAnchor(new Date(Date.UTC(year, 0, 1, 12)))}
                         aria-pressed={selected}
                         className={cn(
-                          "h-12 rounded-xl font-data text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-20",
+                          "h-12 touch-manipulation rounded-xl font-data text-xs font-bold transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-20",
                           selected
                             ? "bg-brand text-white shadow-sm"
                             : "hover:bg-surface-raised"
@@ -443,7 +444,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
               <button
                 type="button"
                 onClick={jumpToCurrent}
-                className="h-10 w-full rounded-xl bg-surface-raised font-heading text-xs font-bold text-foreground transition-[background-color,transform] duration-150 hover:bg-muted active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                className="h-10 w-full touch-manipulation rounded-xl bg-surface-raised font-heading text-xs font-bold text-foreground transition-[background-color,transform] duration-150 hover:bg-muted active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 Ir al periodo actual
               </button>
@@ -455,7 +456,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
               type="button"
               variant="ghost"
               size="lg"
-              className="h-11 flex-1 rounded-xl font-heading font-bold text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+              className="h-11 flex-1 touch-manipulation rounded-xl font-heading font-bold text-muted-foreground hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
               onClick={closePicker}
             >
               Cancelar
@@ -463,7 +464,7 @@ export function DateRangePicker({ period, onChange }: DateRangePickerProps) {
             <Button
               type="button"
               size="lg"
-              className="h-11 flex-[1.4] rounded-xl bg-brand font-heading font-bold text-white hover:bg-brand-hover"
+              className="h-11 flex-[1.4] touch-manipulation rounded-xl bg-brand font-heading font-bold text-white hover:bg-brand-hover focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98]"
               onClick={applyDraft}
             >
               {actionLabel(draft.view)}
