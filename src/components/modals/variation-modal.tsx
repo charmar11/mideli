@@ -71,6 +71,7 @@ export function VariationModal({ item, onClose, onConfirm }: VariationModalProps
     >
       <div
         role="dialog"
+        aria-modal="true"
         aria-labelledby="variation-title"
         className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-border bg-surface shadow-float sm:rounded-3xl"
       >
@@ -90,7 +91,7 @@ export function VariationModal({ item, onClose, onConfirm }: VariationModalProps
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground hover:text-foreground"
+            className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-xl bg-surface-raised text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"
           >
             <X size={20} />
           </button>
@@ -138,13 +139,13 @@ export function VariationModal({ item, onClose, onConfirm }: VariationModalProps
                           onClick={() => handleSelect(group, option)}
                           aria-pressed={isSelected}
                           disabled={!isSelected && isAtMaximum}
-                          className={`flex min-h-14 items-start justify-between gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors ${
+                          className={`flex min-h-14 min-w-0 touch-manipulation items-start justify-between gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
                             isSelected
                               ? "border-brand bg-brand-light"
                               : "border-border bg-background hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-40"
                           }`}
                         >
-                          <span className="flex items-center gap-3">
+                          <span className="flex min-w-0 flex-1 items-start gap-3">
                             <span
                               className={`flex h-6 w-6 items-center justify-center border-2 ${
                                 isMultiple ? "rounded-lg" : "rounded-full"
@@ -154,8 +155,8 @@ export function VariationModal({ item, onClose, onConfirm }: VariationModalProps
                             >
                               {isSelected ? <Check size={14} strokeWidth={3} /> : null}
                             </span>
-                            <span className="min-w-0">
-                              <span className="block font-heading text-sm font-semibold">
+                            <span className="min-w-0 flex-1">
+                              <span className="block break-words font-heading text-sm font-semibold">
                                 {option.name}
                               </span>
                               {option.description ? (
@@ -165,7 +166,7 @@ export function VariationModal({ item, onClose, onConfirm }: VariationModalProps
                               ) : null}
                             </span>
                           </span>
-                          <span className="font-data text-sm font-bold text-brand">
+                          <span className="shrink-0 font-data text-sm font-bold text-brand">
                             {option.price > 0 ? `+$${formatPrice(option.price)}` : "Incluido"}
                           </span>
                         </button>
@@ -200,7 +201,7 @@ export function VariationModal({ item, onClose, onConfirm }: VariationModalProps
             type="button"
             onClick={() => onConfirm(selectedModifiers, notes)}
             disabled={!allRequiredSelected}
-            className="flex h-12 w-full items-center justify-center rounded-xl bg-brand font-heading text-sm font-bold text-white shadow-lg shadow-brand/40 hover:bg-brand-hover disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
+            className="flex h-12 w-full touch-manipulation items-center justify-center rounded-xl bg-brand font-heading text-sm font-bold text-white shadow-lg shadow-brand/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-brand-hover disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
           >
             Agregar al pedido
           </button>
