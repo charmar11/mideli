@@ -43,7 +43,7 @@ import type {
   WhatsappCustomerSummary,
 } from "@/lib/whatsapp/admin-types";
 import { whatsappOrderStatus } from "@/lib/whatsapp/inbox";
-import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import { formatPhoneForDisplay, normalizePhone } from "@/lib/whatsapp/normalize";
 
 type Props = {
   onOpenConversation: (conversationId: string) => void;
@@ -460,7 +460,7 @@ function CustomerDetail({
               <CircleAlert size={15} />Sin conversación disponible
             </div>
           )}
-          <a href={`tel:+${customer.phone}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border px-4 font-heading text-xs font-bold text-foreground hover:bg-surface-raised sm:w-auto">
+          <a href={`tel:+${normalizePhone(customer.phone)}`} className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border border-border px-4 font-heading text-xs font-bold text-foreground hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] sm:w-auto">
             <UserRound size={15} />Llamar
           </a>
           {customer.lastConversationId ? (

@@ -57,7 +57,7 @@ import {
   whatsappMessageStatus,
   whatsappOrderStatus,
 } from "@/lib/whatsapp/inbox";
-import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import { formatPhoneForDisplay, normalizePhone } from "@/lib/whatsapp/normalize";
 import { WhatsappMessageText } from "@/components/whatsapp/whatsapp-message-text";
 
 type Props = {
@@ -359,7 +359,7 @@ function OrderContext({
         </p>
         <p className="mt-2 font-heading text-sm font-bold">{customerLabel(conversation)}</p>
         <a
-          href={`tel:+${conversation.phone}`}
+          href={`tel:+${normalizePhone(conversation.phone)}`}
           className="mt-1 inline-flex min-h-9 max-w-full items-center gap-2 whitespace-nowrap font-data text-xs text-muted-foreground hover:text-cream"
         >
           <Phone aria-hidden size={14} />
@@ -613,14 +613,14 @@ function ChatPanel({
           <h2 className="truncate font-heading text-sm font-bold sm:text-base">
             {customerLabel(conversation)}
           </h2>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className={`hidden rounded-full px-2 py-0.5 font-heading text-[9px] font-bold uppercase tracking-wide sm:inline-flex ${statusTone(status.tone)}`}>
               {status.label}
             </span>
             <span className={`inline-flex size-2 shrink-0 rounded-full sm:hidden ${statusDotTone(status.tone)}`}>
               <span className="sr-only">{status.label}</span>
             </span>
-            <span className="min-w-0 max-w-[8.5rem] truncate font-data text-[10px] text-muted-foreground sm:max-w-none">
+            <span className="shrink-0 whitespace-nowrap font-data text-[10px] text-muted-foreground">
               {formatPhoneForDisplay(conversation.phone)}
             </span>
           </div>
