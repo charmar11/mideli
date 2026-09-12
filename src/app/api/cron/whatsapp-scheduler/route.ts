@@ -4,7 +4,7 @@ import { runWhatsappScheduler } from "@/lib/whatsapp/scheduler.server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(request: NextRequest) {
+async function runScheduler(request: NextRequest) {
   const authorization = request.headers.get("authorization");
   const validSecrets = [
     process.env.CRON_SECRET,
@@ -18,4 +18,13 @@ export async function GET(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "No se pudo ejecutar el ciclo operativo de WhatsApp" }, { status: 500 });
   }
+}
+
+export async function GET(request: NextRequest) {
+  return runScheduler(request);
+}
+
+// Supabase pg_net invokes scheduled HTTP jobs with POST.
+export async function POST(request: NextRequest) {
+  return runScheduler(request);
 }
