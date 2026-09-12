@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-09-07
+Actualizado: 2026-09-12
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para cualquier agente de IA, no solo OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -334,6 +334,9 @@ Se atendieron los problemas de lentitud percibida del POS con estas decisiones:
 - Precarga en tiempo ocioso de módulos secundarios.
 - Suscripción Realtime con refresh agrupado para evitar ráfagas de consultas.
 - `useCallback` en handlers de productos y variaciones.
+- Las alertas Push de pedido nuevo y pedido listo se solicitan en segundo plano después de persistir o cambiar el pedido. La operación no queda bloqueada por la latencia de una Edge Function secundaria.
+- El POS conserva el catálogo en pantalla cuando una consulta temporal falla, muestra reintento y actualiza categorías y productos abiertos tras cambios Realtime.
+- La gráfica de tendencia de analíticas se carga bajo demanda para reducir el JavaScript inicial de la ruta.
 
 Antes de añadir más optimizaciones, medir qué interacción sigue lenta. No reemplazar consultas reales por datos falsos para aparentar velocidad.
 

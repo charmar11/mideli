@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import {
@@ -22,7 +23,6 @@ import {
   WalletCards,
 } from "lucide-react";
 import { DateRangePicker } from "@/components/analytics/date-range-picker";
-import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
 import { OwnerDailyControl } from "@/components/analytics/owner-daily-control";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +36,21 @@ import type {
 import { periodLabel } from "@/lib/analytics/period";
 import { cn } from "@/lib/utils";
 import type { OwnerOperationalData } from "@/lib/owner-report/types";
+
+const AnalyticsTrendChart = dynamic(
+  () =>
+    import("@/components/analytics/analytics-trend-chart").then(
+      (module) => module.AnalyticsTrendChart
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-64 items-center justify-center font-body text-sm text-muted-foreground">
+        Cargando tendencia...
+      </div>
+    ),
+  }
+);
 
 const SERVICE_FILTERS: Array<{
   id: AnalyticsServiceFilter;

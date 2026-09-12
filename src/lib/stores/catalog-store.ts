@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import type { Category, MenuItem } from "@/types/database";
 import { removeManagedProductImage } from "@/lib/product-images";
@@ -8,6 +7,7 @@ interface CatalogState {
   categories: Category[];
   menuItems: MenuItem[];
   loading: boolean;
+  lastError: string | null;
   fetchCatalog: () => Promise<void>;
   fetchCategories: () => Promise<void>;
   fetchMenuItems: () => Promise<void>;
@@ -36,6 +36,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   categories: [],
   menuItems: [],
   loading: false,
+  lastError: null,
 
   fetchCatalog: async () => {
     const hasCatalog = get().categories.length > 0 || get().menuItems.length > 0;
@@ -59,11 +60,27 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
             .order("sort_order", { ascending: true }),
         ]);
 
+        const catalogError = categoriesResult.error ?? menuItemsResult.error;
+        if (catalogError) {
+          // Conservamos el último menú usable durante una caída breve. Vaciar
+          // el catálogo aquí haría parecer que no existen productos y puede
+          // llevar a capturas incompletas durante el turno.
+          set({
+            lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
+          });
+          return;
+        }
+
         set({
           categories: categoriesResult.data ?? [],
           menuItems: menuItemsResult.data ?? [],
+          lastError: null,
         });
         catalogFetchedAt = Date.now();
+      } catch {
+        set({
+          lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
+        });
       } finally {
         set({ loading: false });
         catalogRequest = null;
@@ -105,24 +122,31 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
 
   subscribeToCatalog: () => {
     const supabase = createClient();
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      catalogFetchedAt = 0;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void get().fetchCatalog();
+      }, 150);
+    };
     const channel = supabase
       .channel(`catalog-updates-${crypto.randomUUID()}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "menu_items" },
-        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
-          const updated = payload.new as Partial<MenuItem>;
-          if (!updated.id) return;
-          set((state) => ({
-            menuItems: state.menuItems.map((item) =>
-              item.id === updated.id ? { ...item, ...updated } : item
-            ),
-          }));
-        }
+        { event: "*", schema: "public", table: "menu_items" },
+        refresh
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "categories" },
+        refresh
       )
       .subscribe();
 
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       void supabase.removeChannel(channel);
     };
   },

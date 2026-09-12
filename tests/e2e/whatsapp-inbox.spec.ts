@@ -31,6 +31,7 @@ function conversation(
     context: {
       items: [],
       total: 0,
+      deliveryFee: 0,
       serviceType: null,
       address: "",
       addressReference: "",
@@ -38,6 +39,8 @@ function conversation(
       orderNotes: "",
       deliveryNotes: "",
       paymentMethod: "",
+      scheduledFor: null,
+      scheduledForLabel: null,
     },
     ...overrides,
   };
@@ -63,12 +66,15 @@ test("busca por nombre, teléfono y folio", () => {
       status: "ready",
       type: "domicilio",
       total: 259,
+      deliveryFee: 30,
       paymentStatus: "unpaid",
       deliveryStatus: "searching_driver",
       deliveryAddress: "Sinagogas 1230",
       deliveryReference: "Casa blanca",
       paymentMethod: "efectivo",
       requestedCashTendered: 300,
+      scheduledFor: null,
+      scheduleStatus: "none",
       createdAt: "2026-08-27T05:00:00.000Z",
     },
   })];

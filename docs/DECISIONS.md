@@ -50,3 +50,9 @@ Los avisos de WhatsApp al cliente se mantienen desactivados por defecto en pedid
 - Las migraciones son la única vía para cambios de esquema.
 - Los datos conversacionales pueden limpiarse mediante la operación autorizada sin borrar órdenes, folios ni auditoría.
 - El número de teléfono se normaliza internamente para búsquedas y proveedores, pero la interfaz muestra el formato local cómodo cuando es posible.
+
+## Rendimiento y tolerancia a fallos
+
+- Las alertas Push son secundarias: guardar un pedido y cambiar su estado no esperan la respuesta del proveedor. La operación confirmada usa la persistencia y Realtime; Push se solicita en segundo plano y sus fallos quedan registrados para diagnóstico.
+- El POS conserva el último catálogo válido si una consulta temporal falla y muestra una acción de reintento. Los cambios de productos y categorías invalidan el caché y actualizan las vistas abiertas.
+- La gráfica pesada de analíticas se carga bajo demanda para que el cambio entre vistas operativas no arrastre su dependencia al primer render.

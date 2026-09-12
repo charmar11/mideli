@@ -23,7 +23,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.25.0",
-    "next": "^16.2.12",
+    "next": "^16.3.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.10.0",
@@ -37,8 +37,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@serwist/next": "^9.5.11",
-    "@serwist/turbopack": "^9.5.11",
+    "@serwist/next": "^9.5.12",
+    "@serwist/turbopack": "^9.5.12",
     "@swc/helpers": "^0.5.23",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -47,13 +47,14 @@
     "@types/twilio": "^3.19.2",
     "esbuild": "^0.28.1",
     "eslint": "^9",
-    "eslint-config-next": "^16.2.12",
-    "serwist": "^9.5.11",
+    "eslint-config-next": "^16.3.5",
+    "serwist": "^9.5.12",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
   "overrides": {
+    "browserslist": "4.28.9",
     "postcss": "8.5.25",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4"
   }
 }

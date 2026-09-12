@@ -424,7 +424,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         : [localOrder, ...state.todayOrders],
     }));
     if (order.schedule_status !== "scheduled") {
-      await publishOrderNotification(supabase, order.id, "new_order");
+      // El pedido ya está persistido y Realtime se encarga de Cocina. El Push
+      // es una señal secundaria y no debe retrasar la confirmación del POS.
+      void publishOrderNotification(supabase, order.id, "new_order");
     }
     return { order, error: null };
   },
@@ -463,7 +465,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     if (status === "ready") {
-      await publishOrderNotification(supabase, orderId, "ready");
+      // No bloqueamos el cambio operativo esperando al proveedor de Push.
+      void publishOrderNotification(supabase, orderId, "ready");
     }
 
     if (status === "in_kitchen" || status === "ready") {

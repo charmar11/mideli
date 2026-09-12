@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useMemo } from "react";
-import { Check, Search, Plus } from "lucide-react";
+import { Check, Plus, RefreshCw, Search } from "lucide-react";
 import { useCartStore, useCatalogStore, useUIStore } from "@/lib/stores";
 import type { MenuItem } from "@/types/database";
 
@@ -22,6 +22,9 @@ export const ProductGrid = memo(function ProductGrid({
 }: ProductGridProps) {
   const menuItems = useCatalogStore((state) => state.menuItems);
   const categories = useCatalogStore((state) => state.categories);
+  const catalogLoading = useCatalogStore((state) => state.loading);
+  const catalogError = useCatalogStore((state) => state.lastError);
+  const fetchCatalog = useCatalogStore((state) => state.fetchCatalog);
   const cartItems = useCartStore((state) => state.items);
   const activeCategory = useUIStore((state) => state.activeCategory);
   const searchQuery = useUIStore((state) => state.searchQuery);
@@ -83,6 +86,24 @@ export const ProductGrid = memo(function ProductGrid({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="px-3 pb-2 sm:px-4">
+        {catalogError ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-2 flex min-h-11 items-center justify-between gap-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 font-body text-xs text-warning"
+          >
+            <span className="min-w-0">{catalogError}</span>
+            <button
+              type="button"
+              onClick={() => void fetchCatalog()}
+              disabled={catalogLoading}
+              className="inline-flex min-h-11 shrink-0 touch-manipulation items-center gap-1.5 rounded-lg px-2 font-heading text-xs font-bold text-warning hover:bg-warning/10 disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={catalogLoading ? "animate-spin" : ""} />
+              Reintentar
+            </button>
+          </div>
+        ) : null}
         <div className="relative">
           <Search
             size={18}
