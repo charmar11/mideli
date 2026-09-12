@@ -19,6 +19,7 @@ Este documento sirve para agentes y personas que necesiten levantar, verificar o
 - Gemini: `WHATSAPP_GEMINI_INTERPRETER_ENABLED`, `WHATSAPP_GEMINI_MODEL`, `GEMINI_API_KEY` solo en servidor.
 - Maps: `GOOGLE_MAPS_SERVER_API_KEY` restringida a las APIs necesarias y solo en servidor.
 - Notificaciones y correo: `RESEND_*`, `OWNER_REPORT_EMAIL_ENABLED`, `CRON_SECRET`.
+- Scheduler de WhatsApp: `WHATSAPP_SCHEDULER_SECRET` en Vercel y los secretos `mideli_app_url` y `mideli_whatsapp_scheduler_secret` en Supabase Vault.
 - Observabilidad: `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` solo para build cuando aplique.
 
 ## Verificación local
@@ -65,7 +66,7 @@ $response = Invoke-WebRequest -UseBasicParsing https://mideli.vercel.app/api/hea
 
 La respuesta esperada es `STATUS 200`. Si se modificó Supabase, confirmar también las migraciones remotas y el comportamiento de la función afectada.
 
-El scheduler de WhatsApp se ejecuta cada minuto en producción para liberar pedidos programados hasta 20 minutos antes de la hora solicitada y procesar recordatorios de inactividad. La ruta exige `CRON_SECRET`; su actualización condicional evita liberar dos veces el mismo pedido. Esta frecuencia requiere un plan de Vercel que admita ejecuciones por minuto.
+El scheduler de WhatsApp se ejecuta cada minuto en Supabase Cron para liberar pedidos programados hasta 20 minutos antes de la hora solicitada y procesar recordatorios de inactividad. La ruta acepta `WHATSAPP_SCHEDULER_SECRET`, que se guarda en Supabase Vault; `CRON_SECRET` se conserva para los cron diarios de Vercel. La actualización condicional evita liberar dos veces el mismo pedido.
 
 No declarar un despliegue estable solo porque Vercel terminó el build. Los flujos de WhatsApp, Push, impresión, pagos y hardware requieren pruebas reales según `docs/releases/v0.9-piloto.md`.
 

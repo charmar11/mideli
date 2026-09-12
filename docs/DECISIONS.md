@@ -56,4 +56,4 @@ Los avisos de WhatsApp al cliente se mantienen desactivados por defecto en pedid
 - Las alertas Push son secundarias: guardar un pedido y cambiar su estado no esperan la respuesta del proveedor. La operación confirmada usa la persistencia y Realtime; Push se solicita en segundo plano y sus fallos quedan registrados para diagnóstico.
 - El POS conserva el último catálogo válido si una consulta temporal falla y muestra una acción de reintento. Los cambios de productos y categorías invalidan el caché y actualizan las vistas abiertas.
 - La gráfica pesada de analíticas se carga bajo demanda para que el cambio entre vistas operativas no arrastre su dependencia al primer render.
-- Los pedidos programados dependen de un cron de producción por minuto. El endpoint se autentica con `CRON_SECRET` y reclama cada orden con una actualización condicional para que ejecuciones simultáneas sean seguras.
+- Los pedidos programados dependen de un cron de producción por minuto en Supabase, no del plan de cron de Vercel. El endpoint usa un secreto dedicado almacenado en Vault y reclama cada orden con una actualización condicional para que ejecuciones simultáneas sean seguras.

@@ -8,10 +8,6 @@
     {
       "path": "/api/cron/whatsapp-retention",
       "schedule": "30 15 * * *"
-    },
-    {
-      "path": "/api/cron/whatsapp-scheduler",
-      "schedule": "* * * * *"
     }
   ]
 }

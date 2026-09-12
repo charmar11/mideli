@@ -5,8 +5,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
+  const authorization = request.headers.get("authorization");
+  const validSecrets = [
+    process.env.CRON_SECRET,
+    process.env.WHATSAPP_SCHEDULER_SECRET,
+  ].filter((value): value is string => Boolean(value));
+  if (!validSecrets.some((secret) => authorization === `Bearer ${secret}`)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
   try {
