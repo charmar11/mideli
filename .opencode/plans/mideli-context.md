@@ -337,6 +337,7 @@ Se atendieron los problemas de lentitud percibida del POS con estas decisiones:
 - Las alertas Push de pedido nuevo y pedido listo se solicitan en segundo plano después de persistir o cambiar el pedido. La operación no queda bloqueada por la latencia de una Edge Function secundaria.
 - El POS conserva el catálogo en pantalla cuando una consulta temporal falla, muestra reintento y actualiza categorías y productos abiertos tras cambios Realtime.
 - La gráfica de tendencia de analíticas se carga bajo demanda para reducir el JavaScript inicial de la ruta.
+- El scheduler de WhatsApp está configurado en `vercel.json` cada minuto para liberar pedidos programados y procesar inactividad; la ruta exige `CRON_SECRET` y la liberación es idempotente.
 
 Antes de añadir más optimizaciones, medir qué interacción sigue lenta. No reemplazar consultas reales por datos falsos para aparentar velocidad.
 

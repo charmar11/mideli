@@ -65,6 +65,8 @@ $response = Invoke-WebRequest -UseBasicParsing https://mideli.vercel.app/api/hea
 
 La respuesta esperada es `STATUS 200`. Si se modificó Supabase, confirmar también las migraciones remotas y el comportamiento de la función afectada.
 
+El scheduler de WhatsApp se ejecuta cada minuto en producción para liberar pedidos programados hasta 20 minutos antes de la hora solicitada y procesar recordatorios de inactividad. La ruta exige `CRON_SECRET`; su actualización condicional evita liberar dos veces el mismo pedido. Esta frecuencia requiere un plan de Vercel que admita ejecuciones por minuto.
+
 No declarar un despliegue estable solo porque Vercel terminó el build. Los flujos de WhatsApp, Push, impresión, pagos y hardware requieren pruebas reales según `docs/releases/v0.9-piloto.md`.
 
 ## WhatsApp
