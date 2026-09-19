@@ -58,7 +58,14 @@ jobs:
           docker info
 
       - name: Start PostgreSQL only
-        run: supabase db start --debug
+        run: |
+          set +e
+          supabase db start --debug > supabase-db-start.log 2>&1
+          exit_code=$?
+          diagnostic=$(tail -c 5000 supabase-db-start.log | tr '\n' ' ' | tr '\r' ' ')
+          echo "::error title=Supabase DB start (exit ${exit_code})::${diagnostic}"
+          cat supabase-db-start.log
+          exit "${exit_code}"
 
       - name: Apply migrations without seed data
         run: supabase db reset --local --no-seed
