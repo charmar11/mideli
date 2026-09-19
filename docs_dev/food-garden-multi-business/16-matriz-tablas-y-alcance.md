@@ -1,8 +1,9 @@
 # Matriz de tablas y alcance multinegocio
 
-**Estado:** inventario de diseño basado en las migraciones actuales. La fila de
-catálogo ya tiene una migración ejecutable separada; el resto sigue siendo
-alcance planificado y no modifica el esquema por sí mismo.
+**Estado:** inventario de diseño basado en las migraciones actuales. Las filas
+de catálogo, pedidos, finanzas, inventario, impresión, Push y personal ya
+tienen rebanadas ejecutables locales; ninguna de estas rebanadas se ha aplicado
+a producción.
 
 Este documento evita agregar `business_id` de forma automática a todas las
 tablas. Cada registro debe recibir el alcance correcto: plataforma,
@@ -26,7 +27,9 @@ derive de una relación validada.
 
 | Tabla | Alcance objetivo | Tratamiento |
 |---|---|---|
-| `profiles` | Plataforma/usuario | Mantener identidad y credenciales; no es el límite de datos de negocio. |
+| `profiles` | Plataforma/usuario | Mantener identidad y credenciales; no es el límite de datos de negocio. La lista de personal se deriva de `memberships`; no borrar la identidad para retirar un negocio. |
+| `memberships` | Plataforma, organización o negocio | Altas, roles y estados pasan por RPCs auditadas. El navegador no puede insertar, actualizar ni borrar membresías directamente. |
+| `membership_capabilities` | Alcance de la membresía | Se deriva del rol mediante las pasarelas de personal; no se administra desde el formulario de usuario. |
 | `user_onboarding_progress` | Usuario, con negocio opcional | Mantener global si describe la cuenta; agregar alcance solo si el flujo lo necesita. |
 | `app_license` | Plataforma | No duplicar por negocio en la primera migración. |
 | `license_control_credentials` | Plataforma | Nunca exponer valores sensibles; no duplicar por negocio sin decisión comercial. |

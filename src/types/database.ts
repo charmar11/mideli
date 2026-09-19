@@ -532,4 +532,10 @@ export interface StaffMember extends Profile {
   email: string | null;
   last_sign_in_at: string | null;
   banned_until: string | null;
+  /** Multibusiness scope metadata; absent while the legacy model is active. */
+  membership_id?: string | null;
+  membership_scope_type?: "platform" | "organization" | "business" | null;
+  membership_role_code?: string | null;
+  membership_status?: "active" | "inactive" | "revoked" | null;
+  business_id?: string | null;
 }

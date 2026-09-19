@@ -479,6 +479,16 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   filtra destinatarios mediante membresías y capacidades; `send-order-ready`
   solo adapta llamadas antiguas al worker único. La migración aún no se ha
   aplicado a producción.
+- La administración de personal tiene una frontera local en
+  `20260919133000_multibusiness_staff_runtime.sql`. El dueño administra solo
+  personal local de su negocio y el Coordinador administra únicamente meseras
+  globales. Las altas asignan capacidades derivadas del rol mediante RPCs
+  auditadas; el navegador ya no puede insertar o actualizar membresías
+  directamente. Las bajas son reversibles y las cuentas multinegocio no se
+  eliminan para conservar historial. La pantalla `/settings` ya filtra la lista
+  por el alcance actual y adapta los roles visibles. Esta migración sigue local;
+  todavía falta conectar el acceso de rutas por capacidades y probar el flujo
+  con perfiles reales antes de aplicarla.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 

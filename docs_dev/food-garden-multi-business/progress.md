@@ -232,6 +232,25 @@
 - Se agregó `multibusiness_financial_runtime_test.sql` para verificar funciones, permisos, triggers y la implementación de cierre por negocio.
 - La barra visual para cambiar de negocio todavía no se muestra: falta conectar los usuarios/membresías actuales, estados de preparación y navegación para que el cambio sea coherente en toda la sesión.
 
+## 2026-09-19: administración de personal por alcance
+
+- Se agregó `20260919133000_multibusiness_staff_runtime.sql` con cuatro
+  pasarelas RPC auditadas: altas de personal local, altas de meseras globales,
+  activación/desactivación y cambio de rol local.
+- El dueño de negocio solo puede crear `local_waiter`, `local_kitchen` o
+  `local_supervisor` dentro de su negocio. El Coordinador solo puede crear y
+  desactivar `global_waiter` dentro de la organización.
+- Las capacidades se derivan del rol en la base de datos. Se revocaron los
+  privilegios directos de INSERT, UPDATE y DELETE sobre `memberships`, para que
+  el navegador no pueda saltarse la auditoría ni fabricar permisos.
+- `/settings` ya consulta el alcance real: muestra personal local o meseras
+  globales, adapta los roles y oculta la eliminación permanente en el modelo
+  nuevo. La cuenta global se conserva y se desactiva cuando deja de trabajar.
+- La lista sigue conservando las credenciales y el perfil histórico; no crea
+  usuarios reales ni modifica producción. Falta probar el flujo con una base
+  remota aislada y terminar la autorización de rutas por capacidades antes de
+  habilitarlo en el proyecto productivo.
+
 ## 2026-09-19: selector visual e inventario aislado
 
 - La barra de navegación ya muestra un selector de negocio únicamente cuando la

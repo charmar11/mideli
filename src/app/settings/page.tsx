@@ -29,6 +29,7 @@ import {
   deactivateUserAction,
   deleteUserAction,
   getCurrentUserRole,
+  getStaffManagementContextAction,
   listProfilesAction,
   reactivateUserAction,
   resetUserPasswordAction,
@@ -43,6 +44,9 @@ type StatusChange = {
   member: StaffMember;
   action: "deactivate" | "reactivate";
 };
+type StaffManagementContext = Awaited<
+  ReturnType<typeof getStaffManagementContextAction>
+>;
 
 const roleLabels: Record<StaffRole, string> = {
   owner: "Dueño",
@@ -99,6 +103,13 @@ function getInitials(name: string) {
 export default function SettingsPage() {
   const [profiles, setProfiles] = useState<StaffMember[]>([]);
   const [viewerRole, setViewerRole] = useState<StaffRole | null>(null);
+  const [managementContext, setManagementContext] =
+    useState<StaffManagementContext>({
+      mode: "unavailable",
+      businessId: null,
+      organizationId: null,
+      businessName: null,
+    });
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [search, setSearch] = useState("");
@@ -121,10 +132,34 @@ export default function SettingsPage() {
   });
 
   const isOwner = viewerRole === "owner";
+  const isModernManagement =
+    managementContext.mode === "business" ||
+    managementContext.mode === "organization";
+  const visibleRoleOptions = useMemo<StaffRole[]>(() => {
+    if (managementContext.mode === "organization") return ["waiter"];
+    if (managementContext.mode === "business") {
+      return ["supervisor", "waiter", "kitchen"];
+    }
+    return roleOptions;
+  }, [managementContext.mode]);
+  const scopeTitle =
+    managementContext.mode === "organization"
+      ? "Meseras globales"
+      : managementContext.mode === "business"
+        ? `Personal de ${managementContext.businessName ?? "este negocio"}`
+        : "Personas que hacen funcionar Mideli";
 
   useEffect(() => {
-    void Promise.all([loadProfiles(), getCurrentUserRole()]).then(([, role]) => {
+    void Promise.all([
+      loadProfiles(),
+      getCurrentUserRole(),
+      getStaffManagementContextAction(),
+    ]).then(([, role, context]) => {
       setViewerRole(role as StaffRole | null);
+      setManagementContext(context);
+      if (context.mode === "organization") {
+        setNewUser((current) => ({ ...current, role: "waiter" }));
+      }
     });
   }, []);
 
@@ -163,7 +198,9 @@ export default function SettingsPage() {
     event.preventDefault();
     const fullEmail = newUser.email.includes("@")
       ? newUser.email.trim()
-      : `${newUser.email.trim()}@mideli.com`;
+      : isModernManagement
+        ? newUser.email.trim()
+        : `${newUser.email.trim()}@mideli.com`;
 
     startTransition(async () => {
       const result = await createUserAction({
@@ -340,11 +377,14 @@ export default function SettingsPage() {
                   <UsersRound size={21} />
                 </div>
                 <h2 className="font-heading text-2xl font-bold tracking-tight text-foreground">
-                  Personas que hacen funcionar Mideli
+                  {scopeTitle}
                 </h2>
                 <p className="mt-2 font-body text-sm leading-6 text-muted-foreground">
-                  Administra quién puede entrar al sistema. Al desactivar a una persona,
-                  sus pedidos y movimientos permanecen intactos para tus reportes.
+                  {managementContext.mode === "organization"
+                    ? "Administra las meseras que pueden tomar pedidos para todos los negocios del parque."
+                    : managementContext.mode === "business"
+                      ? "Administra el personal de este negocio. Al desactivar a una persona, sus pedidos y movimientos permanecen intactos."
+                      : "Administra quién puede entrar al sistema. Al desactivar a una persona, sus pedidos y movimientos permanecen intactos para tus reportes."}
                 </p>
               </div>
               <button
@@ -425,10 +465,10 @@ export default function SettingsPage() {
                           setNewUser({ ...newUser, email: event.target.value })
                         }
                         required
-                        placeholder="ana"
+                        placeholder={isModernManagement ? "ana@ejemplo.com" : "ana"}
                         className="min-w-0 flex-1 bg-transparent px-3 font-body text-sm text-foreground outline-none placeholder:text-muted-foreground"
                       />
-                      {!newUser.email.includes("@") && (
+                      {!isModernManagement && !newUser.email.includes("@") && (
                         <span className="flex items-center border-l border-border bg-surface px-2 font-data text-[11px] text-muted-foreground">
                           @mideli.com
                         </span>
@@ -454,14 +494,14 @@ export default function SettingsPage() {
                 <div>
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-heading text-xs font-bold text-foreground">Rol de acceso</span>
-                    {!isOwner && (
+                    {!isOwner && !isModernManagement && (
                       <span className="font-body text-[11px] text-muted-foreground">
                         El rol Dueño requiere autorización del dueño actual
                       </span>
                     )}
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-5">
-                    {roleOptions.map((role) => {
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {visibleRoleOptions.map((role) => {
                       const selected = newUser.role === role;
                       const disabled = role === "owner" && !isOwner;
                       return (
@@ -520,7 +560,9 @@ export default function SettingsPage() {
                 <div>
                   <h2 className="font-heading text-base font-bold text-foreground">Personal registrado</h2>
                   <p className="mt-1 font-body text-xs text-muted-foreground">
-                    Edita permisos o controla el acceso sin perder la operación histórica.
+                    {managementContext.mode === "organization"
+                      ? "Estas cuentas pueden tomar pedidos para cualquier negocio autorizado del parque."
+                      : "Edita permisos o controla el acceso sin perder la operación histórica."}
                   </p>
                 </div>
                 <button
@@ -748,7 +790,7 @@ export default function SettingsPage() {
                   onChange={(event) => setRoleDraft(event.target.value as StaffRole)}
                   className="h-11 w-full rounded-xl border border-border bg-background px-3 font-body text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
                 >
-                  {roleOptions.map((role) => (
+                  {visibleRoleOptions.map((role) => (
                     <option key={role} value={role} disabled={role === "owner" && !isOwner}>
                       {roleLabels[role]} · {roleDescriptions[role]}
                     </option>
@@ -780,18 +822,26 @@ export default function SettingsPage() {
             </div>
 
             <div className="mt-5 border-t border-border pt-4">
-              <button
-                type="button"
-                onClick={() => askDeleteMember(selectedMember)}
-                disabled={isPending}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-heading text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 disabled:opacity-50"
-              >
-                <Trash2 size={14} />
-                Eliminar permanentemente
-              </button>
-              <p className="mt-1 font-body text-[11px] leading-4 text-muted-foreground">
-                Solo se permite si no tiene pedidos ni actividad registrada.
-              </p>
+              {isModernManagement ? (
+                <p className="font-body text-[11px] leading-5 text-muted-foreground">
+                  Las cuentas multinegocio no se eliminan para conservar el historial. Si deja de trabajar aquí, desactiva su acceso.
+                </p>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => askDeleteMember(selectedMember)}
+                    disabled={isPending}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-heading text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 disabled:opacity-50"
+                  >
+                    <Trash2 size={14} />
+                    Eliminar permanentemente
+                  </button>
+                  <p className="mt-1 font-body text-[11px] leading-4 text-muted-foreground">
+                    Solo se permite si no tiene pedidos ni actividad registrada.
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
