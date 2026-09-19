@@ -25,6 +25,14 @@ function decodeUserName(value: string | null) {
   }
 }
 
+function decodeCapabilities(value: string | null) {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((capability) => capability.trim())
+    .filter(Boolean);
+}
+
 export default async function DashboardLayout({
   children,
 }: Readonly<{
@@ -41,6 +49,9 @@ export default async function DashboardLayout({
     <DashboardShell
       userName={decodeUserName(requestHeaders.get("x-mideli-user-name"))}
       userRole={userRole}
+      capabilities={decodeCapabilities(
+        requestHeaders.get("x-mideli-capabilities")
+      )}
     >
       {children}
     </DashboardShell>

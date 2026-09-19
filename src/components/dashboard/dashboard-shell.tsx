@@ -354,8 +354,16 @@ function MobileLink({
   );
 }
 
-function MobileMoreDrawer({ pathname }: { pathname: string }) {
-  const active = isGroupActive([...ADMIN_ITEMS, ...CONTROL_ITEMS], pathname);
+function MobileMoreDrawer({
+  pathname,
+  adminItems,
+  controlItems,
+}: {
+  pathname: string;
+  adminItems: NavItem[];
+  controlItems: NavItem[];
+}) {
+  const active = isGroupActive([...adminItems, ...controlItems], pathname);
   const [open, setOpen] = useState(false);
 
   return (
@@ -397,8 +405,8 @@ function MobileMoreDrawer({ pathname }: { pathname: string }) {
               </div>
 
               {[
-                { label: "Administrar", items: ADMIN_ITEMS },
-                { label: "Control", items: CONTROL_ITEMS },
+                { label: "Administrar", items: adminItems },
+                { label: "Control", items: controlItems },
               ].map((group) => (
                 <section key={group.label} className="mb-5 last:mb-0">
                   <h2 className="mb-2 font-heading text-sm font-bold text-muted-foreground">
@@ -447,22 +455,55 @@ interface DashboardShellProps {
   children: React.ReactNode;
   userName: string;
   userRole: Profile["role"];
+  capabilities?: string[];
 }
 
 export function DashboardShell({
   children,
   userName,
   userRole,
+  capabilities = [],
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isKitchenFocus = pathname === "/dashboard/cocina";
   const isAdmin = userRole === "owner" || userRole === "admin";
-  const canUsePos = isAdmin || userRole === "waiter" || userRole === "supervisor";
+  const hasCapability = (capability: string) => capabilities.includes(capability);
+  const canUsePos =
+    isAdmin ||
+    userRole === "waiter" ||
+    userRole === "supervisor" ||
+    hasCapability("business.operate_orders") ||
+    hasCapability("organization.operate_orders");
   const canUseKitchen =
-    isAdmin || userRole === "kitchen" || userRole === "supervisor";
+    isAdmin ||
+    userRole === "kitchen" ||
+    userRole === "supervisor" ||
+    hasCapability("business.update_preparation");
   const canUseWhatsapp =
     isAdmin || userRole === "waiter" || userRole === "supervisor";
+  const adminItems = ADMIN_ITEMS.filter((item) => {
+    if (item.href === "/menu") {
+      return isAdmin || hasCapability("business.manage_catalog");
+    }
+    if (item.href === "/settings") {
+      return (
+        isAdmin ||
+        hasCapability("business.manage_staff") ||
+        hasCapability("organization.manage_global_waiters")
+      );
+    }
+    return isAdmin || hasCapability("organization.manage_tables");
+  });
+  const controlItems = CONTROL_ITEMS.filter((item) => {
+    if (item.href === "/settings/inventario") {
+      return isAdmin || hasCapability("business.manage_inventory");
+    }
+    if (item.href === "/settings/caja") {
+      return isAdmin || hasCapability("business.manage_cash");
+    }
+    return isAdmin;
+  });
   const operationItems: NavItem[] = [
     ...(canUsePos ? [POS_ITEM] : []),
     ...(canUseKitchen ? [KITCHEN_ITEM] : []),
@@ -515,20 +556,24 @@ export function DashboardShell({
           {operationItems.map((item) => (
             <SidebarLink key={item.href} item={item} pathname={pathname} />
           ))}
-          {isAdmin ? (
+          {adminItems.length > 0 || controlItems.length > 0 ? (
             <>
-              <SidebarGroup
-                label="Administrar"
-                icon={SlidersHorizontal}
-                items={ADMIN_ITEMS}
-                pathname={pathname}
-              />
-              <SidebarGroup
-                label="Control"
-                icon={Landmark}
-                items={CONTROL_ITEMS}
-                pathname={pathname}
-              />
+              {adminItems.length > 0 ? (
+                <SidebarGroup
+                  label="Administrar"
+                  icon={SlidersHorizontal}
+                  items={adminItems}
+                  pathname={pathname}
+                />
+              ) : null}
+              {controlItems.length > 0 ? (
+                <SidebarGroup
+                  label="Control"
+                  icon={Landmark}
+                  items={controlItems}
+                  pathname={pathname}
+                />
+              ) : null}
             </>
           ) : null}
         </nav>
@@ -571,20 +616,24 @@ export function DashboardShell({
           {operationItems.map((item) => (
             <HeaderLink key={item.href} item={item} pathname={pathname} />
           ))}
-          {isAdmin ? (
+          {adminItems.length > 0 || controlItems.length > 0 ? (
             <>
-              <HeaderGroup
-                label="Administrar"
-                icon={SlidersHorizontal}
-                items={ADMIN_ITEMS}
-                pathname={pathname}
-              />
-              <HeaderGroup
-                label="Control"
-                icon={Landmark}
-                items={CONTROL_ITEMS}
-                pathname={pathname}
-              />
+              {adminItems.length > 0 ? (
+                <HeaderGroup
+                  label="Administrar"
+                  icon={SlidersHorizontal}
+                  items={adminItems}
+                  pathname={pathname}
+                />
+              ) : null}
+              {controlItems.length > 0 ? (
+                <HeaderGroup
+                  label="Control"
+                  icon={Landmark}
+                  items={controlItems}
+                  pathname={pathname}
+                />
+              ) : null}
             </>
           ) : null}
         </nav>
@@ -688,7 +737,13 @@ export function DashboardShell({
           {operationItems.map((item) => (
             <MobileLink key={item.href} item={item} pathname={pathname} />
           ))}
-          {isAdmin ? <MobileMoreDrawer pathname={pathname} /> : null}
+          {adminItems.length > 0 || controlItems.length > 0 ? (
+            <MobileMoreDrawer
+              pathname={pathname}
+              adminItems={adminItems}
+              controlItems={controlItems}
+            />
+          ) : null}
         </nav>
       </div>
       <RoleOnboardingTour role={userRole} />

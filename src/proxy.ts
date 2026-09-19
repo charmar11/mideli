@@ -1,11 +1,14 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { APP_LICENSE_ID, resolveLicense, type AppLicenseRecord } from "@/lib/license";
+import { SELECTED_BUSINESS_COOKIE } from "@/lib/multibusiness/constants";
+import type { BusinessContextRow } from "@/types/multibusiness";
 
 const protectedRoutes = ["/dashboard", "/menu", "/settings"];
 const adminRoutes = ["/menu", "/settings"];
 const ROLE_HEADER = "x-mideli-role";
 const USER_NAME_HEADER = "x-mideli-user-name";
+const CAPABILITIES_HEADER = "x-mideli-capabilities";
 const SESSION_RECOVERY_ROUTE = "/reconectando";
 
 function getRoleHome(role: string) {
@@ -30,6 +33,60 @@ function canUseWhatsapp(role: string) {
 
 function canUseInventory(role: string) {
   return isAdminRole(role);
+}
+
+function hasCapability(capabilities: string[], capability: string) {
+  return capabilities.includes(capability);
+}
+
+function canUseAdminRoute(
+  pathname: string,
+  role: string,
+  capabilities: string[]
+) {
+  if (isAdminRole(role)) return true;
+  if (pathname.startsWith("/menu")) {
+    return hasCapability(capabilities, "business.manage_catalog");
+  }
+  if (pathname.startsWith("/settings/mesas")) {
+    return hasCapability(capabilities, "organization.manage_tables");
+  }
+  if (pathname.startsWith("/settings/caja")) {
+    return hasCapability(capabilities, "business.manage_cash");
+  }
+  if (pathname === "/settings") {
+    return (
+      hasCapability(capabilities, "business.manage_staff") ||
+      hasCapability(capabilities, "organization.manage_global_waiters")
+    );
+  }
+  return false;
+}
+
+function resolveScopedCapabilities(
+  request: NextRequest,
+  contexts: BusinessContextRow[]
+) {
+  if (contexts.length === 0) return [];
+
+  const requestedBusinessId = request.cookies.get(SELECTED_BUSINESS_COOKIE)?.value;
+  const selected =
+    contexts.find((context) => context.business_id === requestedBusinessId) ??
+    contexts.find((context) => context.business_lifecycle_status === "active") ??
+    contexts[0];
+  if (!selected) return [];
+
+  const organizationCapabilities = contexts
+    .filter((context) => context.organization_id === selected.organization_id)
+    .flatMap((context) =>
+      context.capability_codes.filter((capability) =>
+        capability.startsWith("organization.")
+      )
+    );
+
+  return Array.from(
+    new Set([...selected.capability_codes, ...organizationCapabilities])
+  );
 }
 
 function hasSupabaseAuthCookie(request: NextRequest) {
@@ -63,6 +120,7 @@ export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.delete(ROLE_HEADER);
   requestHeaders.delete(USER_NAME_HEADER);
+  requestHeaders.delete(CAPABILITIES_HEADER);
 
   let cookiesToSet: Array<{
     name: string;
@@ -174,6 +232,7 @@ export async function proxy(request: NextRequest) {
     is_active: boolean;
     full_name: string | null;
   } | null = null;
+  let multibusinessCapabilities: string[] = [];
 
   if ((isProtected || isSessionRecovery) && userId) {
     let profileResult = await supabase
@@ -212,6 +271,22 @@ export async function proxy(request: NextRequest) {
       USER_NAME_HEADER,
       encodeURIComponent(profile.full_name || String(claims.email || ""))
     );
+
+    const { data: contextRows, error: contextError } = await supabase.rpc(
+      "get_my_multibusiness_context"
+    );
+    if (!contextError) {
+      multibusinessCapabilities = resolveScopedCapabilities(
+        request,
+        (contextRows ?? []) as BusinessContextRow[]
+      );
+    }
+    if (multibusinessCapabilities.length > 0) {
+      requestHeaders.set(
+        CAPABILITIES_HEADER,
+        multibusinessCapabilities.join(",")
+      );
+    }
     supabaseResponse = createResponse();
 
     if (isSessionRecovery) {
@@ -222,7 +297,10 @@ export async function proxy(request: NextRequest) {
   }
 
   if (profile) {
-    if (isAdminRoute && !isAdminRole(profile.role)) {
+    if (
+      isAdminRoute &&
+      !canUseAdminRoute(pathname, profile.role, multibusinessCapabilities)
+    ) {
       return redirectWithAuth(getRoleHome(profile.role));
     }
 
@@ -230,15 +308,34 @@ export async function proxy(request: NextRequest) {
       return redirectWithAuth(getRoleHome(profile.role));
     }
 
-    if (isInventoryRoute && !canUseInventory(profile.role)) {
+    if (
+      isInventoryRoute &&
+      !(
+        canUseInventory(profile.role) ||
+        hasCapability(multibusinessCapabilities, "business.manage_inventory")
+      )
+    ) {
       return redirectWithAuth(getRoleHome(profile.role));
     }
 
-    if (isPosRoute && !canUsePos(profile.role)) {
+    if (
+      isPosRoute &&
+      !(
+        canUsePos(profile.role) ||
+        hasCapability(multibusinessCapabilities, "business.operate_orders") ||
+        hasCapability(multibusinessCapabilities, "organization.operate_orders")
+      )
+    ) {
       return redirectWithAuth(getRoleHome(profile.role));
     }
 
-    if (isKitchenRoute && !canUseKitchen(profile.role)) {
+    if (
+      isKitchenRoute &&
+      !(
+        canUseKitchen(profile.role) ||
+        hasCapability(multibusinessCapabilities, "business.update_preparation")
+      )
+    ) {
       return redirectWithAuth(getRoleHome(profile.role));
     }
 
