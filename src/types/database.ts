@@ -74,6 +74,36 @@ export interface RestaurantTable {
   updated_at: string;
 }
 
+export interface TableVisit {
+  id: string;
+  organization_id: string;
+  table_id: string;
+  service_number: number;
+  status: "open" | "closed" | "cancelled";
+  opened_by: string;
+  opened_at: string;
+  closed_by: string | null;
+  closed_at: string | null;
+  close_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BusinessAccount {
+  id: string;
+  table_visit_id: string;
+  organization_id: string;
+  business_id: string;
+  account_sequence: number;
+  status: "open" | "partially_paid" | "paid" | "closed" | "cancelled";
+  notes: string;
+  created_by: string;
+  created_at: string;
+  paid_at: string | null;
+  closed_at: string | null;
+  updated_at: string;
+}
+
 export interface TableMapLabel {
   id: string;
   label_text: string;
@@ -256,6 +286,8 @@ export interface Order {
   creation_key?: string | null;
   /** Optional while older clients roll forward to the business-bound order boundary. */
   business_id?: string;
+  table_visit_id?: string | null;
+  business_account_id?: string | null;
   cash_shift_id?: string | null;
   number: number;
   status: "pending" | "in_kitchen" | "ready" | "served" | "paid" | "cancelled";

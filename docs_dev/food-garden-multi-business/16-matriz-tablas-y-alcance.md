@@ -40,11 +40,12 @@ derive de una relación validada.
 | `table_zones` | Organización | El Coordinador administra el plano compartido. |
 | `restaurant_tables` | Organización | Una mesa física puede recibir cuentas de varios negocios. |
 | `table_map_labels` | Organización | Mantener junto al plano y proteger por capacidad organizacional. |
-| `table_visits` *(nueva)* | Organización + mesa | Representar cada servicio nuevo sin reconstruir visitas históricas. |
-| `business_accounts` *(nueva)* | Negocio + visita | Una cuenta independiente por negocio dentro de una visita. |
+| `table_visits` | Organización + mesa | `20260919094500_multibusiness_table_visits_accounts.sql` crea la visita futura sin reconstruir visitas históricas. |
+| `business_accounts` | Negocio + visita | La misma migración crea una cuenta independiente por negocio dentro de una visita. |
 
-Las entidades nuevas `table_visits` y `business_accounts` son parte del diseño
-objetivo, no existen todavía en las migraciones actuales.
+Las entidades nuevas ya existen en el esquema, pero todavía no están conectadas
+al flujo visual de Mesero. La creación y cierre se hará mediante RPCs que
+validen la membresía y el negocio, no mediante inserts directos del navegador.
 
 ## Catálogo y disponibilidad
 

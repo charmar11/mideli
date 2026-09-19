@@ -166,6 +166,10 @@
   pedidos históricos a Mideli, exige `orders.business_id` y rechaza artículos
   cuyo producto pertenezca a otro negocio. Todavía no reemplaza el RLS de
   pedidos ni separa cuentas mixtas de mesa.
+- Se agregó `20260919094500_multibusiness_table_visits_accounts.sql`. Define la
+  visita compartida de una mesa y una cuenta independiente por negocio, con
+  vínculos opcionales desde los pedidos y validaciones para evitar cruces. La
+  interfaz aún no las crea; falta el RPC transaccional y el flujo visual.
 - WhatsApp sigue exclusivo de Mideli y ahora filtra el catálogo por negocio
   cuando la fundación está disponible; conserva un fallback acotado para el
   despliegue gradual mientras faltan columnas en una base anterior.
