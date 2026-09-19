@@ -52,8 +52,13 @@ jobs:
         with:
           version: 2.117.0
 
+      - name: Inspect Docker runtime
+        run: |
+          docker version
+          docker info
+
       - name: Start PostgreSQL only
-        run: supabase db start
+        run: supabase db start --debug
 
       - name: Apply migrations without seed data
         run: supabase db reset --local --no-seed
