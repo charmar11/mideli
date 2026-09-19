@@ -18,6 +18,10 @@ Las migraciones versionadas de esta fundación ya existen en
 Todavía no se han aplicado a Supabase porque el proyecto no tiene una rama de
 staging disponible y no se debe escribir en producción.
 
+El repositorio también ejecuta lint, build, migraciones locales y pgTAP en
+GitHub Actions. Esto permite validar el SQL en un runner con Docker sin pagar
+Branching ni crear otro proyecto Supabase.
+
 ## Diagrama de referencia
 
 - [Arquitectura objetivo en HTML](artifacts/arquitectura-objetivo.html)

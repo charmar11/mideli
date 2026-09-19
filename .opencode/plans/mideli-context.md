@@ -447,6 +447,7 @@ La implementación actual sigue siendo de un solo local y no debe interpretarse 
 - Como regla operativa recomendada, el personal autorizado de cada negocio cambia sus estados de preparación; la mesera global consulta, recibe avisos, entrega y cobra, pero no marca `Listo` de otro negocio por defecto. Una excepción deberá ser una capacidad explícita y auditada.
 - WhatsApp seguirá exclusivo de Mideli en la primera etapa.
 - La implementación remota de esta evolución requiere el contrato aprobado en `docs_dev/food-garden-multi-business/10-especificacion-final-y-gates.md` y un staging aislado. La fundación ya está versionada localmente en `20260919082935_multibusiness_foundation.sql` y `20260919083624_multibusiness_capability_catalog.sql`, pero todavía no se ha aplicado, no tiene datos reales y no cambia las tablas operativas. La preparación, brechas, pruebas, reversión y gates siguen en `docs_dev/food-garden-multi-business/`.
+- El repositorio tiene `.github/workflows/verify.yml` para validar lint, build, migraciones y pgTAP en GitHub Actions sin crear una base Supabase adicional. La CI no sustituye un staging persistente ni autoriza aplicar cambios remotos.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 

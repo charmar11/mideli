@@ -141,3 +141,6 @@
   hay una base local levantada en `127.0.0.1:54322` y Docker no está instalado.
 - La fundación queda pendiente de probar en staging antes de asociar Mideli o
   tocar cualquier tabla operativa.
+- Se agregó `.github/workflows/verify.yml` para que GitHub ejecute lint, build,
+  todas las migraciones locales y las pruebas pgTAP en un runner aislado. Es
+  una verificación de CI, no un entorno Supabase compartido ni un deploy.
