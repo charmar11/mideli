@@ -73,7 +73,10 @@ jobs:
       - name: Run database tests
         run: |
           set +e
-          supabase test db --local > supabase-db-test.log 2>&1
+          # The *_smoke.sql files are operational checks that require a
+          # production-like profile and are not pgTAP plans. Run the
+          # deterministic pgTAP suite explicitly in the empty CI database.
+          supabase test db --local supabase/tests/multibusiness_*_test.sql > supabase-db-test.log 2>&1
           exit_code=$?
           diagnostic=$(tail -c 5000 supabase-db-test.log | tr '\n' ' ' | tr '\r' ' ')
           echo "::error title=Supabase database tests (exit ${exit_code})::${diagnostic}"
