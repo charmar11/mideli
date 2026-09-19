@@ -208,3 +208,10 @@
 - La cuenta existente del dueño de Mideli recibe una membresía transitoria de organización y ese permiso para conservar la administración actual del plano sin cambiar su login.
 - Los inserts existentes que no envían `organization_id` siguen resolviendo Mideli durante la transición.
 - La migración todavía no se ha aplicado a producción; falta comprobarla en CI y después continuar con el contexto de negocio en la interfaz.
+
+## 2026-09-19: contexto de negocio y pedido POS seguro
+
+- `20260919114500_multibusiness_runtime_context.sql` agrega `get_my_multibusiness_context()`, que devuelve únicamente los negocios visibles para la sesión junto con el rol y capacidades efectivas.
+- Se agregó `create_business_order_with_items(...)`. Recalcula el catálogo y las variaciones en PostgreSQL, rechaza artículos de otro negocio, comprueba la capacidad de operar y conserva idempotencia.
+- El RPC antiguo de Mideli permanece durante la transición; WhatsApp no entra al selector.
+- Falta conectar este contexto al selector del POS, catálogo, mesas, estados, caja y cobro. No se debe mostrar un selector hasta que esos consumidores usen el mismo negocio.
