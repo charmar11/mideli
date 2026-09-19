@@ -62,7 +62,10 @@ jobs:
           set +e
           supabase db start --debug > supabase-db-start.log 2>&1
           exit_code=$?
-          diagnostic=$(tail -c 5000 supabase-db-start.log | tr '\n' ' ' | tr '\r' ' ')
+          diagnostic=$(grep -Ein -A3 -B3 'error|failed|fatal|syntax|permission denied|relation .* does not exist' supabase-db-start.log | tail -c 12000 | tr '\n' ' ' | tr '\r' ' ')
+          if [ -z "$diagnostic" ]; then
+            diagnostic=$(tail -c 5000 supabase-db-start.log | tr '\n' ' ' | tr '\r' ' ')
+          fi
           echo "::error title=Supabase DB start (exit ${exit_code})::${diagnostic}"
           cat supabase-db-start.log
           exit "${exit_code}"
