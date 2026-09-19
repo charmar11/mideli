@@ -16,6 +16,21 @@ migración en producción.
 
 ## Fases obligatorias
 
+### 0. Publicar compatibilidad antes del esquema
+
+La versión compatible del frontend debe estar publicada antes de ejecutar las
+migraciones en producción. La migración revoca algunos RPC heredados y el
+frontend anterior podría dejar de crear pedidos. La versión compatible puede
+operar con el esquema actual mediante fallback y después usar el contexto
+multinegocio cuando las migraciones estén aplicadas.
+
+Orden mínimo:
+
+1. CI verde en la rama que se va a publicar.
+2. Deploy de la versión compatible.
+3. Comprobar `/api/health` y un acceso normal a la aplicación.
+4. Solo después continuar con el respaldo y `db push --linked`.
+
 ### 1. Preflight sin escritura
 
 Antes de aplicar cualquier migración:
