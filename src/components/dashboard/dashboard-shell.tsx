@@ -275,6 +275,7 @@ function HeaderGroup({
 }
 
 function BusinessSelector({ compact = false }: { compact?: boolean }) {
+  const router = useRouter();
   const businesses = useBusinessContextStore((state) => state.businesses);
   const selectedBusinessId = useBusinessContextStore(
     (state) => state.selectedBusinessId
@@ -303,7 +304,9 @@ function BusinessSelector({ compact = false }: { compact?: boolean }) {
       <select
         aria-label="Negocio activo"
         value={selectedBusinessId}
-        onChange={(event) => selectBusiness(event.target.value)}
+        onChange={(event) => {
+          if (selectBusiness(event.target.value)) router.refresh();
+        }}
         className={`min-w-0 max-w-40 bg-transparent font-heading font-bold text-foreground outline-none ${
           compact ? "text-[11px]" : "text-xs"
         }`}

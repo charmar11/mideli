@@ -250,3 +250,11 @@
 - Se agregó una prueba pgTAP estructural para comprobar permisos, contexto,
   RLS y retiro de los RPC históricos. Todavía no se ha aplicado ninguna de
   estas migraciones a Supabase productivo.
+- El negocio seleccionado también se replica como una pista de navegación en
+  una cookie no sensible. El servidor la valida contra
+  `get_my_multibusiness_context()` antes de filtrar historial y analíticas;
+  nunca se usa como permiso.
+- Historial de ventas, eliminación de pedidos y analíticas ya agregan el
+  filtro del negocio seleccionado cuando la fundación está disponible. Al
+  cambiar el selector, la vista server-side se refresca para no mostrar datos
+  del negocio anterior.

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Order, OrderItem } from "@/types/database";
 import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
+import { getSelectedBusinessContext } from "@/lib/server/selected-business";
 
 export interface SalesHistoryParams {
   desde: string;
@@ -70,7 +71,12 @@ export async function fetchSalesHistory({
       return { orders: [], error: "Tu cuenta está desactivada" };
     }
 
-    const { data: ordersData, error: ordersError } = await supabase
+    const businessContext = await getSelectedBusinessContext(supabase);
+    if (businessContext.multibusinessAvailable && !businessContext.businessId) {
+      return { orders: [], error: "No hay un negocio disponible para esta cuenta" };
+    }
+
+    let ordersQuery = supabase
       .from("orders")
       .select(
         "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,customer_phone,source_channel,whatsapp_status_opt_in,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
@@ -79,6 +85,10 @@ export async function fetchSalesHistory({
       .lte("created_at", to.toISOString())
       .order("created_at", { ascending: false })
       .limit(500);
+    if (businessContext.businessId) {
+      ordersQuery = ordersQuery.eq("business_id", businessContext.businessId);
+    }
+    const { data: ordersData, error: ordersError } = await ordersQuery;
 
     if (ordersError) {
       return { orders: [], error: "No se pudo cargar el historial de ventas" };
@@ -192,12 +202,23 @@ export async function deleteSalesHistoryOrder(
       };
     }
 
+    const businessContext = await getSelectedBusinessContext(supabase);
+    if (businessContext.multibusinessAvailable && !businessContext.businessId) {
+      return {
+        success: false,
+        error: "No hay un negocio disponible para esta cuenta",
+      };
+    }
+
     const admin = createAdminClient();
-    const { data: order, error: orderError } = await admin
+    let orderQuery = admin
       .from("orders")
-      .select("id,number")
+      .select("id,number,business_id")
       .eq("id", orderId)
-      .maybeSingle();
+    if (businessContext.businessId) {
+      orderQuery = orderQuery.eq("business_id", businessContext.businessId);
+    }
+    const { data: order, error: orderError } = await orderQuery.maybeSingle();
 
     if (orderError) {
       return { success: false, error: "No se pudo consultar el pedido" };
@@ -277,10 +298,11 @@ export async function deleteSalesHistoryOrder(
       }
     }
 
-    const { error: deleteError } = await admin
-      .from("orders")
-      .delete()
-      .eq("id", orderId);
+    let deleteQuery = admin.from("orders").delete().eq("id", orderId);
+    if (businessContext.businessId) {
+      deleteQuery = deleteQuery.eq("business_id", businessContext.businessId);
+    }
+    const { error: deleteError } = await deleteQuery;
 
     if (deleteError) {
       return {

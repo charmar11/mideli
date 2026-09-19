@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import type { BusinessContextRow } from "@/types/multibusiness";
+import { SELECTED_BUSINESS_COOKIE } from "@/lib/multibusiness/constants";
 
 const SELECTED_BUSINESS_STORAGE_KEY = "mideli:selected-business-id";
 const MISSING_CONTEXT_CODES = new Set(["PGRST202", "42883", "42P01"]);
@@ -29,8 +30,10 @@ function writeStoredBusinessId(businessId: string | null) {
   if (typeof window === "undefined") return;
   if (businessId) {
     window.localStorage.setItem(SELECTED_BUSINESS_STORAGE_KEY, businessId);
+    document.cookie = `${SELECTED_BUSINESS_COOKIE}=${encodeURIComponent(businessId)}; Max-Age=31536000; Path=/; SameSite=Lax`;
   } else {
     window.localStorage.removeItem(SELECTED_BUSINESS_STORAGE_KEY);
+    document.cookie = `${SELECTED_BUSINESS_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
   }
 }
 

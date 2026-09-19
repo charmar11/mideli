@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getSelectedBusinessContext } from "@/lib/server/selected-business";
 import {
   addDays,
   getPreviousPeriod,
@@ -427,6 +428,10 @@ export async function fetchAnalytics({
   service,
 }: AnalyticsParams): Promise<AnalyticsData> {
   const supabase = await createClient();
+  const businessContext = await getSelectedBusinessContext(supabase);
+  if (businessContext.multibusinessAvailable && !businessContext.businessId) {
+    throw new Error("No hay un negocio disponible para esta cuenta.");
+  }
   const previousPeriod = getPreviousPeriod(period);
   const currentStart = queryTimestamp(period.from, "start");
   const currentEnd = queryTimestamp(period.to, "end");
@@ -463,6 +468,20 @@ export async function fetchAnalytics({
     .gte("created_at", previousStart)
     .lte("created_at", previousEnd)
     .order("created_at", { ascending: true });
+
+  if (businessContext.businessId) {
+    currentQuery = currentQuery.eq("business_id", businessContext.businessId);
+    cancelledQuery = cancelledQuery.eq("business_id", businessContext.businessId);
+    openQuery = openQuery.eq("business_id", businessContext.businessId);
+    currentPaymentsQuery = currentPaymentsQuery.eq(
+      "business_id",
+      businessContext.businessId
+    );
+    previousPaymentsQuery = previousPaymentsQuery.eq(
+      "business_id",
+      businessContext.businessId
+    );
+  }
 
   if (service !== "todos") {
     currentQuery = currentQuery.eq("type", service);
