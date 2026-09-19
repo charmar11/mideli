@@ -8,8 +8,9 @@ Este documento sirve para agentes y personas que necesiten levantar, verificar o
 - Producción: [https://mideli.vercel.app](https://mideli.vercel.app).
 - Salud: [https://mideli.vercel.app/api/health](https://mideli.vercel.app/api/health).
 - Base de datos: proyecto Supabase `qgnjennimvbrfxvcmowb`.
-- Staging multinegocio: todavía no provisionado. No usar producción para
-  ejecutar la primera migración de organización, negocio y membresías.
+- Producción ya contiene la primera rebanada multinegocio con Mideli como único
+  negocio activo. No usar producción como staging para crear o probar otros
+  negocios; la validación aislada continúa en GitHub Actions.
 
 `.env.example` documenta los nombres de variables. `.env.local` nunca se lee para imprimirlo, nunca se commitea y nunca se comparte.
 
@@ -46,11 +47,11 @@ npx supabase db push --linked --dry-run
 
 Después de revisar el dry-run, aplicar solo la migración aprobada. Nunca ejecutar `supabase db reset --linked`, borrar tablas remotas ni eliminar datos sin autorización explícita para esa operación concreta.
 
-La copia local incluye 54 migraciones hasta `20260906160106_cash_shift_digital_close.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
+La copia local incluye migraciones hasta `20260919200649_multibusiness_security_revoke_staff_anon.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
 
 ### Gate aislado para multinegocio
 
-No se usa producción como staging. Como no se contratará un entorno Preview de
+No se usa producción como staging. Como no se contrató un entorno Preview de
 Supabase para esta etapa, la validación reproducible vive en GitHub Actions:
 
 ```bash
@@ -60,15 +61,15 @@ supabase test db --local supabase/tests/multibusiness_*_test.sql
 
 Ese gate valida migraciones, RLS, privilegios, triggers, índices y pruebas de
 aislamiento sobre una base efímera sin datos de clientes. No reemplaza un
-respaldo restaurable ni autoriza un `db push --linked`.
+respaldo restaurable ni autoriza por sí mismo un `db push --linked`.
 
 El runbook completo está en
 `docs_dev/food-garden-multi-business/17-runbook-migracion-mideli.md`.
 
-Antes de migrar producción también hay un paso manual pendiente en Supabase:
-activar la protección contra contraseñas filtradas en Authentication. Esa
-configuración no se puede transportar de forma segura desde este repositorio y
-debe verificarse en el proyecto remoto antes de abrir el piloto.
+Antes de abrir el piloto prolongado queda un paso manual en Supabase: activar la
+protección contra contraseñas filtradas en Authentication. Esa configuración no
+se puede transportar de forma segura desde este repositorio y debe verificarse
+en el proyecto remoto.
 
 Para la preparación multinegocio, la rama Preview de Supabase debe ser
 persistente y usar variables propias. No crearla con `--with-data` por defecto:

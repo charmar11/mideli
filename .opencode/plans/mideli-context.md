@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-09-15
+Actualizado: 2026-09-19
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para cualquier agente de IA, no solo OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -24,10 +24,10 @@ Usuarios principales:
 
 Objetivo del producto: que el equipo pueda pasar de pedido a cocina y de pedido listo a cobro con el menor número de pasos posible, sin depender de papel.
 
-La implementación actual no es una plataforma multi-sucursal ni un marketplace:
-opera un solo local y un solo negocio. La evolución multinegocio aprobada para
-Rincón 404 Food Park se describe en la sección de transición de este documento
-y aún no se ha aplicado.
+La operación visible sigue siendo Mideli en una sola interfaz y un solo negocio
+activo. La base remota ya tiene aplicada la primera rebanada multinegocio para
+Rincón 404 Food Park, pero todavía no existe un segundo negocio operativo ni se
+ha habilitado WhatsApp fuera de Mideli.
 
 ## 2. Forma de colaborar con el dueño
 
@@ -448,15 +448,15 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
 - Mideli conservará Cocina. Just Dipping utilizará Estado con `Pendiente`, `Preparando` y `Listo`; una impresora propia es una capacidad contemplada, pero no se habilitará hasta confirmar su configuración.
 - Como regla operativa recomendada, el personal autorizado de cada negocio cambia sus estados de preparación; la mesera global consulta, recibe avisos, entrega y cobra, pero no marca `Listo` de otro negocio por defecto. Una excepción deberá ser una capacidad explícita y auditada.
 - WhatsApp seguirá exclusivo de Mideli en la primera etapa.
-- La fundación y la primera frontera de catálogo están versionadas localmente en `20260919082935_multibusiness_foundation.sql`, `20260919083624_multibusiness_capability_catalog.sql`, `20260919090030_multibusiness_global_waiter_capabilities.sql`, `20260919090126_multibusiness_seed_mideli.sql` y `20260919091500_multibusiness_catalog_boundary.sql`. Todavía no se han aplicado al remoto. El bootstrap resuelve únicamente los perfiles activos existentes por nombre exacto, no inventa usuarios y conserva WhatsApp exclusivo de Mideli. La preparación, brechas, pruebas, reversión y gates siguen en `docs_dev/food-garden-multi-business/`.
+- La fundación y las fronteras de catálogo, pedidos, mesas, inventario, caja, pagos, impresión, Push, personal y navegación están aplicadas en producción desde las migraciones `20260919082935` a `20260919134500`. El bootstrap resolvió únicamente los perfiles activos existentes por nombre exacto, no inventó usuarios y conserva WhatsApp exclusivo de Mideli. La última corrección de privilegios anónimos quedó en `20260919200649_multibusiness_security_revoke_staff_anon.sql`. La preparación, brechas, pruebas, reversión y gates siguen en `docs_dev/food-garden-multi-business/`.
 - El repositorio tiene `.github/workflows/verify.yml` para validar lint, build, migraciones y pgTAP en GitHub Actions sin crear una base Supabase adicional. La CI no sustituye un staging persistente ni autoriza aplicar cambios remotos.
 - La migración local `20260919124500_multibusiness_order_status_runtime.sql` protege
   los cambios de estado por negocio. Cocina local y el dueño pueden actualizar
   preparación; la mesera global conserva operación, entrega y cobro sin recibir
   automáticamente permiso para marcar como listo otro negocio. Mesero, Cocina y
   Estado usan la pasarela y el filtro del negocio seleccionado, con fallback
-  histórico mientras la fundación no exista en remoto. Esta migración aún no se
-  ha aplicado a producción.
+  histórico mientras la fundación no exista en instalaciones antiguas. La
+  migración ya está aplicada a producción y el contexto real queda activo.
 - Analíticas y el reporte diario también reciben el negocio seleccionado para
   filtrar caja, inventario, menú, cocina, ventas, pagos, cancelaciones y cuentas
   abiertas. El cron usa el negocio canónico `mideli` cuando la fundación existe;
@@ -469,7 +469,7 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   El modal filtra sus lecturas con el mismo `business_id` y no usa el fallback
   histórico cuando el contexto multinegocio existe pero no hay negocio
   seleccionado. Los wrappers públicos antiguos quedan revocados después de
-  esta migración. Todavía no se ha aplicado a producción.
+  esta migración, que ya está aplicada a producción.
 - La impresión y los avisos Push tienen una frontera local en
   `20260919131500_multibusiness_print_push_runtime.sql`. Los trabajos de
   impresión y eventos Push conservan el negocio del pedido; la estación física
@@ -477,8 +477,8 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   El reclamo antiguo queda limitado al negocio canónico de Mideli para que una
   pestaña vieja no se rompa durante la transición. `send-order-notification`
   filtra destinatarios mediante membresías y capacidades; `send-order-ready`
-  solo adapta llamadas antiguas al worker único. La migración aún no se ha
-  aplicado a producción.
+  solo adapta llamadas antiguas al worker único. Esta frontera ya está aplicada
+  a producción y WhatsApp continúa limitado deliberadamente a Mideli.
 - La administración de personal tiene una frontera local en
   `20260919133000_multibusiness_staff_runtime.sql`. El dueño administra solo
   personal local de su negocio y el Coordinador administra únicamente meseras
@@ -507,9 +507,15 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
 - La rama `codex/whatsapp-orders` quedó con lint, build y `git diff --check`
   correctos. GitHub Actions validó la revisión `06a628a` en el run
   `35461058199`, incluyendo las migraciones y 260 checks pgTAP.
-- `npx supabase db push --linked --dry-run` conecta con el proyecto remoto y
-  enumera las 21 migraciones multinegocio pendientes, pero no cambia la base.
-  No se aplicó ninguna migración ni se hizo deploy de esta etapa.
+- La versión compatible se publicó en producción en `mideli.vercel.app` y las
+  migraciones `20260919082935` a `20260919134500`, más
+  `20260919200649_multibusiness_security_revoke_staff_anon.sql`, quedaron
+  aplicadas en Supabase. `npx supabase db push --linked --dry-run` reporta
+  `upToDate: true`.
+- El preflight remoto antes y después del corte conservó 214 pedidos, 215
+  transacciones, 43 turnos, 7 categorías, 52 productos, 5 insumos y cero
+  huérfanos. La verificación repetible está en
+  `supabase/verification/mideli_post_multibusiness.sql`.
 - El POS ya puede resolver un negocio seleccionado, pero la comanda mixta de
   una mesa y la creación atómica de cuentas por negocio todavía no están
   conectadas a una experiencia completa de Mesero. No se debe presentar el
@@ -531,7 +537,15 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   entre `/dashboard` y una vista sin permisos. El fallback por rol queda solo
   para instalaciones antiguas donde todavía no existe la función de contexto.
 
-La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
+La auditoría remota del 2026-09-19 confirmó una organización activa, un negocio
+Mideli activo, cuatro membresías activas y aislamiento sin filas operativas sin
+negocio. Los avisos `anon` de RPC privilegiadas fueron revocados; permanecen
+avisos informativos para RPC `SECURITY DEFINER` autenticadas que validan
+capacidades internamente. La protección de contraseñas filtradas de Supabase
+Auth sigue pendiente de activarse manualmente antes del piloto prolongado.
+El dump local no pudo generarse en este equipo porque la CLI requiere Docker o
+Podman; no se debe presentar ese respaldo como existente. Just Dipping y un
+segundo negocio aún no están creados.
 
 ## 10. Verificación obligatoria
 

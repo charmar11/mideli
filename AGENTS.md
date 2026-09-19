@@ -95,8 +95,9 @@ Los cambios sin commit son trabajo en curso. No los trates como una versión est
 ## Notas
 
 - Sistema de gestión para un local de comida (Burger & Sushi)
-- Producción actual de un solo negocio; evolución multinegocio aprobada para
-  Rincón 404 Food Park, todavía no implementada
+- Producción opera actualmente un solo negocio dentro de la arquitectura
+  multinegocio de Rincón 404 Food Park; Mideli es el único negocio activo y
+  WhatsApp permanece exclusivo de Mideli
 - UI en español (mercado México/LATAM)
 - Identidad de marca: fondo negro, rosa #F5145F, crema #FBF8E7, dorado #F6DDA4
 - Tipografías: Pacifico (marca), Sora (headings), Karla (body), JetBrains Mono (datos)

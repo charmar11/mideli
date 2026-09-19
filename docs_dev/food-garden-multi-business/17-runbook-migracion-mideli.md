@@ -1,18 +1,19 @@
 # Runbook de migración reversible de Mideli
 
 Este runbook describe cómo pasar Mideli al modelo multinegocio sin cambiar
-sus credenciales, folios ni el canal de WhatsApp. No autoriza por sí mismo una
-migración en producción.
+sus credenciales, folios ni el canal de WhatsApp. La primera rebanada ya fue
+aplicada en producción el 19 de septiembre de 2026; el documento conserva el
+procedimiento para futuras reversiones forward-only y para agregar negocios.
 
 ## Estado actual
 
-- Las migraciones multinegocio están versionadas localmente y todavía no se
-  consideran aplicadas a producción.
+- Las migraciones `20260919082935` a `20260919134500` y la corrección de
+  privilegios `20260919200649` están aplicadas a producción.
 - La validación aislada se ejecuta en GitHub Actions con una base efímera de
   Supabase local.
 - WhatsApp conserva el alcance exclusivo de Mideli.
-- La primera operación mixta de comedor crea una comanda, una visita de mesa
-  y una cuenta independiente por negocio.
+- La primera operación mixta de comedor está preparada en el esquema, pero no
+  se debe activar hasta probarla con un segundo negocio autorizado.
 
 ## Fases obligatorias
 
@@ -52,8 +53,10 @@ Antes de aplicar cualquier migración:
 Si falla una validación de identidad, conteo o ambigüedad, se detiene el
 proceso. No se corrige directamente una tabla para forzar el paso.
 
-El preflight actual de producción pasó esas comprobaciones. Todavía falta
-comprobar un respaldo restaurable externo antes de ejecutar `db push --linked`.
+El preflight de producción pasó esas comprobaciones antes y después del corte.
+En esta máquina no fue posible generar el dump de datos porque la CLI requiere
+Docker o Podman. Antes de agregar el segundo negocio debe existir y comprobarse
+un respaldo restaurable externo.
 
 ### 2. Gate aislado
 
@@ -89,9 +92,10 @@ Después de cada grupo se comprueba que:
 
 ### 4. Activación controlada
 
-La interfaz multinegocio solo se activa cuando el grupo de migraciones y sus
-pruebas ya pasaron. Se inicia con Mideli seleccionado y se prueba un turno
-real con:
+La interfaz actual ya opera con Mideli seleccionado y conserva el flujo visible
+anterior. La primera activación de un segundo negocio solo debe ocurrir cuando
+sus datos reales, dueño y permisos estén autorizados y se pruebe un turno real
+con:
 
 - un pedido solo de Mideli;
 - una mesa con productos de dos negocios;
