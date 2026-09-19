@@ -11,6 +11,7 @@ import type {
   InventoryPurchaseOrderLine,
   InventoryRecipe,
 } from "@/types/database";
+import { useBusinessContextStore } from "./business-context-store";
 
 export type CountSubmissionLine = {
   line_id: string;
@@ -128,6 +129,60 @@ function errorMessage(error: { message?: string } | null, fallback: string) {
   return error?.message || fallback;
 }
 
+type InventoryScope = {
+  businessId: string | null;
+  legacyFallback: boolean;
+  key: string;
+};
+
+async function getInventoryScope(): Promise<InventoryScope> {
+  const context = useBusinessContextStore.getState();
+  await context.ensureLoaded();
+  const nextContext = useBusinessContextStore.getState();
+  return {
+    businessId: nextContext.selectedBusinessId,
+    legacyFallback: nextContext.legacyFallback,
+    key: nextContext.legacyFallback
+      ? "legacy"
+      : `business:${nextContext.selectedBusinessId ?? "none"}`,
+  };
+}
+
+async function invokeModernInventoryAction<T>(
+  scope: InventoryScope,
+  action: string,
+  payload: Record<string, unknown>
+): Promise<{ handled: boolean; result: ActionResult<T> }> {
+  if (scope.legacyFallback) {
+    return { handled: false, result: { data: null, error: null } };
+  }
+  if (!scope.businessId) {
+    return {
+      handled: true,
+      result: {
+        data: null,
+        error: "No hay un negocio disponible para esta cuenta.",
+      },
+    };
+  }
+
+  const { data, error } = await createClient().rpc(
+    "multibusiness_inventory_action",
+    {
+      p_business_id: scope.businessId,
+      p_action: action,
+      p_payload: payload,
+    }
+  );
+  return {
+    handled: true,
+    result: {
+      data: (data ?? null) as T | null,
+      error: error ? errorMessage(error, "No se pudo operar el inventario") : null,
+    },
+  };
+}
+
 export const useInventoryStore = create<InventoryState>((set, get) => ({
   items: [],
   recipes: [],
@@ -142,67 +197,123 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
 
   fetchInventory: async () => {
     set({ loading: true, lastError: null });
-    const supabase = createClient();
-    const results = await Promise.all([
-      supabase
+    try {
+      const scope = await getInventoryScope();
+      const supabase = createClient();
+      if (!scope.legacyFallback && !scope.businessId) {
+        set({
+          loading: false,
+          lastError: "No hay un negocio disponible para esta cuenta.",
+        });
+        return;
+      }
+
+      let itemsQuery = supabase
         .from("inventory_items")
         .select("*")
         .order("is_active", { ascending: false })
-        .order("name", { ascending: true }),
-      supabase.from("inventory_recipes").select("*").order("created_at"),
-      supabase
+        .order("name", { ascending: true });
+      let recipesQuery = supabase.from("inventory_recipes").select("*").order("created_at");
+      let movementsQuery = supabase
         .from("inventory_movements")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(150),
-      supabase
+        .limit(150);
+      let countsQuery = supabase
         .from("inventory_counts")
         .select("*")
         .order("started_at", { ascending: false })
-        .limit(30),
-      supabase
+        .limit(30);
+      let countLinesQuery = supabase
         .from("inventory_count_lines")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(1000),
-      supabase
+        .limit(1000);
+      let purchaseOrdersQuery = supabase
         .from("inventory_purchase_orders")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(50),
-      supabase
+        .limit(50);
+      let purchaseOrderLinesQuery = supabase
         .from("inventory_purchase_order_lines")
         .select("*")
         .order("created_at", { ascending: true })
-        .limit(1000),
-      supabase
+        .limit(1000);
+      let lotsQuery = supabase
         .from("inventory_lots")
         .select("*")
         .gt("quantity_remaining", 0)
         .order("expires_on", { ascending: true, nullsFirst: false })
-        .limit(500),
-    ]);
+        .limit(500);
 
-    const firstError = results.find((result) => result.error)?.error;
-    set({
-      items: (results[0].data ?? []) as InventoryItem[],
-      recipes: (results[1].data ?? []) as InventoryRecipe[],
-      movements: (results[2].data ?? []) as InventoryMovement[],
-      counts: (results[3].data ?? []) as InventoryCount[],
-      countLines: (results[4].data ?? []) as InventoryCountLine[],
-      purchaseOrders: (results[5].data ?? []) as InventoryPurchaseOrder[],
-      purchaseOrderLines: (results[6].data ?? []) as InventoryPurchaseOrderLine[],
-      lots: (results[7].data ?? []) as InventoryLot[],
-      loading: false,
-      lastError: firstError ? errorMessage(firstError, "No se pudo cargar el inventario") : null,
-    });
+      if (scope.businessId) {
+        itemsQuery = itemsQuery.eq("business_id", scope.businessId);
+        recipesQuery = recipesQuery.eq("business_id", scope.businessId);
+        movementsQuery = movementsQuery.eq("business_id", scope.businessId);
+        countsQuery = countsQuery.eq("business_id", scope.businessId);
+        countLinesQuery = countLinesQuery.eq("business_id", scope.businessId);
+        purchaseOrdersQuery = purchaseOrdersQuery.eq("business_id", scope.businessId);
+        purchaseOrderLinesQuery = purchaseOrderLinesQuery.eq("business_id", scope.businessId);
+        lotsQuery = lotsQuery.eq("business_id", scope.businessId);
+      }
+
+      const results = await Promise.all([
+        itemsQuery,
+        recipesQuery,
+        movementsQuery,
+        countsQuery,
+        countLinesQuery,
+        purchaseOrdersQuery,
+        purchaseOrderLinesQuery,
+        lotsQuery,
+      ]);
+
+      const firstError = results.find((result) => result.error)?.error;
+      set({
+        items: (results[0].data ?? []) as InventoryItem[],
+        recipes: (results[1].data ?? []) as InventoryRecipe[],
+        movements: (results[2].data ?? []) as InventoryMovement[],
+        counts: (results[3].data ?? []) as InventoryCount[],
+        countLines: (results[4].data ?? []) as InventoryCountLine[],
+        purchaseOrders: (results[5].data ?? []) as InventoryPurchaseOrder[],
+        purchaseOrderLines: (results[6].data ?? []) as InventoryPurchaseOrderLine[],
+        lots: (results[7].data ?? []) as InventoryLot[],
+        loading: false,
+        lastError: firstError
+          ? errorMessage(firstError, "No se pudo cargar el inventario")
+          : null,
+      });
+    } catch {
+      set({ loading: false, lastError: "No se pudo cargar el inventario" });
+    }
   },
 
   createItem: async (input) => {
+    const scope = await getInventoryScope();
+    if (!scope.legacyFallback && !scope.businessId) {
+      return { data: null, error: "No hay un negocio disponible para esta cuenta." };
+    }
+    const modern = await invokeModernInventoryAction<InventoryItem>(
+      scope,
+      "create_item",
+      input
+    );
+    if (modern.handled) {
+      if (modern.result.error || !modern.result.data) return modern.result;
+      const item = modern.result.data;
+      set((state) => ({
+        items: [...state.items, item].toSorted((a, b) => a.name.localeCompare(b.name)),
+      }));
+      return { data: item, error: null };
+    }
+
     const supabase = createClient();
+    const payload = scope.businessId
+      ? { ...input, business_id: scope.businessId }
+      : input;
     const { data, error } = await supabase
       .from("inventory_items")
-      .insert(input)
+      .insert(payload)
       .select()
       .single();
 
@@ -215,13 +326,38 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   updateItem: async (id, updates) => {
+    const scope = await getInventoryScope();
+    if (!scope.legacyFallback && !scope.businessId) {
+      return { data: null, error: "No hay un negocio disponible para esta cuenta." };
+    }
+    const modern = await invokeModernInventoryAction<InventoryItem>(
+      scope,
+      "update_item",
+      { ...updates, inventory_item_id: id }
+    );
+    if (modern.handled) {
+      if (modern.result.error || !modern.result.data) {
+        return {
+          data: null,
+          error: modern.result.error ?? "No se pudo actualizar el insumo",
+        };
+      }
+      const item = modern.result.data;
+      set((state) => ({
+        items: state.items.map((current) => (current.id === id ? item : current)),
+      }));
+      return { data: undefined, error: null };
+    }
+
     const supabase = createClient();
-    const { data, error } = await supabase
+    const safeUpdates = { ...updates };
+    delete safeUpdates.business_id;
+    let query = supabase
       .from("inventory_items")
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select()
-      .maybeSingle();
+      .update({ ...safeUpdates, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (scope.businessId) query = query.eq("business_id", scope.businessId);
+    const { data, error } = await query.select().maybeSingle();
 
     if (error || !data) {
       return { data: null, error: errorMessage(error, "No se pudo actualizar el insumo") };
@@ -248,6 +384,14 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   deleteItemPermanently: async (id, confirmation) => {
+    const scope = await getInventoryScope();
+    const modern = await invokeModernInventoryAction<InventoryItemDeletionResult>(
+      scope,
+      "delete_item",
+      { inventory_item_id: id, confirmation }
+    );
+    if (modern.handled) return modern.result;
+
     const supabase = createClient();
     const { data, error } = await supabase.rpc(
       "delete_inventory_item_permanently",
@@ -268,6 +412,32 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   recordMovement: async (id, quantityChange, movementType, reasonCode, note) => {
+    const scope = await getInventoryScope();
+    const modern = await invokeModernInventoryAction<InventoryMovement>(
+      scope,
+      "movement",
+      {
+        inventory_item_id: id,
+        quantity_change: quantityChange,
+        movement_type: movementType,
+        reason_code: reasonCode,
+        note,
+      }
+    );
+    if (modern.handled) {
+      if (modern.result.error || !modern.result.data) return modern.result;
+      const movement = modern.result.data;
+      set((state) => ({
+        items: state.items.map((item) =>
+          item.id === id && movement.resulting_stock !== null
+            ? { ...item, current_stock: movement.resulting_stock, updated_at: movement.created_at }
+            : item
+        ),
+        movements: [movement, ...state.movements],
+      }));
+      return { data: movement, error: null };
+    }
+
     const supabase = createClient();
     const { data, error } = await supabase.rpc("record_inventory_movement", {
       p_inventory_item_id: id,
@@ -298,10 +468,37 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     recipes,
     deleteRecipe = false
   ) => {
+    const scope = await getInventoryScope();
     const supabase = createClient();
     const uniqueRecipes = Array.from(
       new Map(recipes.map((recipe) => [recipe.inventory_item_id, recipe])).values()
     );
+    const modern = await invokeModernInventoryAction<InventoryRecipe[]>(
+      scope,
+      "replace_recipe",
+      {
+        menu_item_id: menuItemId,
+        modifier_option_id: modifierOptionId,
+        components: uniqueRecipes,
+        delete_recipe: deleteRecipe,
+      }
+    );
+    if (modern.handled) {
+      if (modern.result.error || !modern.result.data) return modern.result;
+      const savedRecipes = modern.result.data;
+      set((state) => ({
+        recipes: [
+          ...state.recipes.filter(
+            (recipe) =>
+              recipe.menu_item_id !== menuItemId ||
+              (recipe.modifier_option_id ?? null) !== modifierOptionId
+          ),
+          ...savedRecipes,
+        ],
+      }));
+      return { data: savedRecipes, error: null };
+    }
+
     const { data, error } = await supabase.rpc("replace_inventory_recipe", {
       p_menu_item_id: menuItemId,
       p_modifier_option_id: modifierOptionId,
@@ -327,6 +524,18 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   startCount: async (scope) => {
+    const businessScope = await getInventoryScope();
+    const modern = await invokeModernInventoryAction<string>(
+      businessScope,
+      "start_count",
+      { scope }
+    );
+    if (modern.handled) {
+      return modern.result.data
+        ? { data: String(modern.result.data), error: null }
+        : { data: null, error: modern.result.error ?? "No se pudo iniciar el conteo" };
+    }
+
     const supabase = createClient();
     const { data, error } = await supabase.rpc("start_inventory_count", {
       p_scope: scope,
@@ -339,6 +548,18 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   cancelCount: async (countId) => {
+    const scope = await getInventoryScope();
+    const modern = await invokeModernInventoryAction<undefined>(
+      scope,
+      "cancel_count",
+      { count_id: countId }
+    );
+    if (modern.handled) {
+      return modern.result.error
+        ? { data: null, error: modern.result.error }
+        : { data: undefined, error: null };
+    }
+
     const supabase = createClient();
     const { error } = await supabase.rpc("cancel_inventory_count", {
       p_count_id: countId,
@@ -351,6 +572,18 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   completeCount: async (countId, lines, notes = "") => {
+    const scope = await getInventoryScope();
+    const modern = await invokeModernInventoryAction<string>(
+      scope,
+      "complete_count",
+      { count_id: countId, lines, notes }
+    );
+    if (modern.handled) {
+      return modern.result.data
+        ? { data: String(modern.result.data), error: null }
+        : { data: null, error: modern.result.error ?? "No se pudo completar el conteo" };
+    }
+
     const supabase = createClient();
     const { data, error } = await supabase.rpc("complete_inventory_count", {
       p_count_id: countId,
@@ -365,6 +598,18 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   reviewCount: async (countId) => {
+    const scope = await getInventoryScope();
+    const modern = await invokeModernInventoryAction<undefined>(
+      scope,
+      "review_count",
+      { count_id: countId }
+    );
+    if (modern.handled) {
+      return modern.result.error
+        ? { data: null, error: modern.result.error }
+        : { data: undefined, error: null };
+    }
+
     const supabase = createClient();
     const { error } = await supabase.rpc("review_inventory_count", {
       p_count_id: countId,
@@ -377,6 +622,28 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   createPurchaseOrder: async (supplier, lines, notes = "") => {
+    const scope = await getInventoryScope();
+    const modern = await invokeModernInventoryAction<string>(
+      scope,
+      "create_purchase",
+      {
+        supplier,
+        lines,
+        notes,
+        expected_at: null,
+      }
+    );
+    if (modern.handled) {
+      if (!modern.result.data) {
+        return {
+          data: null,
+          error: modern.result.error ?? "No se pudo crear la compra",
+        };
+      }
+      await get().fetchInventory();
+      return { data: String(modern.result.data), error: null };
+    }
+
     const supabase = createClient();
     const { data, error } = await supabase.rpc("create_inventory_purchase_order", {
       p_supplier: supplier,
@@ -392,6 +659,28 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   },
 
   receiveInventory: async (purchaseOrderId, supplier, lines, notes = "") => {
+    const scope = await getInventoryScope();
+    const modern = await invokeModernInventoryAction<string>(
+      scope,
+      "receive_inventory",
+      {
+        purchase_order_id: purchaseOrderId,
+        supplier,
+        lines,
+        notes,
+      }
+    );
+    if (modern.handled) {
+      if (!modern.result.data) {
+        return {
+          data: null,
+          error: modern.result.error ?? "No se pudo registrar la recepción",
+        };
+      }
+      await get().fetchInventory();
+      return { data: String(modern.result.data), error: null };
+    }
+
     const supabase = createClient();
     const { data, error } = await supabase.rpc("receive_inventory", {
       p_purchase_order_id: purchaseOrderId,

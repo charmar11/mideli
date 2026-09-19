@@ -8,6 +8,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BarChart3,
+  Building2,
   Boxes,
   ChefHat,
   ChevronDown,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import { RoleOnboardingTour } from "@/components/onboarding/role-onboarding-tour";
 import { createClient } from "@/lib/supabase/client";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import type { Profile } from "@/types/database";
 
 type NavItem = {
@@ -272,6 +274,50 @@ function HeaderGroup({
   );
 }
 
+function BusinessSelector({ compact = false }: { compact?: boolean }) {
+  const businesses = useBusinessContextStore((state) => state.businesses);
+  const selectedBusinessId = useBusinessContextStore(
+    (state) => state.selectedBusinessId
+  );
+  const ensureLoaded = useBusinessContextStore((state) => state.ensureLoaded);
+  const selectBusiness = useBusinessContextStore((state) => state.selectBusiness);
+
+  useEffect(() => {
+    void ensureLoaded();
+  }, [ensureLoaded]);
+
+  if (businesses.length <= 1 || !selectedBusinessId) return null;
+
+  return (
+    <label
+      className={`flex min-w-0 shrink-0 items-center gap-2 rounded-xl border border-border bg-background px-2.5 ${
+        compact ? "h-10" : "h-11"
+      }`}
+    >
+      <Building2
+        aria-hidden
+        size={compact ? 16 : 17}
+        className="shrink-0 text-brand"
+      />
+      <span className="sr-only">Negocio activo</span>
+      <select
+        aria-label="Negocio activo"
+        value={selectedBusinessId}
+        onChange={(event) => selectBusiness(event.target.value)}
+        className={`min-w-0 max-w-40 bg-transparent font-heading font-bold text-foreground outline-none ${
+          compact ? "text-[11px]" : "text-xs"
+        }`}
+      >
+        {businesses.map((business) => (
+          <option key={business.business_id} value={business.business_id}>
+            {business.business_display_name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function MobileLink({
   item,
   pathname,
@@ -457,6 +503,9 @@ export function DashboardShell({
           <Link href="/dashboard" className="font-brand text-[1.75rem] text-brand">
             Mideli
           </Link>
+          <div className="ml-auto">
+            <BusinessSelector compact />
+          </div>
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2" aria-label="Vistas">
@@ -514,6 +563,7 @@ export function DashboardShell({
         <Link href="/dashboard" className="mr-1 shrink-0 font-brand text-2xl text-brand">
           Mideli
         </Link>
+        <BusinessSelector compact />
         <nav className="pos-scroll flex min-w-0 flex-1 touch-pan-x items-center gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain" aria-label="Navegación principal">
           {operationItems.map((item) => (
             <HeaderLink key={item.href} item={item} pathname={pathname} />
@@ -565,6 +615,7 @@ export function DashboardShell({
           Mideli
         </Link>
         <div className="ml-auto flex min-w-0 items-center gap-2">
+          <BusinessSelector compact />
           <span className="max-w-28 truncate text-xs text-muted-foreground">
             {userName}
           </span>
@@ -594,6 +645,7 @@ export function DashboardShell({
             Mideli
           </Link>
           <div className="flex items-center gap-2">
+            <BusinessSelector compact />
             <span className="hidden font-body text-[11px] text-muted-foreground sm:inline">
               Modo cocina
             </span>

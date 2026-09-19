@@ -231,3 +231,22 @@
 - El store de caja y el flujo de cobro ya usan la frontera nueva cuando el contexto multinegocio está disponible, y regresan al flujo histórico solo cuando faltan las migraciones.
 - Se agregó `multibusiness_financial_runtime_test.sql` para verificar funciones, permisos, triggers y la implementación de cierre por negocio.
 - La barra visual para cambiar de negocio todavía no se muestra: falta conectar los usuarios/membresías actuales, estados de preparación y navegación para que el cambio sea coherente en toda la sesión.
+
+## 2026-09-19: selector visual e inventario aislado
+
+- La barra de navegación ya muestra un selector de negocio únicamente cuando la
+  cuenta realmente tiene más de un negocio visible. Con una sola membresía el
+  diseño de Mideli no cambia.
+- El selector guarda solo el identificador del negocio elegido en el navegador;
+  la autorización sigue validándose en Supabase para cada operación.
+- `20260919123000_multibusiness_inventory_runtime.sql` agrega una pasarela
+  transaccional para conteos, movimientos, recetas, compras, recepciones y
+  eliminación definitiva de insumos. Las políticas de escritura exigen el
+  contexto transaccional; el RPC público destructivo queda cerrado y la
+  pasarela valida antes de usar su implementación protegida.
+- El store de inventario filtra todas sus lecturas por `business_id`, cambia de
+  contexto al seleccionar otro negocio y conserva fallback solo para una base
+  que todavía no tenga la fundación multinegocio.
+- Se agregó una prueba pgTAP estructural para comprobar permisos, contexto,
+  RLS y retiro de los RPC históricos. Todavía no se ha aplicado ninguna de
+  estas migraciones a Supabase productivo.

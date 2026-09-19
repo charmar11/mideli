@@ -69,6 +69,10 @@ export function InventoryManager() {
 
   useEffect(() => {
     void Promise.all([fetchInventory(), fetchCatalog()]);
+    const handleBusinessChange = () => {
+      void Promise.all([fetchInventory(), fetchCatalog()]);
+    };
+    window.addEventListener("mideli:business-changed", handleBusinessChange);
     const supabase = createClient();
     async function loadRole() {
       const userResult = await supabase.auth.getUser();
@@ -82,6 +86,10 @@ export function InventoryManager() {
       if (profile?.role) setRole(profile.role as Profile["role"]);
     }
     void loadRole();
+
+    return () => {
+      window.removeEventListener("mideli:business-changed", handleBusinessChange);
+    };
   }, [fetchCatalog, fetchInventory]);
 
   const isAdmin = role === "owner" || role === "admin";
