@@ -48,12 +48,22 @@ CREATE OR REPLACE FUNCTION private.multibusiness_can_view_business(
   p_business_id uuid
 )
 RETURNS boolean
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
 SET search_path = pg_catalog, public
 AS $$
-  SELECT auth.uid() IS NOT NULL
+DECLARE
+  v_requested_business_id uuid;
+BEGIN
+  v_requested_business_id := private.multibusiness_requested_business_id();
+
+  IF v_requested_business_id IS NOT NULL
+     AND p_business_id IS DISTINCT FROM v_requested_business_id THEN
+    RETURN false;
+  END IF;
+
+  RETURN auth.uid() IS NOT NULL
     AND EXISTS (
       SELECT 1
         FROM public.businesses AS business
@@ -74,6 +84,7 @@ AS $$
               )
          )
     );
+END;
 $$;
 
 -- =====================================================
@@ -155,4 +166,3 @@ REVOKE ALL ON FUNCTION public.set_order_created_by() FROM PUBLIC, anon, authenti
 
 REVOKE ALL ON FUNCTION private.multibusiness_validate_batch_business()
   FROM PUBLIC, anon, authenticated;
-
