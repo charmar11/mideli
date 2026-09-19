@@ -407,42 +407,44 @@ function MobileMoreDrawer({
               {[
                 { label: "Administrar", items: adminItems },
                 { label: "Control", items: controlItems },
-              ].map((group) => (
-                <section key={group.label} className="mb-5 last:mb-0">
-                  <h2 className="mb-2 font-heading text-sm font-bold text-muted-foreground">
-                    {group.label}
-                  </h2>
-                  <div className="grid grid-cols-2 gap-2">
-                    {group.items.map((item) => {
-                      const itemActive = item.match(pathname);
-                      const Icon = item.icon;
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={() => setOpen(false)}
-                          aria-current={itemActive ? "page" : undefined}
-                          className={`flex min-h-20 items-center gap-3 rounded-xl px-3 transition-colors ${
-                            itemActive
-                              ? "bg-brand text-white"
-                              : "bg-background text-foreground hover:bg-surface-raised"
-                          }`}
-                        >
-                          <Icon aria-hidden size={20} className="shrink-0" />
-                          <span className="min-w-0">
-                            <span className="block font-heading text-sm font-bold">
-                              {item.label}
+              ]
+                .filter((group) => group.items.length > 0)
+                .map((group) => (
+                  <section key={group.label} className="mb-5 last:mb-0">
+                    <h2 className="mb-2 font-heading text-sm font-bold text-muted-foreground">
+                      {group.label}
+                    </h2>
+                    <div className="grid grid-cols-2 gap-2">
+                      {group.items.map((item) => {
+                        const itemActive = item.match(pathname);
+                        const Icon = item.icon;
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setOpen(false)}
+                            aria-current={itemActive ? "page" : undefined}
+                            className={`flex min-h-20 items-center gap-3 rounded-xl px-3 transition-colors ${
+                              itemActive
+                                ? "bg-brand text-white"
+                                : "bg-background text-foreground hover:bg-surface-raised"
+                            }`}
+                          >
+                            <Icon aria-hidden size={20} className="shrink-0" />
+                            <span className="min-w-0">
+                              <span className="block font-heading text-sm font-bold">
+                                {item.label}
+                              </span>
+                              <span className={`mt-0.5 block font-body text-[11px] leading-tight ${itemActive ? "text-white/75" : "text-muted-foreground"}`}>
+                                {item.description}
+                              </span>
                             </span>
-                            <span className={`mt-0.5 block font-body text-[11px] leading-tight ${itemActive ? "text-white/75" : "text-muted-foreground"}`}>
-                              {item.description}
-                            </span>
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
             </Drawer.Content>
           </Drawer.Popup>
         </Drawer.Viewport>
