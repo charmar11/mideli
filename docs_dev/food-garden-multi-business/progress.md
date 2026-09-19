@@ -120,3 +120,24 @@
   alternativa pendiente es una base Supabase separada, sujeta a cuota/costo.
 - La línea base de aplicación se verificó de nuevo: `npm run lint` y
   `npm run build` pasaron sin errores.
+
+## 2026-09-19: fundación versionada
+
+- Se creó la migración aditiva `20260919082935_multibusiness_foundation.sql`
+  con organizaciones, negocios, membresías, capacidades, auditoría, índices,
+  triggers, RLS y privilegios explícitos.
+- Se creó la migración separada
+  `20260919083624_multibusiness_capability_catalog.sql` con las diez
+  capacidades aprobadas. No se sembraron organizaciones, negocios, usuarios,
+  membresías ni datos de Just Dipping.
+- Las guardas de membresías limitan al Coordinador a `global_waiter` y al
+  personal autorizado de un negocio a roles locales; las capacidades de
+  plataforma no se pueden insertar desde el navegador.
+- Se agregó `supabase/tests/multibusiness_foundation_test.sql` para comprobar
+  tablas, RLS, catálogo y ausencia de datos inventados.
+- `npx supabase db push --linked --dry-run` detecta únicamente estas dos
+  migraciones pendientes. No se aplicaron porque el proyecto no tiene staging.
+- `npx supabase test db` y el lint SQL local no pudieron ejecutarse porque no
+  hay una base local levantada en `127.0.0.1:54322` y Docker no está instalado.
+- La fundación queda pendiente de probar en staging antes de asociar Mideli o
+  tocar cualquier tabla operativa.

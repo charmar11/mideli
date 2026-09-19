@@ -1,7 +1,12 @@
 # Contrato técnico de la fundación multinegocio
 
-**Estado:** diseño listo para revisión; no es SQL ejecutable y no autoriza
-aplicarlo en producción.
+**Estado:** contrato aprobado para convertirse en migraciones; este documento
+no es el SQL ejecutable ni autoriza aplicarlo en producción.
+
+La primera versión ejecutable quedó preparada, sin datos reales, en
+`supabase/migrations/20260919082935_multibusiness_foundation.sql` y
+`supabase/migrations/20260919083624_multibusiness_capability_catalog.sql`.
+La aplicación remota sigue pendiente de un entorno de staging aislado.
 
 Este contrato fija lo que debe hacer la primera migración. Su objetivo es
 evitar que la implementación tenga que decidir sobre la marcha cómo representar

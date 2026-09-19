@@ -4,7 +4,9 @@
 
 Diseñar una evolución de Mideli para que Rincón 404 Food Park pueda registrar y administrar varios negocios independientes, como Mideli y Just Dipping, sin mezclar sus menús, inventarios, usuarios, gastos, pedidos ni permisos.
 
-Esta carpeta contiene únicamente notas de planificación. No autoriza ni incluye implementación, migraciones, cambios de permisos ni despliegues.
+Esta carpeta contiene las notas de planificación y el contrato de la primera
+rebanada. Las migraciones ejecutables viven en `supabase/migrations/`; no se
+han aplicado, no incluyen datos reales y no autorizan cambios en producción.
 
 ## Artefactos de descubrimiento
 
