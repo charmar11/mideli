@@ -503,6 +503,12 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   WhatsApp mantiene su alcance exclusivo de Mideli y solo se publica para una
   membresía visible de Mideli; Analíticas conserva su regla heredada porque
   todavía no tiene una capacidad separada.
+- La migración `20260919203147_multibusiness_scope_visibility.sql` corrigió el
+  límite del selector y de las políticas de negocio: una membresía local solo
+  puede ver su `business_id`; una membresía de organización obtiene todos los
+  negocios únicamente cuando tiene una capacidad organizacional explícita de
+  operación, cobro o coordinación de meseras. `organization.manage_tables` no
+  otorga acceso a datos privados de negocios.
 
 ### Auditoría de cierre de la primera rebanada
 
@@ -512,7 +518,8 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
 - La versión compatible se publicó en producción en `mideli.vercel.app` y las
   migraciones `20260919082935` a `20260919134500`, más
   `20260919200649_multibusiness_security_revoke_staff_anon.sql` y
-  `20260919202503_multibusiness_scope_staff_credentials.sql`, quedaron
+  `20260919202503_multibusiness_scope_staff_credentials.sql` y
+  `20260919203147_multibusiness_scope_visibility.sql`, quedaron
   aplicadas en Supabase. `npx supabase db push --linked --dry-run` reporta
   `upToDate: true`.
 - El preflight remoto antes y después del corte conservó 214 pedidos, 215

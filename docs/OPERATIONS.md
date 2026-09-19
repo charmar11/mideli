@@ -47,7 +47,14 @@ npx supabase db push --linked --dry-run
 
 Después de revisar el dry-run, aplicar solo la migración aprobada. Nunca ejecutar `supabase db reset --linked`, borrar tablas remotas ni eliminar datos sin autorización explícita para esa operación concreta.
 
-La copia local incluye migraciones hasta `20260919202503_multibusiness_scope_staff_credentials.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
+La copia local incluye migraciones hasta `20260919203147_multibusiness_scope_visibility.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
+
+La resolución de negocios distingue una membresía local de una membresía de
+organización. Un usuario local solo recibe el negocio de su membresía; una
+membresía de organización solo habilita el selector completo cuando tiene una
+capacidad explícitamente global, como operar/cobrar todos los negocios o
+administrar meseras globales. Administrar el plano compartido por sí solo no
+expone los datos privados de otros negocios.
 
 ### Gate aislado para multinegocio
 
