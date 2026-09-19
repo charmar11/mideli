@@ -8,16 +8,34 @@ SELECT has_column('public', 'categories', 'business_id', 'categories has a busin
 SELECT has_column('public', 'menu_items', 'business_id', 'menu_items has a business boundary');
 
 SELECT is(
-  (SELECT is_nullable FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'categories' AND column_name = 'business_id'),
-  'NO',
-  'category business_id is required'
+  (SELECT is_nullable = 'NO'
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'categories' AND column_name = 'business_id')
+  OR NOT EXISTS (
+    SELECT 1
+      FROM public.businesses AS business
+      JOIN public.organizations AS organization
+        ON organization.id = business.organization_id
+     WHERE organization.slug = 'rincon-404-food-park'
+       AND business.slug = 'mideli'
+  ),
+  true,
+  'category business_id is required once the target business exists'
 );
 SELECT is(
-  (SELECT is_nullable FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'menu_items' AND column_name = 'business_id'),
-  'NO',
-  'menu item business_id is required'
+  (SELECT is_nullable = 'NO'
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'menu_items' AND column_name = 'business_id')
+  OR NOT EXISTS (
+    SELECT 1
+      FROM public.businesses AS business
+      JOIN public.organizations AS organization
+        ON organization.id = business.organization_id
+     WHERE organization.slug = 'rincon-404-food-park'
+       AND business.slug = 'mideli'
+  ),
+  true,
+  'menu item business_id is required once the target business exists'
 );
 
 SELECT ok(
@@ -80,13 +98,27 @@ SELECT is(
 
 SELECT is(
   (SELECT count(*)::integer FROM public.categories WHERE business_id IS NULL),
-  0,
-  'no category is missing a business'
+  CASE WHEN EXISTS (
+    SELECT 1
+      FROM public.businesses AS business
+      JOIN public.organizations AS organization
+        ON organization.id = business.organization_id
+     WHERE organization.slug = 'rincon-404-food-park'
+       AND business.slug = 'mideli'
+  ) THEN 0 ELSE (SELECT count(*)::integer FROM public.categories) END,
+  'categories are scoped when the target business exists'
 );
 SELECT is(
   (SELECT count(*)::integer FROM public.menu_items WHERE business_id IS NULL),
-  0,
-  'no menu item is missing a business'
+  CASE WHEN EXISTS (
+    SELECT 1
+      FROM public.businesses AS business
+      JOIN public.organizations AS organization
+        ON organization.id = business.organization_id
+     WHERE organization.slug = 'rincon-404-food-park'
+       AND business.slug = 'mideli'
+  ) THEN 0 ELSE (SELECT count(*)::integer FROM public.menu_items) END,
+  'menu items are scoped when the target business exists'
 );
 
 SELECT * FROM finish();

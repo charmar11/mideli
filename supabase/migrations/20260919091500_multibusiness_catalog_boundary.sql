@@ -95,10 +95,30 @@ UPDATE public.menu_items AS menu_item
 
 DO $$
 DECLARE
+  v_mideli_business_id uuid;
   v_null_categories integer;
   v_null_menu_items integer;
   v_mismatched_items integer;
 BEGIN
+  SELECT business.id
+    INTO v_mideli_business_id
+    FROM public.businesses AS business
+    JOIN public.organizations AS organization
+      ON organization.id = business.organization_id
+   WHERE organization.slug = 'rincon-404-food-park'
+     AND business.slug = 'mideli'
+     AND business.lifecycle_status NOT IN ('archived', 'retired');
+
+  -- A clean local database has the historical menu rows but intentionally has
+  -- no organizations or profiles. Leave the new columns nullable only in
+  -- that empty bootstrap state; the real environment fails closed below if
+  -- any catalog row cannot be associated with Mideli.
+  IF v_mideli_business_id IS NULL THEN
+    RAISE NOTICE
+      'Se difiere el backfill del catálogo: todavía no existe el negocio Mideli';
+    RETURN;
+  END IF;
+
   SELECT count(*)
     INTO v_null_categories
     FROM public.categories
@@ -130,11 +150,24 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE public.categories
-  ALTER COLUMN business_id SET NOT NULL;
-
-ALTER TABLE public.menu_items
-  ALTER COLUMN business_id SET NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM public.businesses AS business
+      JOIN public.organizations AS organization
+        ON organization.id = business.organization_id
+     WHERE organization.slug = 'rincon-404-food-park'
+       AND business.slug = 'mideli'
+       AND business.lifecycle_status NOT IN ('archived', 'retired')
+  ) THEN
+    ALTER TABLE public.categories
+      ALTER COLUMN business_id SET NOT NULL;
+    ALTER TABLE public.menu_items
+      ALTER COLUMN business_id SET NOT NULL;
+  END IF;
+END;
+$$;
 
 ALTER TABLE public.categories
   ADD CONSTRAINT categories_business_id_fkey
