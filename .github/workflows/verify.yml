@@ -53,9 +53,7 @@ jobs:
           version: 2.117.0
 
       - name: Start PostgreSQL only
-        run: >-
-          supabase start
-          --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+        run: supabase db start
 
       - name: Apply migrations without seed data
         run: supabase db reset --local --no-seed
