@@ -47,7 +47,7 @@ npx supabase db push --linked --dry-run
 
 Después de revisar el dry-run, aplicar solo la migración aprobada. Nunca ejecutar `supabase db reset --linked`, borrar tablas remotas ni eliminar datos sin autorización explícita para esa operación concreta.
 
-La copia local incluye migraciones hasta `20260919203147_multibusiness_scope_visibility.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
+La copia local incluye migraciones hasta `20260919203953_multibusiness_context_metadata_scope.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
 
 La resolución de negocios distingue una membresía local de una membresía de
 organización. Un usuario local solo recibe el negocio de su membresía; una
@@ -55,6 +55,13 @@ membresía de organización solo habilita el selector completo cuando tiene una
 capacidad explícitamente global, como operar/cobrar todos los negocios o
 administrar meseras globales. Administrar el plano compartido por sí solo no
 expone los datos privados de otros negocios.
+
+Hay dos límites intencionalmente separados. `private.multibusiness_can_view_business`
+protege datos privados como menú, pedidos, inventario, caja y finanzas. El RPC
+`get_my_multibusiness_context()` usa un límite de metadatos distinto para que
+un Coordinador con `organization.manage_tables` pueda resolver la organización,
+los negocios y el plano compartido. Ese contexto no concede por sí mismo acceso
+a las filas privadas de otro negocio.
 
 ### Gate aislado para multinegocio
 

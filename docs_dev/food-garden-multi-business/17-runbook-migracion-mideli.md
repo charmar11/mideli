@@ -10,7 +10,8 @@ procedimiento para futuras reversiones forward-only y para agregar negocios.
 - Las migraciones `20260919082935` a `20260919134500`, la corrección de
   privilegios `20260919200649` y la frontera de credenciales
   `20260919202503`, más la frontera de visibilidad
-  `20260919203147`, están aplicadas a producción.
+  `20260919203147` y la separación de metadatos
+  `20260919203953`, están aplicadas a producción.
 - La validación aislada se ejecuta en GitHub Actions con una base efímera de
   Supabase local.
 - WhatsApp conserva el alcance exclusivo de Mideli.
@@ -19,6 +20,10 @@ procedimiento para futuras reversiones forward-only y para agregar negocios.
 - La resolución de contexto no expone todos los negocios a una membresía local:
   el propietario o personal de Mideli solo recibe Mideli; el acceso
   organizacional completo requiere una capacidad global explícita.
+- El Coordinador puede resolver metadatos de la organización para operar el
+  plano compartido con `organization.manage_tables`, pero ese permiso no abre
+  menú, pedidos, inventario, caja ni finanzas de los negocios. Esos datos siguen
+  protegidos por la frontera privada del negocio.
 
 ## Fases obligatorias
 

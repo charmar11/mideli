@@ -2,7 +2,7 @@
 
 BEGIN;
 
-SELECT plan(13);
+SELECT plan(18);
 
 SELECT ok(
   to_regprocedure('public.get_my_multibusiness_context()') IS NOT NULL,
@@ -86,9 +86,9 @@ SELECT ok(
 SELECT ok(
   (
     SELECT pg_get_functiondef('public.get_my_multibusiness_context()'::regprocedure)
-      LIKE '%private.multibusiness_can_view_business(business.id)%'
+      LIKE '%private.multibusiness_can_list_business_context(business.id)%'
   ),
-  'the context list reuses the same business visibility boundary'
+  'the context list uses a metadata-only organization boundary'
 );
 SELECT ok(
   (
@@ -98,6 +98,41 @@ SELECT ok(
         LIKE '%membership.business_id = business.id%'
   ),
   'context membership resolution stays business-scoped'
+);
+SELECT ok(
+  to_regprocedure('private.multibusiness_can_list_business_context(uuid)') IS NOT NULL,
+  'organization metadata visibility has its own helper'
+);
+SELECT ok(
+  (
+    SELECT prosecdef
+      FROM pg_proc
+     WHERE oid = 'private.multibusiness_can_list_business_context(uuid)'::regprocedure
+  ),
+  'organization metadata visibility runs behind a controlled security definer'
+);
+SELECT ok(
+  (
+    SELECT pg_get_functiondef('private.multibusiness_can_list_business_context(uuid)'::regprocedure)
+      LIKE '%organization.manage_tables%'
+      AND pg_get_functiondef('private.multibusiness_can_list_business_context(uuid)'::regprocedure)
+        LIKE '%organization.manage_global_waiters%'
+  ),
+  'coordinator context can resolve the shared floor without broad business RLS'
+);
+SELECT ok(
+  (
+    SELECT pg_get_functiondef('public.get_my_multibusiness_context()'::regprocedure)
+      NOT LIKE '%private.multibusiness_can_view_business(business.id)%'
+  ),
+  'context metadata does not reuse the private business data gate'
+);
+SELECT ok(
+  (
+    SELECT pg_get_functiondef('private.multibusiness_can_view_business(uuid)'::regprocedure)
+      NOT LIKE '%organization.manage_tables%'
+  ),
+  'shared table management is not a private business data capability'
 );
 
 SELECT * FROM finish();

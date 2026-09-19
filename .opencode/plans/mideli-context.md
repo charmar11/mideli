@@ -509,6 +509,13 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   negocios únicamente cuando tiene una capacidad organizacional explícita de
   operación, cobro o coordinación de meseras. `organization.manage_tables` no
   otorga acceso a datos privados de negocios.
+- La migración `20260919203953_multibusiness_context_metadata_scope.sql` separó
+  el límite de metadatos del selector del límite de datos privados. El RPC
+  `get_my_multibusiness_context()` puede resolver el negocio y la organización
+  para un Coordinador con `organization.manage_tables`, necesario para el plano
+  compartido, pero las políticas privadas continúan usando
+  `private.multibusiness_can_view_business(uuid)`, que no considera ese permiso
+  suficiente para leer menú, pedidos, inventario, caja o finanzas.
 
 ### Auditoría de cierre de la primera rebanada
 
@@ -519,7 +526,8 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   migraciones `20260919082935` a `20260919134500`, más
   `20260919200649_multibusiness_security_revoke_staff_anon.sql` y
   `20260919202503_multibusiness_scope_staff_credentials.sql` y
-  `20260919203147_multibusiness_scope_visibility.sql`, quedaron
+  `20260919203147_multibusiness_scope_visibility.sql` y
+  `20260919203953_multibusiness_context_metadata_scope.sql`, quedaron
   aplicadas en Supabase. `npx supabase db push --linked --dry-run` reporta
   `upToDate: true`.
 - El preflight remoto antes y después del corte conservó 214 pedidos, 215
