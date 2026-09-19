@@ -5,8 +5,9 @@
 Diseñar una evolución de Mideli para que Rincón 404 Food Park pueda registrar y administrar varios negocios independientes, como Mideli y Just Dipping, sin mezclar sus menús, inventarios, usuarios, gastos, pedidos ni permisos.
 
 Esta carpeta contiene las notas de planificación y el contrato de la primera
-rebanada. Las migraciones ejecutables viven en `supabase/migrations/`; no se
-han aplicado, no incluyen datos reales y no autorizan cambios en producción.
+rebanada. Las migraciones ejecutables viven en `supabase/migrations/`; están
+versionadas localmente, no se han aplicado al remoto, no incluyen credenciales
+inventadas y no autorizan por sí solas cambios en producción.
 
 ## Artefactos de descubrimiento
 
@@ -41,12 +42,14 @@ han aplicado, no incluyen datos reales y no autorizan cambios en producción.
 - [x] Fase 9: Redactar la especificación completa para revisión del usuario.
 - [~] Fase 10: Convertir la especificación aprobada en un plan de implementación.
 
-La fase 10 está preparada en forma de diseño y gates. La auditoría de preparación
-quedó documentada en `11-auditoria-de-preparacion.md`. Todavía no se han
-modificado código funcional, esquema, permisos, datos reales ni despliegues.
-La primera implementación deberá comenzar en staging con la fundación de
-organización, negocio y membresías, después de cerrar los gates pendientes.
-El detalle operativo de esa rebanada está en `12-plan-primera-rebanada-staging.md`.
+La fase 10 está en implementación incremental. La auditoría de preparación
+quedó documentada en `11-auditoria-de-preparacion.md`; ya existe una fundación
+local, un bootstrap controlado y una primera frontera de catálogo, pero no se
+ha cambiado el esquema remoto ni se ha desplegado producción. Como no se usará
+otro proyecto ni Branching Pro, el gate operativo será CI verde, revisión del
+dry-run, respaldo verificable y autorización explícita antes del remoto.
+El detalle histórico de la primera rebanada está en
+`12-plan-primera-rebanada-staging.md`.
 
 ## Especificaciones acordadas
 

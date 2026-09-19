@@ -17,6 +17,8 @@ export interface ModifierGroup {
 
 export interface Category {
   id: string;
+  /** Optional while older clients roll forward to the business-bound catalog. */
+  business_id?: string;
   name: string;
   sort_order: number;
   is_active: boolean;
@@ -26,6 +28,8 @@ export interface Category {
 
 export interface MenuItem {
   id: string;
+  /** Optional while older clients roll forward to the business-bound catalog. */
+  business_id?: string;
   category_id: string;
   name: string;
   description: string;

@@ -35,9 +35,56 @@ import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 import { deduplicateWhatsappCustomerAddresses } from "@/lib/whatsapp/customers";
 import { normalizeAddressForComparison } from "@/lib/whatsapp/normalize";
 import { whatsappActionErrorMessage } from "@/lib/whatsapp/action-errors";
+import {
+  isMissingMultibusinessSchemaError,
+  resolveMideliBusinessScope,
+} from "@/lib/whatsapp/mideli-business.server";
 
 const CHANNEL_ROLES = new Set(["owner", "admin", "waiter", "supervisor"]);
 const ADMIN_ROLES = new Set(["owner", "admin"]);
+
+type WhatsappCatalogAdminRow = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  whatsapp_enabled?: boolean;
+  categories: { name?: string } | Array<{ name?: string }> | null;
+};
+
+async function loadWhatsappCatalogAdminRows(
+  admin: ReturnType<typeof createAdminClient>,
+  boundaryAvailable: boolean,
+  businessId: string | null
+): Promise<WhatsappCatalogAdminRow[]> {
+  const loadLegacy = async (): Promise<WhatsappCatalogAdminRow[]> => {
+    const result = await admin
+      .from("menu_items")
+      .select("id,name,is_active,whatsapp_enabled,categories(name)")
+      .order("sort_order", { ascending: true });
+    if (!result.error) return (result.data ?? []) as unknown as WhatsappCatalogAdminRow[];
+
+    const fallback = await admin
+      .from("menu_items")
+      .select("id,name,is_active,categories(name)")
+      .order("sort_order", { ascending: true });
+    if (fallback.error) throw fallback.error;
+    return (fallback.data ?? []).map((row) => ({
+      ...(row as unknown as Omit<WhatsappCatalogAdminRow, "whatsapp_enabled">),
+      whatsapp_enabled: true,
+    }));
+  };
+
+  if (!boundaryAvailable || !businessId) return loadLegacy();
+
+  const scoped = await admin
+    .from("menu_items")
+    .select("id,business_id,name,is_active,whatsapp_enabled,categories(name)")
+    .eq("business_id", businessId)
+    .order("sort_order", { ascending: true });
+  if (!scoped.error) return (scoped.data ?? []) as unknown as WhatsappCatalogAdminRow[];
+  if (isMissingMultibusinessSchemaError(scoped.error)) return loadLegacy();
+  throw scoped.error;
+}
 
 async function requireChannelUser(adminOnly = false) {
   const supabase = await createClient();
@@ -368,12 +415,11 @@ export async function getWhatsappControlDataAction(): Promise<
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const catalogScope = await resolveMideliBusinessScope(admin);
+
     const [conversations, menuResult, failedResult, exceptionResult, notificationFailureResult] = await Promise.all([
       loadWhatsappConversations(admin),
-      admin
-        .from("menu_items")
-        .select("id,name,is_active,whatsapp_enabled,categories(name)")
-        .order("sort_order", { ascending: true }),
+      loadWhatsappCatalogAdminRows(admin, catalogScope.boundaryAvailable, catalogScope.businessId),
       admin
         .from("channel_messages")
         .select("id", { count: "exact", head: true })
@@ -392,19 +438,6 @@ export async function getWhatsappControlDataAction(): Promise<
         .order("created_at", { ascending: false })
         .limit(20),
     ]);
-
-    let catalogRows = menuResult.data ?? [];
-    if (menuResult.error) {
-      const fallback = await admin
-        .from("menu_items")
-        .select("id,name,is_active,categories(name)")
-        .order("sort_order", { ascending: true });
-      if (fallback.error) throw fallback.error;
-      catalogRows = (fallback.data ?? []).map((row) => ({
-        ...row,
-        whatsapp_enabled: true,
-      }));
-    }
 
     return {
       success: true,
@@ -425,7 +458,7 @@ export async function getWhatsappControlDataAction(): Promise<
         rates: operations.rates,
         surcharges: operations.surcharges,
         conversations,
-        catalog: catalogRows.map((item) => {
+        catalog: menuResult.map((item) => {
           const relation = item.categories as unknown as
             | { name?: string }
             | Array<{ name?: string }>
@@ -769,11 +802,22 @@ export async function updateWhatsappCatalogItemAction(
 ): Promise<WhatsappActionResult> {
   try {
     const { userId, admin } = await requireChannelUser(true);
-    const { error } = await admin
+    const catalogScope = await resolveMideliBusinessScope(admin);
+    let updateQuery = admin
       .from("menu_items")
       .update({ whatsapp_enabled: enabled, updated_at: new Date().toISOString() })
       .eq("id", menuItemId);
-    if (error) throw error;
+    if (catalogScope.boundaryAvailable && catalogScope.businessId) {
+      updateQuery = updateQuery.eq("business_id", catalogScope.businessId);
+    }
+    let result = await updateQuery;
+    if (result.error && catalogScope.boundaryAvailable && isMissingMultibusinessSchemaError(result.error)) {
+      result = await admin
+        .from("menu_items")
+        .update({ whatsapp_enabled: enabled, updated_at: new Date().toISOString() })
+        .eq("id", menuItemId);
+    }
+    if (result.error) throw result.error;
     await audit(userId, enabled ? "enable_catalog_item" : "disable_catalog_item", "menu_item", menuItemId);
     revalidatePath("/dashboard/whatsapp");
     revalidatePath("/menu");

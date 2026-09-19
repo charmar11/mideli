@@ -1,12 +1,20 @@
 # Contrato técnico de la fundación multinegocio
 
-**Estado:** contrato aprobado para convertirse en migraciones; este documento
-no es el SQL ejecutable ni autoriza aplicarlo en producción.
+**Estado:** contrato aprobado y convertido en migraciones locales; este
+documento no autoriza aplicarlas en producción.
 
-La primera versión ejecutable quedó preparada, sin datos reales, en
-`supabase/migrations/20260919082935_multibusiness_foundation.sql` y
-`supabase/migrations/20260919083624_multibusiness_capability_catalog.sql`.
-La aplicación remota sigue pendiente de un entorno de staging aislado.
+La fundación, el bootstrap controlado y la primera frontera de catálogo están
+preparados, sin credenciales ni datos inventados, en:
+
+- `supabase/migrations/20260919082935_multibusiness_foundation.sql`.
+- `supabase/migrations/20260919083624_multibusiness_capability_catalog.sql`.
+- `supabase/migrations/20260919090030_multibusiness_global_waiter_capabilities.sql`.
+- `supabase/migrations/20260919090126_multibusiness_seed_mideli.sql`.
+- `supabase/migrations/20260919091500_multibusiness_catalog_boundary.sql`.
+
+La aplicación remota sigue pendiente de una revisión final y un `db push`
+explícito; no se creó staging porque no se usará otro proyecto ni Branching
+Pro.
 
 Este contrato fija lo que debe hacer la primera migración. Su objetivo es
 evitar que la implementación tenga que decidir sobre la marcha cómo representar
@@ -21,8 +29,9 @@ organizaciones, negocios, membresías y capacidades.
 - Usar `jsonb` únicamente para metadatos opcionales, nunca para sustituir
   relaciones entre organización, negocio, usuario o capacidad.
 - Todas las claves foráneas nuevas tendrán índices explícitos.
-- La fundación no agrega todavía `business_id` a pedidos, catálogo, caja o
-  inventario. Esas migraciones serán posteriores y separadas.
+- La fundación no agrega todavía `business_id` a pedidos, caja o inventario.
+  El catálogo tiene una migración posterior y separada que ya añade el límite
+  a categorías y productos.
 
 ## Entidades de la primera migración
 
@@ -100,6 +109,8 @@ Catálogo interno de capacidades, con código estable como clave primaria:
 - `platform.manage_businesses`.
 - `organization.manage_global_waiters`.
 - `organization.manage_tables`.
+- `organization.operate_orders`.
+- `organization.charge_orders`.
 - `business.manage_staff`.
 - `business.manage_catalog`.
 - `business.manage_inventory`.
@@ -178,17 +189,17 @@ proporcionado por el navegador.
 1. Crear las tablas nuevas y sus índices, sin tocar todavía tablas operativas.
 2. Crear funciones de resolución de alcance y auditoría.
 3. Aplicar RLS y pruebas negativas de las entidades nuevas.
-4. Sembrar en staging únicamente Rincón 404 Food Park y Mideli.
-5. Asociar perfiles mediante `auth.users.id` verificado.
-6. Comprobar capacidades de Administrador, Andrea, Mauro y la cuenta antigua
-   antes de decidir su desactivación.
-7. Ejecutar lint, build, pruebas E2E, dry-run de Supabase y pruebas de
+4. Asociar perfiles mediante `auth.users.id` verificado y sembrar únicamente
+   Rincón 404 Food Park y Mideli.
+5. Comprobar capacidades de Administrador, Andrea, Mauro y la cuenta antigua.
+6. Ejecutar lint, build, pruebas E2E, dry-run de Supabase y pruebas de
    manipulación de IDs desde el navegador.
 
 ## Fuera de esta migración
 
-- No agregar `business_id` a `orders`, `menu_items`, `categories`, caja,
-  pagos, inventario o clientes todavía.
+- No agregar todavía `business_id` a `orders`, caja, pagos, inventario o
+  clientes; categorías y productos ya tienen su frontera en la rebanada de
+  catálogo.
 - No cambiar credenciales ni alias actuales.
 - No crear Just Dipping.
 - No mover WhatsApp.
@@ -198,8 +209,9 @@ proporcionado por el navegador.
 
 ## Criterio de aceptación
 
-La fundación está aprobada cuando una cuenta de staging no puede manipular una
-membresía o negocio fuera de su alcance, el dueño de Mideli puede administrar
-su membresía local, el Coordinador puede administrar meseras globales y la
+La primera rebanada está lista para revisión cuando la CI comprueba que una
+cuenta no puede manipular una membresía, negocio o catálogo fuera de su
+alcance, el dueño de Mideli puede administrar su catálogo, Andrea puede operar
+y cobrar como mesera global, Mauro conserva la preparación de Mideli y la
 aplicación actual sigue entrando sin cambios visibles. Si cualquier prueba
-requiere confiar en un filtro del frontend, la migración no está lista.
+requiere confiar en el filtro del frontend, la migración no está lista.

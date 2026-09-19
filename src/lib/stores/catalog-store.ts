@@ -20,6 +20,7 @@ interface CatalogState {
     item: Omit<
       MenuItem,
       | "id"
+      | "business_id"
       | "created_at"
       | "updated_at"
     >
@@ -50,12 +51,12 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         const [categoriesResult, menuItemsResult] = await Promise.all([
           supabase
             .from("categories")
-            .select("id,name,sort_order,is_active,created_at,updated_at")
+            .select("id,business_id,name,sort_order,is_active,created_at,updated_at")
             .order("sort_order", { ascending: true }),
           supabase
             .from("menu_items")
             .select(
-              "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
+              "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
             )
             .order("sort_order", { ascending: true }),
         ]);
@@ -95,7 +96,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     const supabase = createClient();
     const { data, error } = await supabase
       .from("categories")
-      .select("id,name,sort_order,is_active,created_at,updated_at")
+      .select("id,business_id,name,sort_order,is_active,created_at,updated_at")
       .order("sort_order", { ascending: true });
 
     if (!error && data) {
@@ -110,7 +111,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     const { data, error } = await supabase
       .from("menu_items")
       .select(
-        "id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
+        "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
       )
       .order("sort_order", { ascending: true });
 

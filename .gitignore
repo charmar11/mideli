@@ -52,3 +52,6 @@ next-env.d.ts
 
 # audio sources live in public/sounds
 /*.mp3
+
+# local codebase graph and generated analysis artifacts
+/graphify-out/

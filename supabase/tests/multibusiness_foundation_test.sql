@@ -40,8 +40,8 @@ SELECT ok(
 
 SELECT is(
   (SELECT count(*)::integer FROM public.capabilities),
-  10,
-  'the foundation seeds only the ten approved capabilities'
+  12,
+  'the foundation seeds only the twelve approved capabilities'
 );
 SELECT is(
   (SELECT count(*)::integer FROM public.organizations),
@@ -72,7 +72,7 @@ SELECT is(
         OR code LIKE 'organization.%'
         OR code LIKE 'business.%'
   ),
-  10,
+  12,
   'all seeded capabilities use an approved scope prefix'
 );
 

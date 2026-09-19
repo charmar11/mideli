@@ -7,16 +7,19 @@ de un solo negocio y WhatsApp continúa siendo exclusivo de Mideli. Todavía no
 se han aplicado migraciones multinegocio, no se ha creado Just Dipping en la
 base de datos y no se ha habilitado un selector de negocio.
 
-La primera implementación autorizada para preparar es una fundación aditiva en
-staging:
-organización, negocio inicial, membresías, capacidades, auditoría y guardas.
-No debe cambiar el login ni el comportamiento visible de Mideli.
+La primera implementación autorizada es una fundación aditiva y una frontera
+de catálogo: organización, negocio inicial, membresías, capacidades,
+auditoría, guardas, categorías y productos. No debe cambiar el login ni el
+comportamiento visible de Mideli.
 
-Las migraciones versionadas de esta fundación ya existen en
-`supabase/migrations/20260919082935_multibusiness_foundation.sql` y
-`supabase/migrations/20260919083624_multibusiness_capability_catalog.sql`.
-Todavía no se han aplicado a Supabase porque el proyecto no tiene una rama de
-staging disponible y no se debe escribir en producción.
+Las migraciones versionadas de esta rebanada ya existen en
+`supabase/migrations/20260919082935_multibusiness_foundation.sql`,
+`20260919083624_multibusiness_capability_catalog.sql`,
+`20260919090030_multibusiness_global_waiter_capabilities.sql`,
+`20260919090126_multibusiness_seed_mideli.sql` y
+`20260919091500_multibusiness_catalog_boundary.sql`.
+Todavía no se han aplicado a Supabase; CI valida el conjunto y el remoto se
+mantiene sin cambios hasta revisar el dry-run y autorizarlo explícitamente.
 
 El repositorio también ejecuta lint, build, migraciones locales y pgTAP en
 GitHub Actions. Esto permite validar el SQL en un runner con Docker sin pagar
@@ -64,7 +67,7 @@ navegador no encontró overflow en los viewports de escritorio probados.
 
 ## Siguiente gate
 
-Antes de aplicar el SQL multinegocio deben existir una base Supabase de staging,
-un despliegue Preview con variables separadas, un respaldo restaurable y una
-versión estable identificada. Después se puede implementar únicamente la
-fundación descrita en `12-plan-primera-rebanada-staging.md`.
+Antes de aplicar el SQL multinegocio deben pasar CI, la revisión del dry-run,
+un respaldo restaurable y una versión estable identificada. Después se puede
+aplicar únicamente la fundación y el catálogo preparados; pedidos, caja,
+pagos e inventario siguen fuera del primer corte.

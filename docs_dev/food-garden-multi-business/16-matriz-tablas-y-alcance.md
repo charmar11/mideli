@@ -1,7 +1,8 @@
 # Matriz de tablas y alcance multinegocio
 
-**Estado:** inventario de diseño basado en las migraciones actuales. No contiene
-SQL ejecutable ni modifica el esquema.
+**Estado:** inventario de diseño basado en las migraciones actuales. La fila de
+catálogo ya tiene una migración ejecutable separada; el resto sigue siendo
+alcance planificado y no modifica el esquema por sí mismo.
 
 Este documento evita agregar `business_id` de forma automática a todas las
 tablas. Cada registro debe recibir el alcance correcto: plataforma,
@@ -10,8 +11,8 @@ derive de una relación validada.
 
 ## Reglas de lectura
 
-- La fundación inicial solo crea organización, negocio, membresías,
-  capacidades y auditoría.
+- La fundación inicial crea organización, negocio, membresías, capacidades y
+  auditoría; la siguiente rebanada asocia el catálogo a Mideli.
 - Las tablas operativas siguen perteneciendo al modelo actual hasta que su
   etapa de migración pase pruebas de backfill y aislamiento.
 - Un dato privado que no tenga negocio directo debe poder derivarlo de su
@@ -48,8 +49,8 @@ objetivo, no existen todavía en las migraciones actuales.
 
 | Tabla | Alcance objetivo | Tratamiento |
 |---|---|---|
-| `categories` | Negocio | Backfill completo a Mideli; categoría y producto deben coincidir en negocio. |
-| `menu_items` | Negocio | Backfill a Mideli; el servidor debe validar la categoría y el negocio. |
+| `categories` | Negocio | `20260919091500_multibusiness_catalog_boundary.sql` hace backfill a Mideli y exige el negocio. |
+| `menu_items` | Negocio | La misma migración hace backfill a Mideli y valida categoría y negocio. |
 | `menu_item_availability_log` | Negocio derivado del producto | No permitir disponibilidad de un producto de otro negocio. |
 | `menu_item_availability_reservations` | Negocio derivado del producto | Validar producto, ventana y negocio en la misma operación. |
 | Storage de imágenes | Negocio derivado de catálogo | Cambiar rutas y políticas sin romper imágenes históricas. |

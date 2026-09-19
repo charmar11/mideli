@@ -144,3 +144,29 @@
 - Se agregó `.github/workflows/verify.yml` para que GitHub ejecute lint, build,
   todas las migraciones locales y las pruebas pgTAP en un runner aislado. Es
   una verificación de CI, no un entorno Supabase compartido ni un deploy.
+
+## 2026-09-19: primera rebanada sin staging de pago
+
+- Se confirmó que no se creará otro proyecto Supabase ni se contratará Pro para
+  esta etapa. La validación aislada se hará en GitHub Actions; la base remota
+  sigue protegida hasta aprobar un `db push` explícito.
+- Se agregó `20260919090030_multibusiness_global_waiter_capabilities.sql` con
+  permisos organizacionales para que una mesera global pueda operar y cobrar en
+  todos los negocios futuros.
+- Se agregó `20260919090126_multibusiness_seed_mideli.sql`. Resuelve por nombre
+  los perfiles activos existentes (`Administrador`, `andrea`, `mauro` y
+  `Mideli`), crea únicamente Rincón 404 Food Park y Mideli, conserva los
+  logins, deja la cuenta heredada sin capacidades y falla si los perfiles son
+  ambiguos. En un Supabase local vacío se omite sin inventar usuarios.
+- Se agregó `20260919091500_multibusiness_catalog_boundary.sql`. Asocia
+  categorías y productos a Mideli, impide categorías cruzadas, reemplaza las
+  políticas globales por RLS de membresía/capacidad y limita el reordenamiento
+  al negocio correspondiente.
+- WhatsApp sigue exclusivo de Mideli y ahora filtra el catálogo por negocio
+  cuando la fundación está disponible; conserva un fallback acotado para el
+  despliegue gradual mientras faltan columnas en una base anterior.
+- Se agregaron pruebas pgTAP estructurales para el límite del catálogo y se
+  actualizó el catálogo esperado a doce capacidades.
+- `npm run lint`, `npm run build`, `git diff --check` y
+  `npx supabase db push --linked --dry-run` pasaron. El dry-run enumera cinco
+  migraciones pendientes; todavía no se aplicaron al proyecto productivo.
