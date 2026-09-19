@@ -114,5 +114,9 @@
   en `us-east-2`; quedó preparado el comando para una rama persistente `micro`
   sin `--with-data`, pero no se ejecutó porque crear el recurso requiere la
   autorización explícita del operador.
+- Con la autorización recibida se intentó crear `mideli-multibusiness-staging`;
+  Supabase respondió `402 entitlement_required` porque Branching requiere Pro o
+  superior. No se creó ninguna rama ni se modificó el proyecto productivo. La
+  alternativa pendiente es una base Supabase separada, sujeta a cuota/costo.
 - La línea base de aplicación se verificó de nuevo: `npm run lint` y
   `npm run build` pasaron sin errores.

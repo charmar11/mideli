@@ -9,7 +9,11 @@ producción o con datos personales copiados sin control.
 
 - Confirmar una versión estable del repositorio y registrar su commit.
 - Confirmar que el proyecto Supabase destino es una rama Preview o una base
-  separada del proyecto productivo.
+  separada del proyecto productivo. La rama Preview se intentó crear el
+  2026-09-19, pero el proyecto actual devolvió `402 entitlement_required`:
+  Branching requiere el plan Pro o superior. Si no se actualiza el plan, se
+  debe crear un proyecto Supabase independiente y aprobar su posible cuota o
+  costo antes de hacerlo.
 - Elegir región, tamaño, persistencia y propietario del entorno sin asumirlos
   desde la configuración local.
 - La rama Preview de Supabase se crea sin `--with-data`; el CLI 2.117.0 ofrece
