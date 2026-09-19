@@ -47,6 +47,8 @@ export type TableShape = "round" | "square" | "rectangle" | "bar";
 
 export interface TableZone {
   id: string;
+  /** Optional while the shared table map rolls forward to organization scope. */
+  organization_id?: string;
   name: string;
   sort_order: number;
   position_x: number;
@@ -60,6 +62,8 @@ export interface TableZone {
 
 export interface RestaurantTable {
   id: string;
+  /** Optional while the shared table map rolls forward to organization scope. */
+  organization_id?: string;
   zone_id: string | null;
   name: string;
   shape: TableShape;
@@ -106,6 +110,8 @@ export interface BusinessAccount {
 
 export interface TableMapLabel {
   id: string;
+  /** Optional while the shared table map rolls forward to organization scope. */
+  organization_id?: string;
   label_text: string;
   position_x: number;
   position_y: number;

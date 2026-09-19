@@ -199,3 +199,12 @@
 - Ninguna de estas migraciones se ha aplicado a Supabase productivo. Falta la
   revisión remota y el flujo visual antes de permitir que una mesera cree
   comandas mixtas desde la interfaz.
+
+## 2026-09-19: plano de mesas compartido con frontera de organización
+
+- `20260919113000_multibusiness_table_map_boundary.sql` asocia zonas, mesas y referencias visuales a la organización `Rincón 404 Food Park`.
+- Las mesas y visitas conservan una clave compuesta organización-mesa para impedir asociaciones cruzadas.
+- Se reemplazaron las políticas globales heredadas por lectura por membresía y escritura mediante `organization.manage_tables`.
+- La cuenta existente del dueño de Mideli recibe una membresía transitoria de organización y ese permiso para conservar la administración actual del plano sin cambiar su login.
+- Los inserts existentes que no envían `organization_id` siguen resolviendo Mideli durante la transición.
+- La migración todavía no se ha aplicado a producción; falta comprobarla en CI y después continuar con el contexto de negocio en la interfaz.
