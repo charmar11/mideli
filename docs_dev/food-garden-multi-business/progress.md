@@ -303,3 +303,24 @@
 - Lint, build, `git diff --check` y
   `npx supabase db push --linked --dry-run` pasaron. La migración sigue sin
   aplicarse al proyecto productivo.
+
+## 2026-09-19: impresión y avisos Push por negocio
+
+- `20260919131500_multibusiness_print_push_runtime.sql` agrega `business_id` a
+  la cola de impresión y a los eventos de Push, completa el histórico desde
+  los pedidos y deja una restricción para impedir registros sin negocio cuando
+  Mideli esté activo.
+- La impresora física actual queda explícitamente limitada a Mideli. El nuevo
+  reclamo de cola exige el negocio seleccionado y capacidades de preparación u
+  operación; el reclamo antiguo se conserva solo como compatibilidad segura
+  para Mideli durante la transición. Just Dipping no se envía a esa estación.
+- `send-order-notification` ahora obtiene destinatarios por membresías y
+  capacidades del negocio. Las suscripciones siguen perteneciendo al usuario
+  y dispositivo, pero la entrega ya no se decide con todos los perfiles
+  activos. `send-order-ready` quedó como adaptador al worker único para evitar
+  una segunda ruta sin frontera de negocio.
+- El administrador de la estación filtra la cola por el negocio activo y usa
+  el reclamo explícito cuando la fundación multinegocio está disponible.
+- La migración, lint, build y el dry-run local deben pasar antes de integrar
+  esta etapa. Todavía no se ha aplicado ninguna de estas migraciones a
+  Supabase productivo ni se ha desplegado esta versión.

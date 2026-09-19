@@ -14,6 +14,30 @@ type PushSubscriptionRow = {
 
 type PushError = Error & { statusCode?: number };
 
+type AdminClient = ReturnType<typeof createClient>;
+
+type OrderRow = {
+  id: string;
+  number: number;
+  status: string;
+  type: string;
+  table_zone_name: string | null;
+  table_number: string | null;
+  customer_name: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  business_id: string | null;
+};
+
+type MembershipRow = {
+  id: string;
+  user_id: string;
+  scope_type: string;
+  organization_id: string | null;
+  business_id: string | null;
+};
+
 const NEW_ORDER_ROLES = new Set(["owner", "admin", "waiter", "supervisor"]);
 const READY_ORDER_ROLES = new Set(["owner", "admin", "kitchen", "supervisor"]);
 const CORS_HEADERS = {
@@ -49,6 +73,107 @@ function locationLabel(order: {
       : `Mesa ${table}`
     : "Mesa sin asignar";
   return [order.table_zone_name?.trim(), tableLabel].filter(Boolean).join(" · ");
+}
+
+function isMissingBusinessColumn(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /business_id.*column|column.*business_id/i.test(error.message ?? "")
+  );
+}
+
+async function getRecipientUserIds(
+  admin: AdminClient,
+  businessId: string | null,
+  topic: NotificationTopic
+) {
+  if (!businessId) {
+    const { data, error } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("is_active", true)
+      .in("role", topic === "kitchen" ? [...READY_ORDER_ROLES] : [...NEW_ORDER_ROLES]);
+    return {
+      ids: (data ?? []).map((profile) => profile.id),
+      error: error?.message ?? null,
+    };
+  }
+
+  const { data: business, error: businessError } = await admin
+    .from("businesses")
+    .select("organization_id")
+    .eq("id", businessId)
+    .maybeSingle();
+  if (businessError || !business) {
+    return {
+      ids: [] as string[],
+      error: businessError?.message ?? "No se encontró la organización del negocio",
+    };
+  }
+
+  const { data: membershipRows, error: membershipError } = await admin
+    .from("memberships")
+    .select("id,user_id,scope_type,organization_id,business_id")
+    .eq("status", "active");
+  if (membershipError) {
+    return { ids: [] as string[], error: membershipError.message };
+  }
+
+  const visibleMemberships = (membershipRows ?? []).filter((membership) => {
+    const row = membership as MembershipRow;
+    return (
+      row.scope_type === "platform" ||
+      row.organization_id === business.organization_id ||
+      row.business_id === businessId
+    );
+  }) as MembershipRow[];
+  const membershipIds = visibleMemberships.map((membership) => membership.id);
+  if (membershipIds.length === 0) return { ids: [], error: null };
+
+  const capabilityCodes =
+    topic === "kitchen"
+      ? ["business.update_preparation", "business.operate_orders"]
+      : [
+          "organization.operate_orders",
+          "business.operate_orders",
+          "business.update_preparation",
+        ];
+  const { data: capabilityRows, error: capabilityError } = await admin
+    .from("membership_capabilities")
+    .select("membership_id,capability_code,organization_id,business_id")
+    .in("membership_id", membershipIds)
+    .in("capability_code", capabilityCodes)
+    .is("revoked_at", null);
+  if (capabilityError) {
+    return { ids: [] as string[], error: capabilityError.message };
+  }
+
+  const eligibleMembershipIds = new Set(
+    (capabilityRows ?? [])
+      .filter((capability) => {
+        const isOrganizationCapability =
+          capability.capability_code === "organization.operate_orders";
+        return isOrganizationCapability
+          ? capability.organization_id === business.organization_id &&
+              capability.business_id === null
+          : capability.organization_id === business.organization_id &&
+              capability.business_id === businessId;
+      })
+      .map((capability) => capability.membership_id)
+  );
+
+  return {
+    ids: Array.from(
+      new Set(
+        visibleMemberships
+          .filter((membership) => eligibleMembershipIds.has(membership.id))
+          .map((membership) => membership.user_id)
+      )
+    ),
+    error: null,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -98,23 +223,40 @@ Deno.serve(async (req) => {
   if (!orderId || (event !== "new_order" && event !== "ready")) {
     return json({ error: "Evento de pedido incompleto" }, 400);
   }
+  const topic: NotificationTopic = event === "new_order" ? "kitchen" : "ready";
 
-  const [{ data: caller }, { data: order, error: orderError }] = await Promise.all([
-    userId
-      ? admin
-          .from("profiles")
-          .select("role,is_active")
-          .eq("id", userId)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    admin
+  const { data: caller } = userId
+    ? await admin
+        .from("profiles")
+        .select("role,is_active")
+        .eq("id", userId)
+        .maybeSingle()
+    : { data: null };
+
+  const scopedOrderResult = await admin
+    .from("orders")
+    .select(
+      "id,number,status,type,table_zone_name,table_number,customer_name,created_by,created_at,updated_at,business_id"
+    )
+    .eq("id", orderId)
+    .maybeSingle();
+
+  let order = scopedOrderResult.data as OrderRow | null;
+  let orderError = scopedOrderResult.error;
+  const businessBoundaryAvailable = !scopedOrderResult.error;
+  if (scopedOrderResult.error && isMissingBusinessColumn(scopedOrderResult.error)) {
+    const legacyOrderResult = await admin
       .from("orders")
       .select(
         "id,number,status,type,table_zone_name,table_number,customer_name,created_by,created_at,updated_at"
       )
       .eq("id", orderId)
-      .maybeSingle(),
-  ]);
+      .maybeSingle();
+    order = legacyOrderResult.data
+      ? ({ ...legacyOrderResult.data, business_id: null } as OrderRow)
+      : null;
+    orderError = legacyOrderResult.error;
+  }
 
   const allowedRoles = event === "new_order" ? NEW_ORDER_ROLES : READY_ORDER_ROLES;
   if (userId && (!caller?.is_active || !allowedRoles.has(caller.role))) {
@@ -123,6 +265,9 @@ Deno.serve(async (req) => {
   if (orderError || !order) {
     return json({ error: "Pedido no encontrado" }, 404);
   }
+  if (businessBoundaryAvailable && !order.business_id) {
+    return json({ error: "El pedido no tiene un negocio asignado" }, 409);
+  }
   if (event === "new_order" && caller?.role === "waiter" && order.created_by !== userId) {
     return json({ error: "No puedes publicar otro pedido" }, 403);
   }
@@ -130,7 +275,6 @@ Deno.serve(async (req) => {
     return json({ error: "El pedido no está listo" }, 409);
   }
 
-  const topic: NotificationTopic = event === "new_order" ? "kitchen" : "ready";
   let transitionLogId: string | null = null;
   let eventKey = `${topic}:${order.id}`;
 
@@ -150,14 +294,35 @@ Deno.serve(async (req) => {
     eventKey = `${topic}:${transition.id}`;
   }
 
+  const recipientResult = await getRecipientUserIds(admin, order.business_id, topic);
+  if (recipientResult.error) {
+    return json({ error: "No se pudieron preparar los destinatarios" }, 500);
+  }
+  const recipientUserIds = recipientResult.ids;
+  if (userId && order.business_id && !recipientUserIds.includes(userId)) {
+    return json({ error: "No tienes permiso para avisar sobre este negocio" }, 403);
+  }
+  if (recipientUserIds.length === 0) {
+    return json({ sent: 0, reason: "Sin personal autorizado" });
+  }
+
+  const claimArguments = order.business_id
+    ? {
+        p_event_key: eventKey,
+        p_order_id: order.id,
+        p_topic: topic,
+        p_transition_log_id: transitionLogId,
+        p_business_id: order.business_id,
+      }
+    : {
+        p_event_key: eventKey,
+        p_order_id: order.id,
+        p_topic: topic,
+        p_transition_log_id: transitionLogId,
+      };
   const { data: eventId, error: claimError } = await admin.rpc(
     "claim_push_notification_event",
-    {
-      p_event_key: eventKey,
-      p_order_id: order.id,
-      p_topic: topic,
-      p_transition_log_id: transitionLogId,
-    }
+    claimArguments
   );
   if (claimError) {
     console.error("No se pudo reclamar el evento Push", claimError);
@@ -189,26 +354,11 @@ Deno.serve(async (req) => {
     }
   };
 
-  const { data: activeProfiles, error: profilesError } = await admin
-    .from("profiles")
-    .select("id")
-    .eq("is_active", true);
-  if (profilesError) {
-    await completeEvent("failed", {}, profilesError.message);
-    return json({ error: "No se pudieron preparar los destinatarios" }, 500);
-  }
-
-  const activeProfileIds = (activeProfiles ?? []).map((profile) => profile.id);
-  if (activeProfileIds.length === 0) {
-    await completeEvent("skipped");
-    return json({ sent: 0, reason: "Sin perfiles activos" });
-  }
-
   const topicColumn = topic === "kitchen" ? "kitchen_alerts" : "ready_alerts";
   const { data: subscriptions, error: subscriptionsError } = await admin
     .from("push_subscriptions")
     .select("id,endpoint,p256dh,auth_key")
-    .in("user_id", activeProfileIds)
+    .in("user_id", recipientUserIds)
     .eq("is_active", true)
     .eq(topicColumn, true);
   if (subscriptionsError) {

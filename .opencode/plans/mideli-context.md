@@ -470,6 +470,15 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   histórico cuando el contexto multinegocio existe pero no hay negocio
   seleccionado. Los wrappers públicos antiguos quedan revocados después de
   esta migración. Todavía no se ha aplicado a producción.
+- La impresión y los avisos Push tienen una frontera local en
+  `20260919131500_multibusiness_print_push_runtime.sql`. Los trabajos de
+  impresión y eventos Push conservan el negocio del pedido; la estación física
+  existente solo encola Mideli, y el reclamo nuevo exige negocio y capacidad.
+  El reclamo antiguo queda limitado al negocio canónico de Mideli para que una
+  pestaña vieja no se rompa durante la transición. `send-order-notification`
+  filtra destinatarios mediante membresías y capacidades; `send-order-ready`
+  solo adapta llamadas antiguas al worker único. La migración aún no se ha
+  aplicado a producción.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 

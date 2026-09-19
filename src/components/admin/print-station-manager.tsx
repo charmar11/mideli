@@ -18,6 +18,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import type { SelectedModifier } from "@/types/database";
 
 type PrintSettings = {
@@ -68,6 +69,16 @@ function getDeviceId() {
   return created;
 }
 
+async function getPrintBusinessContext() {
+  const context = useBusinessContextStore.getState();
+  await context.ensureLoaded();
+  const current = useBusinessContextStore.getState();
+  return {
+    businessId: current.selectedBusinessId,
+    legacyFallback: current.legacyFallback,
+  };
+}
+
 function statusLabel(status: PrintJobRow["status"]) {
   if (status === "queued") return "En espera";
   if (status === "printing") return "Imprimiendo";
@@ -96,18 +107,30 @@ export function PrintStationManager() {
   const autoPrintEnabled = settings?.auto_print_kitchen ?? false;
 
   const loadStation = useCallback(async () => {
+    const scope = await getPrintBusinessContext();
+    if (!scope.legacyFallback && !scope.businessId) {
+      setLoading(false);
+      setSettings(null);
+      setJobs([]);
+      return;
+    }
+
     const supabase = createClient();
+    let jobsQuery = supabase
+      .from("print_jobs")
+      .select("id,order_id,status,attempts,last_error,created_at,printed_at")
+      .order("created_at", { ascending: false })
+      .limit(16);
+    if (scope.businessId) {
+      jobsQuery = jobsQuery.eq("business_id", scope.businessId);
+    }
     const [settingsResult, jobsResult] = await Promise.all([
       supabase
         .from("print_station_settings")
         .select("auto_print_kitchen,paper_width_mm")
         .eq("singleton", true)
         .maybeSingle(),
-      supabase
-        .from("print_jobs")
-        .select("id,order_id,status,attempts,last_error,created_at,printed_at")
-        .order("created_at", { ascending: false })
-        .limit(16),
+      jobsQuery,
     ]);
 
     setLoading(false);
@@ -150,9 +173,20 @@ export function PrintStationManager() {
 
     processingRef.current = true;
     setPrinting(true);
-    const { data, error } = await createClient().rpc("claim_next_print_job", {
-      p_device_id: deviceIdRef.current,
-    });
+    const scope = await getPrintBusinessContext();
+    if (!scope.legacyFallback && !scope.businessId) {
+      processingRef.current = false;
+      setPrinting(false);
+      return;
+    }
+    const { data, error } = scope.businessId
+      ? await createClient().rpc("claim_next_print_job", {
+          p_device_id: deviceIdRef.current,
+          p_business_id: scope.businessId,
+        })
+      : await createClient().rpc("claim_next_print_job", {
+          p_device_id: deviceIdRef.current,
+        });
 
     if (error) {
       processingRef.current = false;
