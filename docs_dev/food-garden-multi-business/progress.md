@@ -258,3 +258,19 @@
   filtro del negocio seleccionado cuando la fundación está disponible. Al
   cambiar el selector, la vista server-side se refresca para no mostrar datos
   del negocio anterior.
+
+## 2026-09-19: estados de preparación por negocio
+
+- `20260919124500_multibusiness_order_status_runtime.sql` agrega una guarda de
+  base de datos para los cambios de estado. Cocina local y el dueño del negocio
+  pueden pasar pedidos a `Preparando` o `Listo`; una mesera global conserva la
+  captura, entrega y cobro, pero no obtiene automáticamente permiso para marcar
+  como listo un pedido de otro negocio.
+- El cambio también expone `update_business_order_status(...)`, que exige el
+  negocio seleccionado y el pedido perteneciente a ese negocio. El trigger
+  protege además las actualizaciones directas que intenten saltarse la pasarela.
+- Mesero, Cocina y Estado ya resuelven el contexto seleccionado antes de
+  consultar, cambiar, cancelar, entregar o borrar un pedido. La base anterior
+  conserva el fallback histórico mientras no existan las migraciones nuevas.
+- La migración y su prueba pgTAP pasan la verificación local de lint, build y
+  `db push --linked --dry-run`. Aún no se aplican al proyecto productivo.

@@ -450,6 +450,13 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
 - WhatsApp seguirá exclusivo de Mideli en la primera etapa.
 - La fundación y la primera frontera de catálogo están versionadas localmente en `20260919082935_multibusiness_foundation.sql`, `20260919083624_multibusiness_capability_catalog.sql`, `20260919090030_multibusiness_global_waiter_capabilities.sql`, `20260919090126_multibusiness_seed_mideli.sql` y `20260919091500_multibusiness_catalog_boundary.sql`. Todavía no se han aplicado al remoto. El bootstrap resuelve únicamente los perfiles activos existentes por nombre exacto, no inventa usuarios y conserva WhatsApp exclusivo de Mideli. La preparación, brechas, pruebas, reversión y gates siguen en `docs_dev/food-garden-multi-business/`.
 - El repositorio tiene `.github/workflows/verify.yml` para validar lint, build, migraciones y pgTAP en GitHub Actions sin crear una base Supabase adicional. La CI no sustituye un staging persistente ni autoriza aplicar cambios remotos.
+- La migración local `20260919124500_multibusiness_order_status_runtime.sql` protege
+  los cambios de estado por negocio. Cocina local y el dueño pueden actualizar
+  preparación; la mesera global conserva operación, entrega y cobro sin recibir
+  automáticamente permiso para marcar como listo otro negocio. Mesero, Cocina y
+  Estado usan la pasarela y el filtro del negocio seleccionado, con fallback
+  histórico mientras la fundación no exista en remoto. Esta migración aún no se
+  ha aplicado a producción.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 

@@ -474,12 +474,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   markAsServed: async (orderId) => {
+    const scope = await getOrderScope();
+    if (!scope.legacyFallback && !scope.businessId) {
+      return { error: "No hay un negocio disponible para actualizar el pedido" };
+    }
+
     const supabase = createClient();
-    const { data, error } = await supabase
+    let paymentQuery = supabase
       .from("orders")
       .select("payment_status")
-      .eq("id", orderId)
-      .single();
+      .eq("id", orderId);
+    if (scope.businessId) paymentQuery = paymentQuery.eq("business_id", scope.businessId);
+    const { data, error } = await paymentQuery.single();
     if (error || !data) {
       return { error: error?.message ?? "No se pudo consultar el estado de pago" };
     }
@@ -490,13 +496,33 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   updateOrderStatus: async (orderId, status) => {
+    const scope = await getOrderScope();
+    if (!scope.legacyFallback && !scope.businessId) {
+      return { error: "No hay un negocio disponible para actualizar el pedido" };
+    }
+
     const supabase = createClient();
-    const { data: updatedOrder, error } = await supabase
-      .from("orders")
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq("id", orderId)
-      .select("id,status,updated_at")
-      .maybeSingle();
+    let updatedOrder: Order | null = null;
+    let error: { message: string } | null = null;
+
+    if (scope.businessId) {
+      const result = await supabase.rpc("update_business_order_status", {
+        p_business_id: scope.businessId,
+        p_order_id: orderId,
+        p_status: status,
+      });
+      updatedOrder = (result.data as Order | null) ?? null;
+      error = result.error;
+    } else {
+      const result = await supabase
+        .from("orders")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("id", orderId)
+        .select("id,status,updated_at")
+        .maybeSingle();
+      updatedOrder = (result.data as Order | null) ?? null;
+      error = result.error;
+    }
 
     if (error || !updatedOrder) {
       return {
@@ -695,13 +721,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   deleteOrder: async (orderId) => {
+    const scope = await getOrderScope();
+    if (!scope.legacyFallback && !scope.businessId) {
+      return { error: "No hay un negocio disponible para borrar el pedido" };
+    }
+
     const supabase = createClient();
-    const { data, error } = await supabase
+    let deleteQuery = supabase
       .from("orders")
       .delete()
-      .eq("id", orderId)
-      .select("id")
-      .maybeSingle();
+      .eq("id", orderId);
+    if (scope.businessId) deleteQuery = deleteQuery.eq("business_id", scope.businessId);
+    const { data, error } = await deleteQuery.select("id").maybeSingle();
 
     if (error || !data) {
       return { error: "No se pudo borrar el pedido" };
@@ -715,8 +746,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   cancelOrder: async (orderId) => {
+    const scope = await getOrderScope();
+    if (!scope.legacyFallback && !scope.businessId) {
+      return { error: "No hay un negocio disponible para cancelar el pedido" };
+    }
+
     const supabase = createClient();
-    const { error } = await supabase
+    let cancelQuery = supabase
       .from("orders")
       .update({
         status: "cancelled",
@@ -724,6 +760,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         updated_at: new Date().toISOString(),
       })
       .eq("id", orderId);
+    if (scope.businessId) cancelQuery = cancelQuery.eq("business_id", scope.businessId);
+    const { error } = await cancelQuery;
 
     if (error) {
       return { error: "No se pudo cancelar el pedido" };
