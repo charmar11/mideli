@@ -515,7 +515,8 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
 - El preflight remoto antes y después del corte conservó 214 pedidos, 215
   transacciones, 43 turnos, 7 categorías, 52 productos, 5 insumos y cero
   huérfanos. La verificación repetible está en
-  `supabase/verification/mideli_post_multibusiness.sql`.
+  `supabase/verification/mideli_post_multibusiness.sql`; el contexto por
+  perfil se comprueba en `supabase/verification/mideli_runtime_context.sql`.
 - El POS ya puede resolver un negocio seleccionado, pero la comanda mixta de
   una mesa y la creación atómica de cuentas por negocio todavía no están
   conectadas a una experiencia completa de Mesero. No se debe presentar el
