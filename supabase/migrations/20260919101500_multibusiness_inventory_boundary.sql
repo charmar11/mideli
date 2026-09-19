@@ -369,12 +369,17 @@ UPDATE public.inventory_purchase_orders AS purchase_order
    AND business.slug = 'mideli';
 
 UPDATE public.inventory_receipts AS receipt
-   SET business_id = COALESCE(purchase_order.business_id, business.id)
+   SET business_id = COALESCE(
+     (
+       SELECT purchase_order.business_id
+         FROM public.inventory_purchase_orders AS purchase_order
+        WHERE purchase_order.id = receipt.purchase_order_id
+     ),
+     business.id
+   )
   FROM public.businesses AS business
   JOIN public.organizations AS organization
     ON organization.id = business.organization_id
-  LEFT JOIN public.inventory_purchase_orders AS purchase_order
-    ON purchase_order.id = receipt.purchase_order_id
  WHERE receipt.business_id IS NULL
    AND organization.slug = 'rincon-404-food-park'
    AND business.slug = 'mideli';
