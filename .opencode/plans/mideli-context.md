@@ -486,9 +486,10 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   auditadas; el navegador ya no puede insertar o actualizar membresías
   directamente. Las bajas son reversibles y las cuentas multinegocio no se
   eliminan para conservar historial. La pantalla `/settings` ya filtra la lista
-  por el alcance actual y adapta los roles visibles. Esta migración sigue local;
-  todavía falta conectar el acceso de rutas por capacidades y probar el flujo
-  con perfiles reales antes de aplicarla.
+  por el alcance actual y adapta los roles visibles. La pantalla todavía usa
+  las acciones heredadas de dueño/admin para restablecer contraseñas y definir
+  PIN; ese acceso debe pasar por una política de membresía antes de entregar
+  la administración de credenciales a un Coordinador.
 - La autorización de navegación ya consume las capacidades del contexto
   multinegocio desde `src/proxy.ts`. El negocio seleccionado se resuelve a
   partir de la membresía real y la cookie solo funciona como pista; el proxy
@@ -497,6 +498,29 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   todavía no existe, se conserva el fallback histórico de Mideli. WhatsApp y
   Analíticas permanecen con sus reglas heredadas porque WhatsApp sigue siendo
   exclusivo de Mideli y las analíticas aún no tienen una capacidad separada.
+
+### Auditoría de cierre de la primera rebanada
+
+- La rama `codex/whatsapp-orders` quedó con lint, build y `git diff --check`
+  correctos. GitHub Actions validó la revisión `06a628a` en el run
+  `35461058199`, incluyendo las migraciones y 260 checks pgTAP.
+- `npx supabase db push --linked --dry-run` conecta con el proyecto remoto y
+  enumera las 21 migraciones multinegocio pendientes, pero no cambia la base.
+  No se aplicó ninguna migración ni se hizo deploy de esta etapa.
+- El POS ya puede resolver un negocio seleccionado, pero la comanda mixta de
+  una mesa y la creación atómica de cuentas por negocio todavía no están
+  conectadas a una experiencia completa de Mesero. No se debe presentar el
+  selector como prueba de que Just Dipping ya está operativo.
+- La configuración del correo de reportes y sus ejecuciones siguen siendo
+  globales de transición. Antes de habilitar reportes para otro negocio deben
+  tener `business_id`, permisos por dueño y folios de ejecución separados.
+- WhatsApp, el catálogo del bot y sus pedidos siguen restringidos a Mideli de
+  forma deliberada. No se debe reutilizar ese canal para otro negocio hasta
+  definir número, credenciales, configuración y retención independientes.
+- El Coordinador aún no tiene una identidad de plataforma sembrada ni un
+  flujo final para administrar sus propias credenciales. Para crear esa cuenta
+  faltan nombre, correo real y decisión explícita sobre el acceso de plataforma;
+  no se deben inventar esos datos.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 

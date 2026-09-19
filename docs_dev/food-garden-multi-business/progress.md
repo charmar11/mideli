@@ -361,3 +361,25 @@
 - La migración, lint, build y el dry-run local deben pasar antes de integrar
   esta etapa. Todavía no se ha aplicado ninguna de estas migraciones a
   Supabase productivo ni se ha desplegado esta versión.
+
+## 2026-09-19: auditoría de cierre de la primera rebanada
+
+- La administración de personal y la navegación por capacidades quedaron
+  integradas en la rama `codex/whatsapp-orders`. `/settings` muestra el alcance
+  real del dueño o del Coordinador, y las rutas de Menú, Personal, Mesas, Caja,
+  Inventario, POS y Cocina validan capacidades sin usar la cookie como permiso.
+- La pantalla de credenciales todavía depende de acciones heredadas de
+  owner/admin para restablecer contraseña y PIN. Antes de habilitar un
+  Coordinador real, ese flujo debe recibir una autorización por membresía.
+- El POS resuelve el negocio seleccionado, pero el flujo visual completo de
+  comanda mixta, visita compartida y cuentas separadas por negocio aún no está
+  conectado. El selector no implica que Just Dipping ya pueda operar.
+- Los reportes de ventas y operación ya filtran por negocio. La configuración
+  del correo y sus ejecuciones siguen globales de transición y deberán
+  separarse antes de habilitar reportes de un segundo negocio.
+- La revisión local pasó `npm run lint`, `npm run build` y `git diff --check`.
+  GitHub Actions pasó el commit `06a628a` en el run `35461058199`, con las
+  migraciones y 260 checks pgTAP.
+- `npx supabase db push --linked --dry-run` confirmó que las migraciones
+  multinegocio están listas para revisión, pero no se aplicó ninguna a
+  producción. Tampoco se hizo deploy de esta etapa.
