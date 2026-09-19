@@ -598,9 +598,9 @@ BEGIN
 END;
 $$;
 
-UPDATE private.payment_discount_authorizations AS authorization
+UPDATE private.payment_discount_authorizations AS discount_auth
    SET business_id = private.multibusiness_mideli_business_id()
- WHERE authorization.business_id IS NULL
+ WHERE discount_auth.business_id IS NULL
    AND private.multibusiness_mideli_business_id() IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS payment_discount_authorizations_business_idx
@@ -653,14 +653,14 @@ BEGIN
 
   IF NOT EXISTS (
     SELECT 1
-      FROM private.payment_discount_authorizations AS authorization
-     WHERE authorization.requested_by = NEW.charged_by
-       AND authorization.authorized_by = NEW.discount_authorized_by
-       AND authorization.idempotency_key = NEW.idempotency_key
-       AND authorization.discount_amount = NEW.discount_amount
-       AND authorization.business_id = NEW.business_id
-       AND authorization.used_at IS NULL
-       AND authorization.expires_at > now()
+      FROM private.payment_discount_authorizations AS discount_auth
+     WHERE discount_auth.requested_by = NEW.charged_by
+       AND discount_auth.authorized_by = NEW.discount_authorized_by
+       AND discount_auth.idempotency_key = NEW.idempotency_key
+       AND discount_auth.discount_amount = NEW.discount_amount
+       AND discount_auth.business_id = NEW.business_id
+       AND discount_auth.used_at IS NULL
+       AND discount_auth.expires_at > now()
   ) THEN
     RAISE EXCEPTION 'El descuento autorizado no coincide con el negocio o el cobro';
   END IF;
@@ -1091,11 +1091,11 @@ BEGIN
   IF (v_payload->>'p_discount_authorization') IS NOT NULL
      AND NOT EXISTS (
        SELECT 1
-         FROM private.payment_discount_authorizations AS authorization
-        WHERE authorization.token = (v_payload->>'p_discount_authorization')::uuid
-          AND authorization.business_id = p_business_id
-          AND authorization.used_at IS NULL
-          AND authorization.expires_at > now()
+         FROM private.payment_discount_authorizations AS discount_auth
+        WHERE discount_auth.token = (v_payload->>'p_discount_authorization')::uuid
+          AND discount_auth.business_id = p_business_id
+          AND discount_auth.used_at IS NULL
+          AND discount_auth.expires_at > now()
      ) THEN
     RAISE EXCEPTION 'La autorización del descuento no pertenece al negocio seleccionado';
   END IF;
@@ -1122,4 +1122,3 @@ REVOKE ALL ON FUNCTION public.multibusiness_cash_action(uuid, text, jsonb) FROM 
 REVOKE ALL ON FUNCTION public.multibusiness_payment_action(uuid, text, jsonb) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.multibusiness_cash_action(uuid, text, jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.multibusiness_payment_action(uuid, text, jsonb) TO authenticated;
-
