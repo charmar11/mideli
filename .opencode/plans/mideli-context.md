@@ -489,6 +489,14 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   por el alcance actual y adapta los roles visibles. Esta migración sigue local;
   todavía falta conectar el acceso de rutas por capacidades y probar el flujo
   con perfiles reales antes de aplicarla.
+- La autorización de navegación ya consume las capacidades del contexto
+  multinegocio desde `src/proxy.ts`. El negocio seleccionado se resuelve a
+  partir de la membresía real y la cookie solo funciona como pista; el proxy
+  publica capacidades efímeras hacia el layout para mostrar y proteger Menú,
+  Personal, Mesas, Caja, Inventario, POS y Cocina. Si la función de contexto
+  todavía no existe, se conserva el fallback histórico de Mideli. WhatsApp y
+  Analíticas permanecen con sus reglas heredadas porque WhatsApp sigue siendo
+  exclusivo de Mideli y las analíticas aún no tienen una capacidad separada.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 

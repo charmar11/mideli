@@ -272,14 +272,20 @@ export async function proxy(request: NextRequest) {
       encodeURIComponent(profile.full_name || String(claims.email || ""))
     );
 
-    const { data: contextRows, error: contextError } = await supabase.rpc(
-      "get_my_multibusiness_context"
-    );
-    if (!contextError) {
-      multibusinessCapabilities = resolveScopedCapabilities(
-        request,
-        (contextRows ?? []) as BusinessContextRow[]
+    // Legacy owner/admin accounts already have the complete historical
+    // navigation. Avoid an extra context round-trip for them; capability
+    // resolution is needed for scoped non-admin accounts such as local staff
+    // and future Coordinators.
+    if (!isAdminRole(profile.role)) {
+      const { data: contextRows, error: contextError } = await supabase.rpc(
+        "get_my_multibusiness_context"
       );
+      if (!contextError) {
+        multibusinessCapabilities = resolveScopedCapabilities(
+          request,
+          (contextRows ?? []) as BusinessContextRow[]
+        );
+      }
     }
     if (multibusinessCapabilities.length > 0) {
       requestHeaders.set(

@@ -251,6 +251,24 @@
   remota aislada y terminar la autorización de rutas por capacidades antes de
   habilitarlo en el proyecto productivo.
 
+## 2026-09-19: navegación protegida por capacidades
+
+- `src/proxy.ts` ahora consulta el contexto multinegocio cuando la base ya lo
+  tiene disponible y deriva las capacidades del negocio seleccionado. La
+  cookie del selector no autoriza nada; solo ayuda a elegir el contexto que la
+  sesión ya posee.
+- Menú, Personal, Mesas, Caja, Inventario, POS y Cocina validan su acceso con
+  la capacidad correspondiente además del rol histórico. El layout recibe
+  únicamente un encabezado interno generado por el proxy y filtra también los
+  enlaces del menú de escritorio, tablet y móvil.
+- Si la función de contexto no existe, la navegación conserva el permiso
+  histórico para no romper el despliegue gradual de Mideli. WhatsApp y
+  Analíticas no se ampliaron: WhatsApp sigue siendo exclusivo de Mideli y
+  Analíticas aún requiere una capacidad propia.
+- La ejecución de CI de esta rebanada pasó lint, build, las migraciones y los
+  260 checks pgTAP. No se aplicó ninguna migración remota ni se desplegó a
+  producción.
+
 ## 2026-09-19: selector visual e inventario aislado
 
 - La barra de navegación ya muestra un selector de negocio únicamente cuando la
