@@ -178,3 +178,24 @@
 - `npm run lint`, `npm run build`, `git diff --check` y
   `npx supabase db push --linked --dry-run` pasaron. El dry-run enumera cinco
   migraciones pendientes; todavía no se aplicaron al proyecto productivo.
+
+## 2026-09-19: inventario, pedidos mixtos y frontera financiera
+
+- Se agregó `20260919101500_multibusiness_inventory_boundary.sql`. Insumos,
+  recetas, movimientos, conteos, compras, recibos y lotes quedan asociados al
+  negocio; las recetas rechazan componentes de negocios distintos.
+- Se agregó `20260919103000_multibusiness_order_batches.sql`. Una comanda de
+  comedor puede agrupar productos de varios negocios, pero crea un pedido y
+  una cuenta por negocio dentro de la misma visita. El RPC es idempotente,
+  recalcula precios y variaciones desde el catálogo y revierte toda la
+  transacción si una línea, permiso o negocio falla.
+- Se agregó `20260919110000_multibusiness_financial_boundary.sql`. Caja,
+  gastos, ajustes, pagos, asignaciones y correcciones conservan el negocio de
+  origen. La restricción de caja abierta cambió de global a una por negocio.
+  Los procedimientos actuales siguen usando Mideli como fallback controlado.
+- La CI `Verify Mideli` ya comprueba estas migraciones y sus pruebas pgTAP en
+  una base efímera. Los smoke tests operativos quedaron fuera del comando
+  pgTAP porque requieren perfiles de producción y no son planes TAP.
+- Ninguna de estas migraciones se ha aplicado a Supabase productivo. Falta la
+  revisión remota y el flujo visual antes de permitir que una mesera cree
+  comandas mixtas desde la interfaz.

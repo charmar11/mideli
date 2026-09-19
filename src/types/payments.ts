@@ -22,6 +22,8 @@ export interface PaymentItemAllocationInput {
 
 export interface PaymentReceiptTransaction {
   id: string;
+  /** Optional while older clients roll forward to business-scoped payments. */
+  business_id?: string;
   folio: number;
   status: "completed" | "voided";
   subtotal_amount: number;

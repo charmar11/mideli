@@ -34,6 +34,8 @@ export interface CashShiftTotals {
 
 export interface CashShift {
   id: string;
+  /** Optional while older clients roll forward to business-scoped cash. */
+  business_id?: string;
   number: number;
   status: CashShiftStatus;
   opening_float: number;
@@ -80,6 +82,8 @@ export interface CashShift {
 
 export interface CashMovement {
   id: string;
+  /** Optional while older clients roll forward to business-scoped cash. */
+  business_id?: string;
   shift_id: string;
   movement_type: CashMovementType;
   direction: CashDirection;
@@ -108,6 +112,8 @@ export interface CashMovementRecord extends CashMovement {
 
 export interface CashPendingOrder {
   id: string;
+  /** Optional while older clients roll forward to business-scoped cash. */
+  business_id?: string;
   closing_shift_id: string;
   next_shift_id: string | null;
   order_id: string | null;
@@ -128,6 +134,8 @@ export interface CashPendingOrder {
 
 export interface CashShiftAdjustment {
   id: string;
+  /** Optional while older clients roll forward to business-scoped cash. */
+  business_id?: string;
   shift_id: string;
   payment_method: "efectivo" | "tarjeta" | "transferencia" | "otro";
   direction: "increase" | "decrease";
@@ -142,6 +150,8 @@ export interface CashShiftAdjustment {
 
 export interface CashOpeningFloatChange {
   id: string;
+  /** Optional while older clients roll forward to business-scoped cash. */
+  business_id?: string;
   shift_id: string;
   previous_amount: number;
   new_amount: number;
