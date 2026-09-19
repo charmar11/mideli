@@ -214,4 +214,10 @@
 - `20260919114500_multibusiness_runtime_context.sql` agrega `get_my_multibusiness_context()`, que devuelve únicamente los negocios visibles para la sesión junto con el rol y capacidades efectivas.
 - Se agregó `create_business_order_with_items(...)`. Recalcula el catálogo y las variaciones en PostgreSQL, rechaza artículos de otro negocio, comprueba la capacidad de operar y conserva idempotencia.
 - El RPC antiguo de Mideli permanece durante la transición; WhatsApp no entra al selector.
-- Falta conectar este contexto al selector del POS, catálogo, mesas, estados, caja y cobro. No se debe mostrar un selector hasta que esos consumidores usen el mismo negocio.
+- El contexto ya está conectado de forma gradual al catálogo, mesas y pedidos; la ausencia de las migraciones activa únicamente el fallback histórico de Mideli.
+- Falta conectar caja, cobro, estados y la barra visual de selección. No se debe mostrar un selector hasta que esos consumidores usen el mismo negocio.
+
+## 2026-09-19: guardas para editar pedidos por negocio
+
+- `20260919120000_multibusiness_order_runtime_guards.sql` agrega la actualización de pedidos con validación de negocio y capacidad antes de delegar al procedimiento histórico de edición.
+- Después de la migración se revocan los RPC históricos de crear y editar pedidos para que el cliente no pueda saltarse la frontera; la interfaz gradual usará los RPC nuevos.

@@ -2,13 +2,14 @@ import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import type { Category, MenuItem } from "@/types/database";
 import { removeManagedProductImage } from "@/lib/product-images";
+import { useBusinessContextStore } from "./business-context-store";
 
 interface CatalogState {
   categories: Category[];
   menuItems: MenuItem[];
   loading: boolean;
   lastError: string | null;
-  fetchCatalog: () => Promise<void>;
+  fetchCatalog: (force?: boolean) => Promise<void>;
   fetchCategories: () => Promise<void>;
   fetchMenuItems: () => Promise<void>;
   subscribeToCatalog: () => () => void;
@@ -31,7 +32,25 @@ interface CatalogState {
 
 let catalogRequest: Promise<void> | null = null;
 let catalogFetchedAt = 0;
+let catalogScopeKey = "";
 const CATALOG_CACHE_MS = 30_000;
+
+async function getCatalogScope() {
+  const context = useBusinessContextStore.getState();
+  await context.ensureLoaded();
+  const nextContext = useBusinessContextStore.getState();
+  return {
+    businessId: nextContext.selectedBusinessId,
+    legacyFallback: nextContext.legacyFallback,
+    key: nextContext.legacyFallback
+      ? "legacy"
+      : `business:${nextContext.selectedBusinessId ?? "none"}`,
+  };
+}
+
+function hasModernScope(scope: Awaited<ReturnType<typeof getCatalogScope>>) {
+  return !scope.legacyFallback;
+}
 
 export const useCatalogStore = create<CatalogState>((set, get) => ({
   categories: [],
@@ -39,26 +58,50 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   loading: false,
   lastError: null,
 
-  fetchCatalog: async () => {
+  fetchCatalog: async (force = false) => {
     const hasCatalog = get().categories.length > 0 || get().menuItems.length > 0;
     if (catalogRequest) return catalogRequest;
-    if (hasCatalog && Date.now() - catalogFetchedAt < CATALOG_CACHE_MS) return;
+    if (!force && hasCatalog && Date.now() - catalogFetchedAt < CATALOG_CACHE_MS) {
+      const scope = await getCatalogScope();
+      if (scope.key === catalogScopeKey) return;
+    }
 
     catalogRequest = (async () => {
       set({ loading: true });
       try {
+        const scope = await getCatalogScope();
+        if (scope.key !== catalogScopeKey) {
+          catalogScopeKey = scope.key;
+          catalogFetchedAt = 0;
+          set({ categories: [], menuItems: [] });
+        }
+
+        if (hasModernScope(scope) && !scope.businessId) {
+          set({
+            lastError: "No hay un negocio disponible para esta cuenta.",
+          });
+          return;
+        }
+
         const supabase = createClient();
-        const [categoriesResult, menuItemsResult] = await Promise.all([
-          supabase
+        let categoriesQuery = supabase
             .from("categories")
             .select("id,business_id,name,sort_order,is_active,created_at,updated_at")
-            .order("sort_order", { ascending: true }),
-          supabase
+            .order("sort_order", { ascending: true });
+        let menuItemsQuery = supabase
             .from("menu_items")
             .select(
               "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
             )
-            .order("sort_order", { ascending: true }),
+            .order("sort_order", { ascending: true });
+        if (scope.businessId) {
+          categoriesQuery = categoriesQuery.eq("business_id", scope.businessId);
+          menuItemsQuery = menuItemsQuery.eq("business_id", scope.businessId);
+        }
+
+        const [categoriesResult, menuItemsResult] = await Promise.all([
+          categoriesQuery,
+          menuItemsQuery,
         ]);
 
         const catalogError = categoriesResult.error ?? menuItemsResult.error;
@@ -93,11 +136,18 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
 
   fetchCategories: async () => {
     set({ loading: true });
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) {
+      set({ loading: false, lastError: "No hay un negocio disponible para esta cuenta." });
+      return;
+    }
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("categories")
       .select("id,business_id,name,sort_order,is_active,created_at,updated_at")
       .order("sort_order", { ascending: true });
+    if (scope.businessId) query = query.eq("business_id", scope.businessId);
+    const { data, error } = await query;
 
     if (!error && data) {
       set({ categories: data });
@@ -107,13 +157,20 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
 
   fetchMenuItems: async () => {
     set({ loading: true });
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) {
+      set({ loading: false, lastError: "No hay un negocio disponible para esta cuenta." });
+      return;
+    }
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("menu_items")
       .select(
         "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
       )
       .order("sort_order", { ascending: true });
+    if (scope.businessId) query = query.eq("business_id", scope.businessId);
+    const { data, error } = await query;
 
     if (!error && data) {
       set({ menuItems: data });
@@ -132,6 +189,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         void get().fetchCatalog();
       }, 150);
     };
+    const handleBusinessChange = () => refresh();
     const channel = supabase
       .channel(`catalog-updates-${crypto.randomUUID()}`)
       .on(
@@ -145,14 +203,22 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         refresh
       )
       .subscribe();
+    if (typeof window !== "undefined") {
+      window.addEventListener("mideli:business-changed", handleBusinessChange);
+    }
 
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("mideli:business-changed", handleBusinessChange);
+      }
       void supabase.removeChannel(channel);
     };
   },
 
   createCategory: async (name: string) => {
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) return null;
     const supabase = createClient();
     const nextSortOrder =
       get().categories.reduce(
@@ -161,7 +227,11 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       ) + 1;
     const { data, error } = await supabase
       .from("categories")
-      .insert({ name, sort_order: nextSortOrder })
+      .insert({
+        name,
+        sort_order: nextSortOrder,
+        ...(scope.businessId ? { business_id: scope.businessId } : {}),
+      })
       .select()
       .single();
 
@@ -173,13 +243,15 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   },
 
   updateCategory: async (id: string, updates: Partial<Category>) => {
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("categories")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.businessId) query = query.eq("business_id", scope.businessId);
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) {
       return false;
@@ -194,13 +266,15 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   },
 
   deleteCategory: async (id: string) => {
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("categories")
       .delete()
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.businessId) query = query.eq("business_id", scope.businessId);
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) {
       return false;
@@ -214,6 +288,8 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   },
 
   reorderCategories: async (categoryIds: string[]) => {
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) return false;
     const previousCategories = get().categories;
     if (
       categoryIds.length !== previousCategories.length ||
@@ -251,10 +327,15 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   },
 
   createMenuItem: async (item) => {
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) return null;
     const supabase = createClient();
     const { data, error } = await supabase
       .from("menu_items")
-      .insert(item)
+      .insert({
+        ...item,
+        ...(scope.businessId ? { business_id: scope.businessId } : {}),
+      })
       .select()
       .single();
 
@@ -266,13 +347,15 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   },
 
   updateMenuItem: async (id: string, updates: Partial<MenuItem>) => {
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("menu_items")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.businessId) query = query.eq("business_id", scope.businessId);
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) {
       return false;
@@ -287,14 +370,16 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   },
 
   deleteMenuItem: async (id: string) => {
+    const scope = await getCatalogScope();
+    if (hasModernScope(scope) && !scope.businessId) return false;
     const previousImage = get().menuItems.find((item) => item.id === id)?.image_url;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("menu_items")
       .delete()
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.businessId) query = query.eq("business_id", scope.businessId);
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) {
       return false;

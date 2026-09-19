@@ -5,3 +5,4 @@ export { useUIStore } from "./ui-store";
 export { useTableStore } from "./tables-store";
 export { useInventoryStore } from "./inventory-store";
 export { useCashShiftStore } from "./cash-shift-store";
+export { useBusinessContextStore } from "./business-context-store";

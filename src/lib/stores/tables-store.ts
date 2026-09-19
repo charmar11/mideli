@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import type { RestaurantTable, TableMapLabel, TableShape, TableZone } from "@/types/database";
+import { useBusinessContextStore } from "./business-context-store";
 
 interface TableState {
   zones: TableZone[];
@@ -113,24 +114,41 @@ export const useTableStore = create<TableState>((set, get) => ({
     tablesRequest = (async () => {
       set({ loading: true });
       try {
+        const context = useBusinessContextStore.getState();
+        await context.ensureLoaded();
+        const scope = useBusinessContextStore.getState();
+        if (!scope.legacyFallback && !scope.selectedOrganizationId) {
+          set({ zones: [], tables: [], labels: [] });
+          tablesFetchedAt = Date.now();
+          return;
+        }
+
         const supabase = createClient();
+        let zonesQuery = supabase
+          .from("table_zones")
+          .select("*")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true });
+        let tablesQuery = supabase
+          .from("restaurant_tables")
+          .select("*")
+          .eq("is_active", true)
+          .order("created_at", { ascending: true });
+        let labelsQuery = supabase
+          .from("table_map_labels")
+          .select("*")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true });
+        if (scope.selectedOrganizationId) {
+          zonesQuery = zonesQuery.eq("organization_id", scope.selectedOrganizationId);
+          tablesQuery = tablesQuery.eq("organization_id", scope.selectedOrganizationId);
+          labelsQuery = labelsQuery.eq("organization_id", scope.selectedOrganizationId);
+        }
         const [{ data: zones }, { data: tables }, { data: labels }] = await Promise.all([
-          supabase
-            .from("table_zones")
-            .select("*")
-            .eq("is_active", true)
-            .order("sort_order", { ascending: true }),
-          supabase
-            .from("restaurant_tables")
-            .select("*")
-            .eq("is_active", true)
-            .order("created_at", { ascending: true }),
-          supabase
-            .from("table_map_labels")
-            .select("*")
-            .eq("is_active", true)
-            .order("sort_order", { ascending: true })
-            .order("created_at", { ascending: true }),
+          zonesQuery,
+          tablesQuery,
+          labelsQuery,
         ]);
 
         if (zones) set({ zones: zones as TableZone[] });
@@ -147,6 +165,10 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   createZone: async (name) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return null;
     const supabase = createClient();
     const nextSortOrder = get().zones.length;
     const { data, error } = await supabase
@@ -158,6 +180,9 @@ export const useTableStore = create<TableState>((set, get) => ({
         position_y: 0.04,
         width: 0.29,
         height: 0.32,
+        ...(scope.selectedOrganizationId
+          ? { organization_id: scope.selectedOrganizationId }
+          : {}),
       })
       .select()
       .single();
@@ -169,13 +194,19 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   updateZone: async (id, updates) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("table_zones")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.selectedOrganizationId) {
+      query = query.eq("organization_id", scope.selectedOrganizationId);
+    }
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) return false;
     set((state) => ({
@@ -187,13 +218,19 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   deactivateZone: async (id) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("table_zones")
       .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.selectedOrganizationId) {
+      query = query.eq("organization_id", scope.selectedOrganizationId);
+    }
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) return false;
     set((state) => ({
@@ -204,6 +241,10 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   createTable: async (input) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return null;
     const supabase = createClient();
     const existingTables = get().tables.filter((table) => table.zone_id === input.zone_id);
     const width = input.width ?? DEFAULT_TABLE_WIDTH;
@@ -228,6 +269,9 @@ export const useTableStore = create<TableState>((set, get) => ({
         width,
         height,
         rotation: input.rotation ?? 0,
+        ...(scope.selectedOrganizationId
+          ? { organization_id: scope.selectedOrganizationId }
+          : {}),
       })
       .select()
       .single();
@@ -239,13 +283,19 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   updateTable: async (id, updates) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("restaurant_tables")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.selectedOrganizationId) {
+      query = query.eq("organization_id", scope.selectedOrganizationId);
+    }
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) return false;
     set((state) => ({
@@ -257,13 +307,19 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   deactivateTable: async (id) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("restaurant_tables")
       .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.selectedOrganizationId) {
+      query = query.eq("organization_id", scope.selectedOrganizationId);
+    }
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) return false;
     set((state) => ({
@@ -273,6 +329,10 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   createLabel: async (input = {}) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return null;
     const supabase = createClient();
     const nextSortOrder = get().labels.length;
     const { data, error } = await supabase
@@ -287,6 +347,9 @@ export const useTableStore = create<TableState>((set, get) => ({
         text_color: input.text_color ?? "#FBF8E7",
         border_color: input.border_color ?? "#F5145F",
         sort_order: input.sort_order ?? nextSortOrder,
+        ...(scope.selectedOrganizationId
+          ? { organization_id: scope.selectedOrganizationId }
+          : {}),
       })
       .select()
       .single();
@@ -298,13 +361,19 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   updateLabel: async (id, updates) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("table_map_labels")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.selectedOrganizationId) {
+      query = query.eq("organization_id", scope.selectedOrganizationId);
+    }
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) return false;
     set((state) => ({
@@ -316,13 +385,19 @@ export const useTableStore = create<TableState>((set, get) => ({
   },
 
   deactivateLabel: async (id) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const scope = useBusinessContextStore.getState();
+    if (!scope.legacyFallback && !scope.selectedOrganizationId) return false;
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("table_map_labels")
       .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", id);
+    if (scope.selectedOrganizationId) {
+      query = query.eq("organization_id", scope.selectedOrganizationId);
+    }
+    const { data, error } = await query.select("id").maybeSingle();
 
     if (error || !data) return false;
     set((state) => ({ labels: state.labels.filter((label) => label.id !== id) }));

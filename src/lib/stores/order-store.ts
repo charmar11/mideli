@@ -9,6 +9,7 @@ import {
 } from "@/lib/realtime-resilience";
 import { notifyWhatsappOrderStatusAction } from "@/lib/actions/whatsapp-order-status";
 import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
+import { useBusinessContextStore } from "./business-context-store";
 
 export interface OrderItemWithName extends OrderItem {
   menu_item_name?: string;
@@ -153,6 +154,16 @@ async function publishOrderNotification(
   }
 }
 
+async function getOrderScope() {
+  const context = useBusinessContextStore.getState();
+  await context.ensureLoaded();
+  const scope = useBusinessContextStore.getState();
+  return {
+    businessId: scope.selectedBusinessId,
+    legacyFallback: scope.legacyFallback,
+  };
+}
+
 export const useOrderStore = create<OrderState>((set, get) => ({
   activeOrders: [],
   todayOrders: [],
@@ -188,6 +199,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     activeOrdersRequest = (async () => {
       set({ loading: true });
       try {
+        const scope = await getOrderScope();
+        if (!scope.legacyFallback && !scope.businessId) {
+          set({ activeOrders: [], todayOrders: [], lastError: "No hay un negocio disponible para esta cuenta." });
+          return;
+        }
+
         const supabase = createClient();
         const legacyOrderSelect =
           "id,business_id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,table_visit_id,business_account_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at";
@@ -195,9 +212,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         const ordersDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
         let activeResult;
         try {
-          activeResult = await supabase
+          let activeQuery = supabase
             .from("orders")
-            .select(orderSelect)
+            .select(orderSelect);
+          if (scope.businessId) activeQuery = activeQuery.eq("business_id", scope.businessId);
+          activeResult = await activeQuery
             .in("status", ["pending", "in_kitchen", "ready", "served"])
             .order("created_at", { ascending: false })
             .limit(200)
@@ -211,9 +230,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         if (activeResult.error) {
           const fallbackDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
           try {
-            activeResult = await supabase
+            let fallbackQuery = supabase
               .from("orders")
-              .select(legacyOrderSelect)
+              .select(legacyOrderSelect);
+            if (scope.businessId) fallbackQuery = fallbackQuery.eq("business_id", scope.businessId);
+            activeResult = await fallbackQuery
               .in("status", ["pending", "in_kitchen", "ready", "served"])
               .order("created_at", { ascending: false })
               .limit(200)
@@ -314,6 +335,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       return { order: null, error: "Agrega al menos un producto" };
     }
 
+    const scope = await getOrderScope();
+    if (!scope.legacyFallback && !scope.businessId) {
+      return { order: null, error: "No hay un negocio disponible para crear el pedido" };
+    }
+
     const supabase = createClient();
     const creationFingerprint = JSON.stringify({
       items: items.map((item) => ({
@@ -336,22 +362,34 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     pendingOrderCreationKeys.set(creationFingerprint, creationKey);
     const productsTotal = calculateItemsTotal(items);
     const total = productsTotal;
-    const { data, error } = await supabase.rpc("create_order_with_items", {
-      p_creation_key: creationKey,
-      p_items: items.map((item) => ({
-        menu_item_id: item.menu_item_id,
-        quantity: item.quantity,
-        unit_price: item.price,
-        notes: item.notes,
-        selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
-      })),
-      p_order_type: orderType,
-      p_total: total,
-      p_notes: notes,
-      p_table_number: tableNumber || null,
-      p_table_id: tableId || null,
-      p_customer_name: customerName || null,
-    });
+    const orderItems = items.map((item) => ({
+      menu_item_id: item.menu_item_id,
+      quantity: item.quantity,
+      unit_price: item.price,
+      notes: item.notes,
+      selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
+    }));
+    const { data, error } = scope.businessId
+      ? await supabase.rpc("create_business_order_with_items", {
+          p_business_id: scope.businessId,
+          p_creation_key: creationKey,
+          p_items: orderItems,
+          p_order_type: orderType,
+          p_notes: notes,
+          p_table_number: tableNumber || null,
+          p_table_id: tableId || null,
+          p_customer_name: customerName || null,
+        })
+      : await supabase.rpc("create_order_with_items", {
+          p_creation_key: creationKey,
+          p_items: orderItems,
+          p_order_type: orderType,
+          p_total: total,
+          p_notes: notes,
+          p_table_number: tableNumber || null,
+          p_table_id: tableId || null,
+          p_customer_name: customerName || null,
+        });
 
     if (error || !data) {
       return {
@@ -362,7 +400,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     let order = data as Order;
     if (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery) || schedule) {
-      const { data: updated, error: deliveryError } = await supabase
+      let updatedQuery = supabase
         .from("orders")
         .update({
           ...(customerId ? { customer_id: customerId } : {}),
@@ -406,7 +444,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
             : {}),
           updated_at: new Date().toISOString(),
         })
-        .eq("id", order.id)
+        .eq("id", order.id);
+      if (scope.businessId) updatedQuery = updatedQuery.eq("business_id", scope.businessId);
+      const { data: updated, error: deliveryError } = await updatedQuery
         .select("*")
         .single();
       if (deliveryError || !updated) {
@@ -510,28 +550,44 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       return { error: "El pedido debe tener al menos un artículo" };
     }
 
+    const scope = await getOrderScope();
+    if (!scope.legacyFallback && !scope.businessId) {
+      return { error: "No hay un negocio disponible para editar el pedido" };
+    }
+
     const supabase = createClient();
-    const { error } = await supabase.rpc("update_order_with_items", {
-      p_order_id: orderId,
-      p_items: items.map((item) => ({
-        menu_item_id: item.menu_item_id,
-        quantity: item.quantity,
-        unit_price: item.price,
-        notes: item.notes,
-        selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
-      })),
-      p_total: calculateItemsTotal(items),
-      p_table_number: tableNumber || null,
-      p_table_id: tableId || null,
-      p_customer_name: customerName || null,
-    });
+    const orderItems = items.map((item) => ({
+      menu_item_id: item.menu_item_id,
+      quantity: item.quantity,
+      unit_price: item.price,
+      notes: item.notes,
+      selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
+    }));
+    const { error } = scope.businessId
+      ? await supabase.rpc("update_business_order_with_items", {
+          p_business_id: scope.businessId,
+          p_order_id: orderId,
+          p_items: orderItems,
+          p_total: calculateItemsTotal(items),
+          p_table_number: tableNumber || null,
+          p_table_id: tableId || null,
+          p_customer_name: customerName || null,
+        })
+      : await supabase.rpc("update_order_with_items", {
+          p_order_id: orderId,
+          p_items: orderItems,
+          p_total: calculateItemsTotal(items),
+          p_table_number: tableNumber || null,
+          p_table_id: tableId || null,
+          p_customer_name: customerName || null,
+        });
 
     if (error) {
       return { error: error.message || "No se pudo editar el pedido" };
     }
 
     if (delivery || notes !== undefined || customerId !== undefined || customerPhone !== undefined || channelConversationId || schedule) {
-      const { error: deliveryError } = await supabase
+      let deliveryQuery = supabase
         .from("orders")
         .update({
           ...(delivery
@@ -580,6 +636,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           updated_at: new Date().toISOString(),
         })
         .eq("id", orderId);
+      if (scope.businessId) deliveryQuery = deliveryQuery.eq("business_id", scope.businessId);
+      const { error: deliveryError } = await deliveryQuery;
       if (deliveryError) return { error: "El pedido se actualizó, pero no se pudo guardar el domicilio" };
     }
 
@@ -800,8 +858,16 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         void get().fetchActiveOrders();
       }
     };
+    const handleBusinessChange = () => {
+      activeOrdersRequest = null;
+      set({ activeOrders: [], todayOrders: [], lastError: null });
+      scheduleRefresh();
+    };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    if (typeof window !== "undefined") {
+      window.addEventListener("mideli:business-changed", handleBusinessChange);
+    }
 
     // Realtime is the fast path. A lighter fallback keeps long-running tablets
     // correct if a websocket event is missed without querying all orders every
@@ -817,6 +883,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       if (pollingTimer) clearInterval(pollingTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("mideli:business-changed", handleBusinessChange);
+      }
       if (channel) void supabase.removeChannel(channel);
     };
   },
