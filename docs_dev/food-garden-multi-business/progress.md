@@ -283,3 +283,23 @@
   globales de transición. No mezclan ventas, pero su separación por dueño se
   mantiene como una rebanada posterior antes de habilitar reportes para otro
   negocio.
+
+## 2026-09-19: correcciones de método de pago por negocio
+
+- `20260919130000_multibusiness_payment_correction_runtime.sql` agrega una
+  pasarela única para autorizar y corregir métodos de pago. Verifica que el
+  ticket pertenezca al negocio seleccionado, que el pago siga completado y que
+  la sesión tenga capacidad de caja o cobro para ese negocio.
+- Los RPC públicos históricos de autorización y corrección dejan de ser una
+  entrada directa para el navegador. La implementación protegida permanece
+  disponible únicamente para la pasarela, que conserva la auditoría, el PIN y
+  la reclasificación de cortes cerrados.
+- El modal de corrección filtra los métodos por `business_id`, bloquea el caso
+  de una cuenta multinegocio sin negocio seleccionado y mantiene fallback solo
+  cuando la base todavía no tiene la función de contexto.
+- Se agregó `multibusiness_payment_correction_runtime_test.sql` para revisar
+  existencia, permisos, cierre de los wrappers históricos y validación de
+  pertenencia al negocio.
+- Lint, build, `git diff --check` y
+  `npx supabase db push --linked --dry-run` pasaron. La migración sigue sin
+  aplicarse al proyecto productivo.

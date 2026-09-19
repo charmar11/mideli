@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { listPaymentAuthorizersAction } from "@/lib/actions/users";
 import { createClient } from "@/lib/supabase/client";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import type { Profile } from "@/types/database";
 import type { PaymentAuthorizer, PaymentMethod } from "@/types/payments";
 
@@ -43,6 +44,16 @@ function money(value: number) {
 
 function methodLabel(method: PaymentMethod) {
   return METHODS.find((entry) => entry.method === method)?.label ?? method;
+}
+
+async function getPaymentCorrectionBusinessContext() {
+  const context = useBusinessContextStore.getState();
+  await context.ensureLoaded();
+  const current = useBusinessContextStore.getState();
+  return {
+    businessId: current.selectedBusinessId,
+    legacyFallback: current.legacyFallback,
+  };
 }
 
 export function PaymentMethodCorrectionDialog({
@@ -83,11 +94,24 @@ export function PaymentMethodCorrectionDialog({
     let active = true;
 
     async function loadCorrectionContext() {
-      const tendersPromise = createClient()
+      const scope = await getPaymentCorrectionBusinessContext();
+      if (!active) return;
+
+      if (!scope.legacyFallback && !scope.businessId) {
+        setLoading(false);
+        toast.error("No hay un negocio disponible para corregir el pago");
+        return;
+      }
+
+      let tendersQuery = createClient()
         .from("payment_tenders")
         .select("id,method,amount")
         .eq("transaction_id", transactionId)
         .order("created_at");
+      if (scope.businessId) {
+        tendersQuery = tendersQuery.eq("business_id", scope.businessId);
+      }
+      const tendersPromise = tendersQuery;
       const authorizersPromise = requiresAuthorization
         ? listPaymentAuthorizersAction()
         : Promise.resolve({ authorizers: [], error: null });
@@ -146,15 +170,30 @@ export function PaymentMethodCorrectionDialog({
     }
 
     setAuthorizing(true);
-    const { data, error } = await createClient().rpc(
-      "authorize_payment_method_correction",
-      {
-        p_tender_id: selectedTender.id,
-        p_authorizer_id: authorizerId,
-        p_pin: pin,
-        p_idempotency_key: authorizationKey,
-      }
-    );
+    const scope = await getPaymentCorrectionBusinessContext();
+    if (!scope.legacyFallback && !scope.businessId) {
+      setAuthorizing(false);
+      setPin("");
+      toast.error("No hay un negocio disponible para autorizar la corrección");
+      return;
+    }
+    const { data, error } = scope.businessId
+      ? await createClient().rpc("multibusiness_payment_correction_action", {
+          p_business_id: scope.businessId,
+          p_action: "authorize",
+          p_payload: {
+            p_tender_id: selectedTender.id,
+            p_authorizer_id: authorizerId,
+            p_pin: pin,
+            p_idempotency_key: authorizationKey,
+          },
+        })
+      : await createClient().rpc("authorize_payment_method_correction", {
+          p_tender_id: selectedTender.id,
+          p_authorizer_id: authorizerId,
+          p_pin: pin,
+          p_idempotency_key: authorizationKey,
+        });
     setAuthorizing(false);
     setPin("");
 
@@ -168,7 +207,11 @@ export function PaymentMethodCorrectionDialog({
       return;
     }
 
-    setAuthorizationToken(data as string);
+    if (typeof data !== "string" || data.length === 0) {
+      toast.error("La autorización no devolvió un token válido");
+      return;
+    }
+    setAuthorizationToken(data);
     toast.success("Corrección autorizada");
   }
 
@@ -184,12 +227,29 @@ export function PaymentMethodCorrectionDialog({
     }
 
     setSaving(true);
-    const { error } = await createClient().rpc("correct_payment_tender_method", {
-      p_tender_id: selectedTender.id,
-      p_new_method: nextMethod,
-      p_reason: reason.trim(),
-      p_authorization: authorizationToken,
-    });
+    const scope = await getPaymentCorrectionBusinessContext();
+    if (!scope.legacyFallback && !scope.businessId) {
+      setSaving(false);
+      toast.error("No hay un negocio disponible para corregir el pago");
+      return;
+    }
+    const { error } = scope.businessId
+      ? await createClient().rpc("multibusiness_payment_correction_action", {
+          p_business_id: scope.businessId,
+          p_action: "correct",
+          p_payload: {
+            p_tender_id: selectedTender.id,
+            p_new_method: nextMethod,
+            p_reason: reason.trim(),
+            p_authorization: authorizationToken,
+          },
+        })
+      : await createClient().rpc("correct_payment_tender_method", {
+          p_tender_id: selectedTender.id,
+          p_new_method: nextMethod,
+          p_reason: reason.trim(),
+          p_authorization: authorizationToken,
+        });
     setSaving(false);
 
     if (error) {

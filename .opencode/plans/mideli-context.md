@@ -462,6 +462,14 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   abiertas. El cron usa el negocio canónico `mideli` cuando la fundación existe;
   la configuración del correo y sus ejecuciones siguen globales de transición
   hasta diseñar su separación por dueño.
+- La corrección de métodos de pago ya tiene una frontera multinegocio local en
+  `20260919130000_multibusiness_payment_correction_runtime.sql`. El gateway
+  comprueba pertenencia del tender al negocio seleccionado, estado completado y
+  capacidad antes de ejecutar la autorización por PIN o la reclasificación.
+  El modal filtra sus lecturas con el mismo `business_id` y no usa el fallback
+  histórico cuando el contexto multinegocio existe pero no hay negocio
+  seleccionado. Los wrappers públicos antiguos quedan revocados después de
+  esta migración. Todavía no se ha aplicado a producción.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 
