@@ -90,7 +90,7 @@ SELECT ok(
 );
 SELECT ok(
   (
-    SELECT prosrc LIKE '%organization.manage_global_waiters%'
+    SELECT prosrc LIKE '%private.multibusiness_can_manage_membership%'
       AND prosrc LIKE '%global_waiter%'
       FROM pg_proc
      WHERE oid = 'public.create_global_waiter_membership(uuid,uuid,boolean)'::regprocedure

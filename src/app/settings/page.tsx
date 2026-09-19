@@ -804,8 +804,12 @@ export default function SettingsPage() {
                     <p className="font-heading text-xs font-bold text-foreground">Estado de la cuenta</p>
                     <p className="mt-1 font-body text-xs text-muted-foreground">
                       {selectedMember.is_active
-                        ? "Puede iniciar sesión y operar Mideli."
-                        : "No puede iniciar sesión. Su historial permanece guardado."}
+                        ? isModernManagement
+                          ? "Puede iniciar sesión y operar dentro del alcance autorizado."
+                          : "Puede iniciar sesión y operar Mideli."
+                        : isModernManagement
+                          ? "No puede operar este alcance. Su identidad y su historial permanecen guardados."
+                          : "No puede iniciar sesión. Su historial permanece guardado."}
                     </p>
                   </div>
                   <span
