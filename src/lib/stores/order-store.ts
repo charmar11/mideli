@@ -39,6 +39,7 @@ interface OrderState {
   activeOrders: OrderWithItems[];
   todayOrders: OrderWithItems[];
   menuItemsMap: Map<string, string>;
+  menuItemsBusinessMap: Map<string, string>;
   loading: boolean;
   lastError: string | null;
   fetchActiveOrders: () => Promise<void>;
@@ -54,7 +55,7 @@ interface OrderState {
     customerPhone?: string | null,
     channelConversationId?: string | null,
     schedule?: { scheduledFor: string; kitchenReleaseAt: string }
-  ) => Promise<{ order: Order | null; error: string | null }>;
+  ) => Promise<{ order: Order | null; orders?: Order[]; error: string | null }>;
   updateOrderStatus: (
     orderId: string,
     status: Order["status"]
@@ -132,6 +133,19 @@ function orderLoadError(error: unknown, fallback: string) {
   return fallback;
 }
 
+function parseCreatedOrders(data: unknown): Order[] {
+  if (!data || typeof data !== "object") return [];
+  const candidate = (data as { orders?: unknown }).orders;
+  if (!Array.isArray(candidate)) return [];
+  return candidate.filter(
+    (order): order is Order =>
+      Boolean(order) &&
+      typeof order === "object" &&
+      typeof (order as { id?: unknown }).id === "string" &&
+      typeof (order as { number?: unknown }).number === "number"
+  );
+}
+
 async function publishOrderNotification(
   supabase: ReturnType<typeof createClient>,
   orderId: string,
@@ -158,39 +172,79 @@ async function getOrderScope() {
   const context = useBusinessContextStore.getState();
   await context.ensureLoaded();
   const scope = useBusinessContextStore.getState();
+  const selected = scope.businesses.find(
+    (business) => business.business_id === scope.selectedBusinessId
+  );
+  const canOperateOrganization = Boolean(
+    selected?.capability_codes.includes("organization.operate_orders")
+  );
+  const businessIds = canOperateOrganization
+    ? scope.businesses
+        .filter(
+          (business) =>
+            business.organization_id === scope.selectedOrganizationId &&
+            business.business_lifecycle_status === "active"
+        )
+        .map((business) => business.business_id)
+    : scope.selectedBusinessId
+      ? [scope.selectedBusinessId]
+      : [];
   return {
     businessId: scope.selectedBusinessId,
+    businessIds,
     legacyFallback: scope.legacyFallback,
   };
+}
+
+function knownOrderBusinessId(
+  state: Pick<OrderState, "activeOrders" | "todayOrders">,
+  orderId: string
+) {
+  return (
+    state.activeOrders.find((order) => order.id === orderId)?.business_id ??
+    state.todayOrders.find((order) => order.id === orderId)?.business_id ??
+    null
+  );
 }
 
 export const useOrderStore = create<OrderState>((set, get) => ({
   activeOrders: [],
   todayOrders: [],
   menuItemsMap: new Map<string, string>(),
+  menuItemsBusinessMap: new Map<string, string>(),
   loading: false,
   lastError: null,
 
   setMenuItemsMap: (items: MenuItem[]) => {
-    const map = new Map<string, string>();
-    items.forEach((item) => map.set(item.id, item.name));
-    set((state) => ({
-      menuItemsMap: map,
-      activeOrders: state.activeOrders.map((order) => ({
-        ...order,
-        items: order.items.map((item) => ({
-          ...item,
-          menu_item_name: map.get(item.menu_item_id) ?? item.menu_item_name ?? "Producto",
+    set((state) => {
+      const map = new Map(state.menuItemsMap);
+      const businessMap = new Map(state.menuItemsBusinessMap);
+      items.forEach((item) => {
+        map.set(item.id, item.name);
+        if (item.business_id) businessMap.set(item.id, item.business_id);
+      });
+
+      return {
+        menuItemsMap: map,
+        menuItemsBusinessMap: businessMap,
+        activeOrders: state.activeOrders.map((order) => ({
+          ...order,
+          items: order.items.map((item) => ({
+            ...item,
+            menu_item_name:
+              map.get(item.menu_item_id) ?? item.menu_item_name ?? "Producto",
+          })),
         })),
-      })),
-      todayOrders: state.todayOrders.map((order) => ({
-        ...order,
-        items: order.items.map((item) => ({
-          ...item,
-          menu_item_name: map.get(item.menu_item_id) ?? item.menu_item_name ?? "Producto",
+        todayOrders: state.todayOrders.map((order) => ({
+          ...order,
+          items: order.items.map((item) => ({
+            ...item,
+            menu_item_name:
+              map.get(item.menu_item_id) ?? item.menu_item_name ?? "Producto",
+          })),
         })),
-      })),
-    }));
+      };
+    });
   },
 
   fetchActiveOrders: async () => {
@@ -215,7 +269,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           let activeQuery = supabase
             .from("orders")
             .select(orderSelect);
-          if (scope.businessId) activeQuery = activeQuery.eq("business_id", scope.businessId);
+          if (scope.businessIds.length > 1) {
+            activeQuery = activeQuery.in("business_id", scope.businessIds);
+          } else if (scope.businessId) {
+            activeQuery = activeQuery.eq("business_id", scope.businessId);
+          }
           activeResult = await activeQuery
             .in("status", ["pending", "in_kitchen", "ready", "served"])
             .order("created_at", { ascending: false })
@@ -233,7 +291,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
             let fallbackQuery = supabase
               .from("orders")
               .select(legacyOrderSelect);
-            if (scope.businessId) fallbackQuery = fallbackQuery.eq("business_id", scope.businessId);
+            if (scope.businessIds.length > 1) {
+              fallbackQuery = fallbackQuery.in("business_id", scope.businessIds);
+            } else if (scope.businessId) {
+              fallbackQuery = fallbackQuery.eq("business_id", scope.businessId);
+            }
             activeResult = await fallbackQuery
               .in("status", ["pending", "in_kitchen", "ready", "served"])
               .order("created_at", { ascending: false })
@@ -369,37 +431,82 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       notes: item.notes,
       selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
     }));
-    const { data, error } = scope.businessId
-      ? await supabase.rpc("create_business_order_with_items", {
-          p_business_id: scope.businessId,
-          p_creation_key: creationKey,
-          p_items: orderItems,
-          p_order_type: orderType,
-          p_notes: notes,
-          p_table_number: tableNumber || null,
-          p_table_id: tableId || null,
-          p_customer_name: customerName || null,
-        })
-      : await supabase.rpc("create_order_with_items", {
-          p_creation_key: creationKey,
-          p_items: orderItems,
-          p_order_type: orderType,
-          p_total: total,
-          p_notes: notes,
-          p_table_number: tableNumber || null,
-          p_table_id: tableId || null,
-          p_customer_name: customerName || null,
-        });
+    const itemBusinessIds = new Set(
+      items
+        .map((item) => get().menuItemsBusinessMap.get(item.menu_item_id))
+        .filter((businessId): businessId is string => Boolean(businessId))
+    );
+    const useMixedTableOrder =
+      !scope.legacyFallback &&
+      orderType === "comedor" &&
+      Boolean(tableId) &&
+      itemBusinessIds.size > 1;
 
-    if (error || !data) {
-      return {
-        order: null,
-        error: error?.message || "No se pudo crear el pedido",
-      };
+    let order: Order;
+    let createdOrders: Order[] = [];
+    let creationError: { message?: string } | null = null;
+
+    if (useMixedTableOrder) {
+      const result = await supabase.rpc("create_multibusiness_table_orders", {
+        p_creation_key: creationKey,
+        p_table_id: tableId,
+        p_table_number: tableNumber || null,
+        p_items: orderItems,
+        p_notes: notes,
+        p_customer_name: customerName || null,
+      });
+      creationError = result.error;
+      createdOrders = parseCreatedOrders(result.data);
+      if (creationError || createdOrders.length === 0) {
+        return {
+          order: null,
+          error: creationError?.message || "No se pudo crear la comanda compartida",
+        };
+      }
+      order = createdOrders[0];
+    } else if (scope.businessId) {
+      const result = await supabase.rpc("create_business_order_with_items", {
+        p_business_id: scope.businessId,
+        p_creation_key: creationKey,
+        p_items: orderItems,
+        p_order_type: orderType,
+        p_notes: notes,
+        p_table_number: tableNumber || null,
+        p_table_id: tableId || null,
+        p_customer_name: customerName || null,
+      });
+      creationError = result.error;
+      if (creationError || !result.data) {
+        return {
+          order: null,
+          error: creationError?.message || "No se pudo crear el pedido",
+        };
+      }
+      order = result.data as Order;
+      createdOrders = [order];
+    } else {
+      const result = await supabase.rpc("create_order_with_items", {
+        p_creation_key: creationKey,
+        p_items: orderItems,
+        p_order_type: orderType,
+        p_total: total,
+        p_notes: notes,
+        p_table_number: tableNumber || null,
+        p_table_id: tableId || null,
+        p_customer_name: customerName || null,
+      });
+      creationError = result.error;
+      if (creationError || !result.data) {
+        return {
+          order: null,
+          error: creationError?.message || "No se pudo crear el pedido",
+        };
+      }
+      order = result.data as Order;
+      createdOrders = [order];
     }
 
-    let order = data as Order;
-    if (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery) || schedule) {
+    if (!useMixedTableOrder && (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery) || schedule)) {
       let updatedQuery = supabase
         .from("orders")
         .update({
@@ -453,24 +560,47 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         return { order: null, error: "El pedido se creó, pero no se pudo guardar el domicilio" };
       }
       order = updated as Order;
+      createdOrders = [order];
     }
     pendingOrderCreationKeys.delete(creationFingerprint);
 
-    const localOrder = buildLocalOrder(order, items, get().menuItemsMap);
+    const menuItemsMap = get().menuItemsMap;
+    const menuItemsBusinessMap = get().menuItemsBusinessMap;
+    const localOrders = createdOrders.map((createdOrder) => {
+      const orderItemsForBusiness = useMixedTableOrder
+        ? items.filter(
+            (item) =>
+              menuItemsBusinessMap.get(item.menu_item_id) === createdOrder.business_id
+          )
+        : items;
+      return buildLocalOrder(
+        createdOrder,
+        orderItemsForBusiness.length > 0 ? orderItemsForBusiness : items,
+        menuItemsMap
+      );
+    });
     set((state) => ({
-      activeOrders: state.activeOrders.some((item) => item.id === localOrder.id)
-        ? state.activeOrders
-        : [localOrder, ...state.activeOrders],
-      todayOrders: state.todayOrders.some((item) => item.id === localOrder.id)
-        ? state.todayOrders
-        : [localOrder, ...state.todayOrders],
+      activeOrders: [
+        ...localOrders.filter(
+          (localOrder) => !state.activeOrders.some((item) => item.id === localOrder.id)
+        ),
+        ...state.activeOrders,
+      ],
+      todayOrders: [
+        ...localOrders.filter(
+          (localOrder) => !state.todayOrders.some((item) => item.id === localOrder.id)
+        ),
+        ...state.todayOrders,
+      ],
     }));
-    if (order.schedule_status !== "scheduled") {
+    for (const createdOrder of createdOrders) {
+      if (createdOrder.schedule_status !== "scheduled") {
       // El pedido ya está persistido y Realtime se encarga de Cocina. El Push
       // es una señal secundaria y no debe retrasar la confirmación del POS.
-      void publishOrderNotification(supabase, order.id, "new_order");
+        void publishOrderNotification(supabase, createdOrder.id, "new_order");
+      }
     }
-    return { order, error: null };
+    return { order, orders: createdOrders, error: null };
   },
 
   markAsServed: async (orderId) => {
@@ -480,11 +610,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     const supabase = createClient();
+    const targetBusinessId = scope.legacyFallback
+      ? scope.businessId
+      : knownOrderBusinessId(get(), orderId) ?? scope.businessId;
     let paymentQuery = supabase
       .from("orders")
       .select("payment_status")
       .eq("id", orderId);
-    if (scope.businessId) paymentQuery = paymentQuery.eq("business_id", scope.businessId);
+    if (targetBusinessId) paymentQuery = paymentQuery.eq("business_id", targetBusinessId);
     const { data, error } = await paymentQuery.single();
     if (error || !data) {
       return { error: error?.message ?? "No se pudo consultar el estado de pago" };
@@ -502,12 +635,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     const supabase = createClient();
+    const targetBusinessId = scope.legacyFallback
+      ? scope.businessId
+      : knownOrderBusinessId(get(), orderId) ?? scope.businessId;
     let updatedOrder: Order | null = null;
     let error: { message: string } | null = null;
 
-    if (scope.businessId) {
+    if (targetBusinessId) {
       const result = await supabase.rpc("update_business_order_status", {
-        p_business_id: scope.businessId,
+        p_business_id: targetBusinessId,
         p_order_id: orderId,
         p_status: status,
       });
@@ -589,9 +725,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       notes: item.notes,
       selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
     }));
-    const { error } = scope.businessId
+    const targetBusinessId = scope.legacyFallback
+      ? scope.businessId
+      : knownOrderBusinessId(get(), orderId) ?? scope.businessId;
+    const { error } = targetBusinessId
       ? await supabase.rpc("update_business_order_with_items", {
-          p_business_id: scope.businessId,
+          p_business_id: targetBusinessId,
           p_order_id: orderId,
           p_items: orderItems,
           p_total: calculateItemsTotal(items),
@@ -662,7 +801,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           updated_at: new Date().toISOString(),
         })
         .eq("id", orderId);
-      if (scope.businessId) deliveryQuery = deliveryQuery.eq("business_id", scope.businessId);
+      if (targetBusinessId) deliveryQuery = deliveryQuery.eq("business_id", targetBusinessId);
       const { error: deliveryError } = await deliveryQuery;
       if (deliveryError) return { error: "El pedido se actualizó, pero no se pudo guardar el domicilio" };
     }
@@ -727,11 +866,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     const supabase = createClient();
+    const targetBusinessId = scope.legacyFallback
+      ? scope.businessId
+      : knownOrderBusinessId(get(), orderId) ?? scope.businessId;
     let deleteQuery = supabase
       .from("orders")
       .delete()
       .eq("id", orderId);
-    if (scope.businessId) deleteQuery = deleteQuery.eq("business_id", scope.businessId);
+    if (targetBusinessId) deleteQuery = deleteQuery.eq("business_id", targetBusinessId);
     const { data, error } = await deleteQuery.select("id").maybeSingle();
 
     if (error || !data) {
@@ -752,6 +894,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     const supabase = createClient();
+    const targetBusinessId = scope.legacyFallback
+      ? scope.businessId
+      : knownOrderBusinessId(get(), orderId) ?? scope.businessId;
     let cancelQuery = supabase
       .from("orders")
       .update({
@@ -760,7 +905,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         updated_at: new Date().toISOString(),
       })
       .eq("id", orderId);
-    if (scope.businessId) cancelQuery = cancelQuery.eq("business_id", scope.businessId);
+    if (targetBusinessId) cancelQuery = cancelQuery.eq("business_id", targetBusinessId);
     const { error } = await cancelQuery;
 
     if (error) {

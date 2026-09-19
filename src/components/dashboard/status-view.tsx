@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { PaymentFlow, formatPaymentMoney } from "@/components/payments/payment-flow";
 import { useOrderStore, type OrderWithItems } from "@/lib/stores";
 import { useCashShiftStore } from "@/lib/stores";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { formatOrderLocation } from "@/lib/order-location";
 import type { PaymentReceipt } from "@/types/payments";
 import {
@@ -106,6 +107,9 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
     Record<string, WhatsappDeliveryOperationDetails>
   >({});
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
+  const selectedBusinessId = useBusinessContextStore(
+    (state) => state.selectedBusinessId
+  );
 
   useEffect(() => {
     const interval = setInterval(() => setTick((current) => current + 1), 30000);
@@ -165,6 +169,16 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   }
 
   function openPayment(order: OrderWithItems) {
+    if (
+      order.business_id &&
+      selectedBusinessId &&
+      order.business_id !== selectedBusinessId
+    ) {
+      toast.info("Cambia al negocio del pedido antes de cobrarlo", {
+        description: "La caja y la cuenta se mantienen separadas por negocio.",
+      });
+      return;
+    }
     if (!currentCashShift) {
       toast.error("Abre la caja antes de cobrar");
       return;
@@ -177,7 +191,10 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
       const sameTable = order.table_id
         ? candidate.table_id === order.table_id
         : candidate.table_number === order.table_number;
-      return sameTable && candidate.status !== "cancelled" && candidate.status !== "paid" && outstanding(candidate) > 0;
+      const sameBusiness = order.business_id
+        ? candidate.business_id === order.business_id
+        : !candidate.business_id;
+      return sameBusiness && sameTable && candidate.status !== "cancelled" && candidate.status !== "paid" && outstanding(candidate) > 0;
     });
     setPaymentOrders(account.length > 0 ? account : [order]);
   }
@@ -408,6 +425,18 @@ function StatusSection({
   busyOrderId: string | null;
   ready?: boolean;
 }) {
+  const businesses = useBusinessContextStore((state) => state.businesses);
+  const businessNames = useMemo(
+    () =>
+      new Map(
+        businesses.map((business) => [
+          business.business_id,
+          business.business_display_name,
+        ])
+      ),
+    [businesses]
+  );
+
   return (
     <section>
       <div className="mb-3 flex items-center gap-2">
@@ -488,6 +517,11 @@ function StatusSection({
                   </div>
                   <div className="flex items-center gap-1.5">
                     {isPaid ? <span className="rounded-full bg-success-light px-2.5 py-1 font-heading text-[10px] font-bold text-success">Pagado</span> : null}
+                    {order.business_id && businessNames.get(order.business_id) ? (
+                      <span className="rounded-full bg-surface-raised px-2.5 py-1 font-heading text-[10px] font-bold text-muted-foreground">
+                        {businessNames.get(order.business_id)}
+                      </span>
+                    ) : null}
                     <span className={`rounded-full px-2.5 py-1 font-heading text-[10px] font-bold ${TYPE_STYLES[order.type]?.className ?? TYPE_STYLES.comedor.className}`}>{TYPE_STYLES[order.type]?.label ?? "Comedor"}</span>
                     {order.schedule_status === "scheduled" && order.scheduled_for ? (
                       <span className="rounded-full bg-gold/12 px-2.5 py-1 font-heading text-[10px] font-bold text-gold">

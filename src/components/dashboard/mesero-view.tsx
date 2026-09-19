@@ -432,6 +432,7 @@ export function MeseroView() {
     }
     let orderNumber = editingOrderNumber;
     let createdOrder: Awaited<ReturnType<typeof createOrder>>["order"] = null;
+    let createdOrders: Array<{ id: string; number: number }> = [];
     let error: string | null = null;
 
     if (editingOrderId) {
@@ -497,6 +498,7 @@ export function MeseroView() {
       );
       error = result.error;
       createdOrder = result.order;
+      createdOrders = result.orders ?? (result.order ? [result.order] : []);
       orderNumber = result.order?.number ?? null;
     }
     setIsSubmitting(false);
@@ -506,10 +508,13 @@ export function MeseroView() {
       return;
     }
 
+    const orderNumbers = createdOrders.map((order) => `#${order.number}`).join(", ");
     toast.success(
       editingOrderId
         ? `Pedido #${orderNumber} actualizado`
-        : `Pedido #${orderNumber} enviado a cocina`,
+        : createdOrders.length > 1
+          ? `Pedidos ${orderNumbers} enviados a preparación`
+          : `Pedido #${orderNumber} enviado a cocina`,
       {
       description: `${items.reduce((s, i) => s + i.quantity, 0)} artículos · ${orderType}${
         tableNumber ? ` · Mesa ${tableNumber}` : ""

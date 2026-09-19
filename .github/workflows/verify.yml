@@ -40,7 +40,7 @@ jobs:
         run: npm run build
 
   database:
-    name: Supabase migrations and pgTAP
+    name: Supabase staging gate and pgTAP
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -83,6 +83,19 @@ jobs:
 
       - name: Apply migrations without seed data
         run: supabase db reset --local --no-seed
+
+      - name: Confirm the database gate is isolated
+        env:
+          CI_SUPABASE_URL: https://ci.example.supabase.co
+        run: |
+          set -euo pipefail
+          case "$CI_SUPABASE_URL" in
+            *mideli.vercel.app*|*qgnjennimvbrfxvcmowb.supabase.co*)
+              echo "Production endpoint detected in the staging gate"
+              exit 1
+              ;;
+          esac
+          echo "Ephemeral local database is the only database used by this gate."
 
       - name: Run database tests
         run: |

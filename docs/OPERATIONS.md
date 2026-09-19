@@ -48,6 +48,28 @@ Después de revisar el dry-run, aplicar solo la migración aprobada. Nunca ejecu
 
 La copia local incluye 54 migraciones hasta `20260906160106_cash_shift_digital_close.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
 
+### Gate aislado para multinegocio
+
+No se usa producción como staging. Como no se contratará un entorno Preview de
+Supabase para esta etapa, la validación reproducible vive en GitHub Actions:
+
+```bash
+supabase db reset --local --no-seed
+supabase test db --local supabase/tests/multibusiness_*_test.sql
+```
+
+Ese gate valida migraciones, RLS, privilegios, triggers, índices y pruebas de
+aislamiento sobre una base efímera sin datos de clientes. No reemplaza un
+respaldo restaurable ni autoriza un `db push --linked`.
+
+El runbook completo está en
+`docs_dev/food-garden-multi-business/17-runbook-migracion-mideli.md`.
+
+Antes de migrar producción también hay un paso manual pendiente en Supabase:
+activar la protección contra contraseñas filtradas en Authentication. Esa
+configuración no se puede transportar de forma segura desde este repositorio y
+debe verificarse en el proyecto remoto antes de abrir el piloto.
+
 Para la preparación multinegocio, la rama Preview de Supabase debe ser
 persistente y usar variables propias. No crearla con `--with-data` por defecto:
 los clientes, domicilios, conversaciones y teléfonos son datos personales.
