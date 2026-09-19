@@ -221,3 +221,13 @@
 
 - `20260919120000_multibusiness_order_runtime_guards.sql` agrega la actualización de pedidos con validación de negocio y capacidad antes de delegar al procedimiento histórico de edición.
 - Después de la migración se revocan los RPC históricos de crear y editar pedidos para que el cliente no pueda saltarse la frontera; la interfaz gradual usará los RPC nuevos.
+
+## 2026-09-19: frontera financiera explícita
+
+- `20260919121500_multibusiness_financial_runtime.sql` agrega un contexto de negocio transaccional para caja y cobros. El contexto se valida dentro de Supabase y no se guarda en la sesión ni en el navegador como una autorización.
+- El POS puede abrir, consultar, operar y cerrar la caja del negocio seleccionado mediante una sola pasarela protegida. El modo anterior conserva los RPC de Mideli mientras la migración todavía no está aplicada.
+- Los cobros ya rechazan pedidos o productos de otro negocio y las autorizaciones de descuento quedan vinculadas al negocio del ticket.
+- El cierre de caja calcula pendientes y snapshots únicamente del negocio de ese turno; se evita mezclar pedidos no pagados de otros locales.
+- El store de caja y el flujo de cobro ya usan la frontera nueva cuando el contexto multinegocio está disponible, y regresan al flujo histórico solo cuando faltan las migraciones.
+- Se agregó `multibusiness_financial_runtime_test.sql` para verificar funciones, permisos, triggers y la implementación de cierre por negocio.
+- La barra visual para cambiar de negocio todavía no se muestra: falta conectar los usuarios/membresías actuales, estados de preparación y navegación para que el cambio sea coherente en toda la sesión.

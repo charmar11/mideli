@@ -27,7 +27,7 @@ import {
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { listPaymentAuthorizersAction } from "@/lib/actions/users";
-import { useOrderStore } from "@/lib/stores";
+import { useBusinessContextStore, useOrderStore } from "@/lib/stores";
 import { formatOrderLocation } from "@/lib/order-location";
 import type { Order, OrderItem } from "@/types/database";
 import type {
@@ -225,6 +225,16 @@ function nextCashSuggestions(total: number) {
   return Array.from(new Set(values.map(roundMoney))).filter((value) => value >= total).slice(0, 4);
 }
 
+async function getPaymentBusinessContext() {
+  const context = useBusinessContextStore.getState();
+  await context.ensureLoaded();
+  const current = useBusinessContextStore.getState();
+  return {
+    businessId: current.selectedBusinessId,
+    legacyFallback: current.legacyFallback,
+  };
+}
+
 export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlowProps) {
   const [stage, setStage] = useState<FlowStage>("account");
   const [splitMode, setSplitMode] = useState<SplitMode>("complete");
@@ -403,13 +413,31 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
     }
     setAuthorizing(true);
     setErrorMessage(null);
+    const context = await getPaymentBusinessContext();
+    if (!context.legacyFallback && !context.businessId) {
+      setAuthorizing(false);
+      setPin("");
+      setErrorMessage("No hay un negocio disponible para autorizar el descuento");
+      return;
+    }
     const supabase = createClient();
-    const { data, error } = await supabase.rpc("authorize_payment_discount", {
-      p_authorizer_id: authorizerId,
-      p_pin: pin,
-      p_idempotency_key: idempotencyKey,
-      p_discount_amount: discountAmount,
-    });
+    const { data, error } = context.legacyFallback
+      ? await supabase.rpc("authorize_payment_discount", {
+          p_authorizer_id: authorizerId,
+          p_pin: pin,
+          p_idempotency_key: idempotencyKey,
+          p_discount_amount: discountAmount,
+        })
+      : await supabase.rpc("multibusiness_payment_action", {
+          p_business_id: context.businessId,
+          p_action: "authorize_discount",
+          p_payload: {
+            p_authorizer_id: authorizerId,
+            p_pin: pin,
+            p_idempotency_key: idempotencyKey,
+            p_discount_amount: discountAmount,
+          },
+        });
     setAuthorizing(false);
     setPin("");
     if (error) {
@@ -488,15 +516,28 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
     }
     setSubmitting(true);
     setErrorMessage(null);
+    const context = await getPaymentBusinessContext();
+    if (!context.legacyFallback && !context.businessId) {
+      setSubmitting(false);
+      setErrorMessage("No hay un negocio disponible para registrar el pago");
+      return;
+    }
     const supabase = createClient();
-    const { data, error } = await supabase.rpc("finalize_payment", {
+    const payload = {
       p_idempotency_key: idempotencyKey,
       p_order_allocations: preparedPayment.orders,
       p_item_allocations: preparedPayment.items,
       p_tenders: tenders,
       p_tip_amount: tipAmount,
       p_discount_authorization: discountAuthorized ? authorization?.token ?? null : null,
-    });
+    };
+    const { data, error } = context.legacyFallback
+      ? await supabase.rpc("finalize_payment", payload)
+      : await supabase.rpc("multibusiness_payment_action", {
+          p_business_id: context.businessId,
+          p_action: "finalize",
+          p_payload: payload,
+        });
     setSubmitting(false);
     if (error || !data) {
       setErrorMessage(error?.message ?? "No se pudo registrar el pago");
