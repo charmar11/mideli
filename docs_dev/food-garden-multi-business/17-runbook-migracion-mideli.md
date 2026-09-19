@@ -24,14 +24,21 @@ Antes de aplicar cualquier migración:
    fueron identificados.
 2. Ejecutar `npx supabase migration list`.
 3. Ejecutar `npx supabase db push --linked --dry-run`.
-4. Capturar, sin datos personales, conteos de control de pedidos, pagos,
-   turnos, gastos, inventario, categorías y productos.
-5. Confirmar que `auth.users.id` de `Administrador`, `andrea`, `mauro` y
+4. Ejecutar el preflight de solo lectura:
+   `npx supabase db query --linked --output-format json --file supabase/verification/mideli_preflight.sql`.
+   Debe reportar cuatro perfiles activos esperados vinculados a Auth, cero
+   turnos abiertos, cero huérfanos y cero pagos sin turno o pedido asociado.
+5. Conservar el resultado del preflight, sin datos personales, como evidencia
+   de conteos de pedidos, pagos, turnos, inventario, categorías y productos.
+6. Confirmar que `auth.users.id` de `Administrador`, `andrea`, `mauro` y
    `Mideli` coincide con la cuenta que se pretende conservar. Nunca resolver
    una cuenta por alias o por `profiles.full_name` en una operación real.
 
 Si falla una validación de identidad, conteo o ambigüedad, se detiene el
 proceso. No se corrige directamente una tabla para forzar el paso.
+
+El preflight actual de producción pasó esas comprobaciones. Todavía falta
+comprobar un respaldo restaurable externo antes de ejecutar `db push --linked`.
 
 ### 2. Gate aislado
 
@@ -117,4 +124,3 @@ casos:
 - cambia un folio histórico o se duplica una comanda por reintento;
 - el login existente de Mideli deja de entrar;
 - una migración no tiene una prueba de verificación y una ruta forward-only.
-
