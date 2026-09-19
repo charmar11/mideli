@@ -83,14 +83,19 @@ El cliente conoce el costo estimado de envío, pero el total operativo de Mideli
 - La contingencia completa sin internet todavía está pendiente.
 - PWA, impresora, push, WhatsApp real y flujos financieros requieren validación en hardware y cuentas reales.
 
-## Evolución aprobada, aún no implementada
+## Evolución aprobada: multinegocio gradual
 
-La restricción de un solo negocio describe la implementación productiva actual,
-no el objetivo aprobado. La siguiente evolución será multinegocio para Rincón
-404 Food Park, con Mideli como primer piloto. Cada negocio tendrá su propio
-catálogo, inventario, pedidos, caja, pagos, historial, personal y permisos.
-La migración será gradual y empezará en staging; no se habilitarán pedidos
-mixtos ni se registrará Just Dipping hasta superar los gates documentados.
+La restricción de un solo negocio describe la operación visible actual, no la
+estructura objetivo. La primera rebanada multinegocio para Rincón 404 Food Park
+ya está aplicada y Mideli sigue siendo el único negocio activo. Cada negocio
+tendrá su propio catálogo, inventario, pedidos, caja, pagos, historial,
+personal y permisos.
+
+El POS ya tiene la base para una comanda mixta de comedor: la mesera puede
+cambiar de menú, el carrito identifica el negocio de cada línea y el servidor
+crea órdenes y cuentas separadas de forma atómica. El cobro consulta la caja y
+la cuenta del negocio correcto. Just Dipping no se habilitará ni se registrará
+hasta recibir autorización y datos reales.
 
 ## Superficies de producto
 

@@ -16,6 +16,7 @@ import {
   useOrderStore,
   useTableStore,
 } from "@/lib/stores";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import type { OrderWithItems } from "@/lib/stores/order-store";
 import { CategoryTabs, ProductGrid, CartPanel } from "@/components/pos";
 import { OrderDetailsModal } from "@/components/pos/order-details-modal";
@@ -137,6 +138,9 @@ export function MeseroView() {
   const setMenuItemsMap = useOrderStore((state) => state.setMenuItemsMap);
   const activeOrders = useOrderStore((state) => state.activeOrders);
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
+  const selectedBusinessId = useBusinessContextStore(
+    (state) => state.selectedBusinessId
+  );
 
   const cartItemCount = getItemCount();
   const cartTotal = getTotal();
@@ -257,7 +261,13 @@ export function MeseroView() {
         return;
       }
       const draft: WhatsappPosDraft = result.data;
-      setCartItems(draft.items);
+      const draftBusinessId = useBusinessContextStore.getState().selectedBusinessId;
+      setCartItems(
+        draft.items.map((item) => ({
+          ...item,
+          business_id: draftBusinessId ?? undefined,
+        }))
+      );
       setWhatsappConversationId(draft.conversationId);
       setOrderType(draft.orderType ?? "domicilio");
       setCustomerId(draft.customerId);
@@ -362,11 +372,11 @@ export function MeseroView() {
       if (item.modifiers && item.modifiers.length > 0) {
         setVariationItem(item);
       } else {
-        addItem(item.id, item.name, item.price, []);
+        addItem(item.id, item.name, item.price, [], "", selectedBusinessId ?? undefined);
         markProductAdded(item);
       }
     },
-    [addItem, markProductAdded]
+    [addItem, markProductAdded, selectedBusinessId]
   );
 
   const handleVariationConfirm = useCallback(
@@ -377,13 +387,14 @@ export function MeseroView() {
           variationItem.name,
           variationItem.price,
           selectedModifiers,
-          notes
+          notes,
+          selectedBusinessId ?? undefined
         );
         markProductAdded(variationItem);
         setVariationItem(null);
       }
     },
-    [addItem, markProductAdded, variationItem]
+    [addItem, markProductAdded, selectedBusinessId, variationItem]
   );
 
   async function handleSubmitOrder(payNow = false, allowUnconfirmedDelivery = false) {

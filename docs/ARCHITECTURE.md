@@ -25,10 +25,11 @@ Supabase
 
 ## Estado de arquitectura multinegocio
 
-La base actual y la operación productiva siguen siendo de un solo negocio:
-Mideli. El esquema todavía no tiene `business_id`, `organization_id` ni
-membresías por negocio. No se debe interpretar esta sección como evidencia de
-que la migración ya fue aplicada.
+La operación visible continúa siendo Mideli y solo existe un negocio activo,
+pero la primera rebanada multinegocio ya está aplicada en Supabase. El esquema
+usa `business_id`, `organization_id`, membresías, capacidades y RLS para
+separar catálogo, pedidos, inventario, caja, pagos, reportes y personal.
+Just Dipping todavía no está registrado ni tiene datos importados.
 
 La arquitectura objetivo agrega una organización de Rincón 404 Food Park,
 negocios con ciclo de vida, membresías y capacidades por alcance. El pedido,
@@ -37,10 +38,10 @@ el negocio en servidor y en RLS, no solamente en la interfaz. Las mesas pueden
 seguir siendo compartidas físicamente, pero cada visita tendrá cuentas y
 órdenes separadas por negocio.
 
-La migración será Mideli-first y aditiva. Primero se probará en una rama o base
-de staging con variables separadas; después se migrará el catálogo y los
-dominios transaccionales por etapas. WhatsApp seguirá asignado explícitamente a
-Mideli y no se habilitará para Just Dipping en esta fase.
+La migración es Mideli-first y aditiva. Las fronteras transaccionales se
+habilitan por etapas y se verifican antes de registrar otro negocio real.
+WhatsApp sigue asignado explícitamente a Mideli y no se habilitará para Just
+Dipping en esta fase.
 
 ## Mapa de módulos
 
@@ -64,9 +65,10 @@ Mideli y no se habilitará para Just Dipping en esta fase.
 2. `cart-store.ts` conserva el pedido local, sus modificadores y notas.
 3. El tipo de servicio determina los requisitos: mesa para comedor, domicilio confirmado para entrega, o ninguno para llevar.
 4. `order-details-modal.tsx` concentra datos del cliente, entrega, total y acciones finales.
-5. `order-store.ts` crea o actualiza la orden y sus líneas con protección contra doble envío.
+5. `order-store.ts` crea o actualiza la orden y sus líneas con protección contra doble envío. En una comanda de comedor con productos de varios negocios, el RPC atómico crea una orden y una cuenta por negocio dentro de la misma visita.
 6. La orden aparece en Cocina por Realtime y cambia entre `pending`, `in_kitchen`, `ready`, `served`, `paid` o `cancelled`.
 7. El cobro se registra en el libro mayor de pagos. El estado operativo de cocina no se usa como sustituto del estado de pago.
+8. `business_accounts` se sincroniza con los pagos de sus órdenes. Estado consulta la caja del negocio del pedido y no mezcla cuentas de negocios distintos.
 
 ## Flujo de WhatsApp
 

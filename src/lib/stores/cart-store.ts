@@ -8,7 +8,8 @@ interface CartState {
     name: string,
     price: number,
     selectedModifiers: SelectedModifier[],
-    notes?: string
+    notes?: string,
+    businessId?: string
   ) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
@@ -22,7 +23,7 @@ interface CartState {
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
 
-  addItem: (menuItemId, name, price, selectedModifiers, notes = "") => {
+  addItem: (menuItemId, name, price, selectedModifiers, notes = "", businessId) => {
     const existingIndex = get().items.findIndex(
       (item) =>
         item.menu_item_id === menuItemId &&
@@ -42,6 +43,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       const newItem: CartItem = {
         id: crypto.randomUUID(),
         menu_item_id: menuItemId,
+        business_id: businessId,
         name,
         price,
         quantity: 1,

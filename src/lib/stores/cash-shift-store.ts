@@ -24,6 +24,7 @@ interface CashShiftState {
   loading: boolean;
   lastError: string | null;
   fetchCurrentShift: (force?: boolean) => Promise<CashShift | null>;
+  fetchCurrentShiftForBusiness: (businessId?: string | null) => Promise<CashShift | null>;
   openShift: (input: {
     openingFloat: number;
     denominations?: Record<string, number>;
@@ -199,6 +200,21 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     })();
 
     return currentShiftRequest;
+  },
+
+  fetchCurrentShiftForBusiness: async (businessId = null) => {
+    const scope = await getCashScope();
+    if (scope.legacyFallback || !businessId || scope.businessId === businessId) {
+      return get().fetchCurrentShift();
+    }
+
+    const { data, error } = await invokeCashAction<CashShift>(
+      "current",
+      {},
+      "get_current_cash_shift",
+      { ...scope, businessId }
+    );
+    return error || !data ? null : data;
   },
 
   openShift: async ({ openingFloat, denominations = {}, note = "" }) => {

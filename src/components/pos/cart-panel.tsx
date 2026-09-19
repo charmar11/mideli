@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bike,
   Minus,
@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useCartStore } from "@/lib/stores";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import type { RestaurantTable, TableMapLabel, TableZone } from "@/types/database";
 import { ORDER_TYPE_VISUALS } from "@/lib/order-visuals";
 import { TablePicker } from "./table-picker";
@@ -66,6 +67,17 @@ export function CartPanel({
   const getTotal = useCartStore((state) => state.getTotal);
   const total = getTotal() + (orderType === "domicilio" ? deliveryFee : 0);
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+  const businesses = useBusinessContextStore((state) => state.businesses);
+  const selectedBusinessId = useBusinessContextStore((state) => state.selectedBusinessId);
+  const businessNames = useMemo(
+    () => new Map(businesses.map((business) => [business.business_id, business.business_display_name])),
+    [businesses]
+  );
+  const cartBusinessIds = useMemo(
+    () => new Set(items.map((item) => item.business_id).filter((id): id is string => Boolean(id))),
+    [items]
+  );
+  const isMixedBusinessCart = cartBusinessIds.size > 1;
 
   return (
     <div
@@ -148,7 +160,16 @@ export function CartPanel({
             </p>
           </div>
         ) : (
-          <ul className="flex flex-col gap-3">
+          <>
+            {isMixedBusinessCart ? (
+              <div className="mb-3 rounded-2xl border border-warning/35 bg-warning/10 px-3 py-3 text-warning">
+                <p className="font-heading text-xs font-bold">Comanda de varios negocios</p>
+                <p className="mt-1 font-body text-xs leading-relaxed">
+                  Cada negocio recibirá sus productos y conservará su propia cuenta y cobro.
+                </p>
+              </div>
+            ) : null}
+            <ul className="flex flex-col gap-3">
             {items.map((item) => {
               const itemTotal =
                 (item.price +
@@ -161,6 +182,11 @@ export function CartPanel({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
+                      {isMixedBusinessCart ? (
+                        <span className="mb-1 inline-flex rounded-full bg-brand/10 px-2 py-1 font-heading text-[10px] font-bold text-brand">
+                          {businessNames.get(item.business_id ?? selectedBusinessId ?? "") ?? "Negocio seleccionado"}
+                        </span>
+                      ) : null}
                       <p className="font-heading text-base font-bold leading-snug text-foreground">
                         {item.name}
                       </p>
@@ -236,7 +262,8 @@ export function CartPanel({
                 </li>
               );
             })}
-          </ul>
+            </ul>
+          </>
         )}
       </div>
 

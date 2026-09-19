@@ -106,7 +106,9 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   const [deliveryDetails, setDeliveryDetails] = useState<
     Record<string, WhatsappDeliveryOperationDetails>
   >({});
-  const currentCashShift = useCashShiftStore((state) => state.currentShift);
+  const fetchCurrentShiftForBusiness = useCashShiftStore(
+    (state) => state.fetchCurrentShiftForBusiness
+  );
   const selectedBusinessId = useBusinessContextStore(
     (state) => state.selectedBusinessId
   );
@@ -168,35 +170,31 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
     else toast.success(`Pedido #${number} entregado`);
   }
 
-  function openPayment(order: OrderWithItems) {
-    if (
-      order.business_id &&
-      selectedBusinessId &&
-      order.business_id !== selectedBusinessId
-    ) {
-      toast.info("Cambia al negocio del pedido antes de cobrarlo", {
-        description: "La caja y la cuenta se mantienen separadas por negocio.",
+  async function openPayment(order: OrderWithItems) {
+    try {
+      const targetBusinessId = order.business_id ?? selectedBusinessId;
+      const targetShift = await fetchCurrentShiftForBusiness(targetBusinessId);
+      if (!targetShift) {
+        toast.error("Abre la caja del negocio antes de cobrar");
+        return;
+      }
+      if (order.type !== "comedor" || (!order.table_id && !order.table_number)) {
+        setPaymentOrders([order]);
+        return;
+      }
+      const account = activeOrders.filter((candidate) => {
+        const sameTable = order.table_id
+          ? candidate.table_id === order.table_id
+          : candidate.table_number === order.table_number;
+        const sameAccount = order.business_account_id
+          ? candidate.business_account_id === order.business_account_id
+          : candidate.business_id === order.business_id;
+        return sameAccount && sameTable && candidate.status !== "cancelled" && candidate.status !== "paid" && outstanding(candidate) > 0;
       });
-      return;
+      setPaymentOrders(account.length > 0 ? account : [order]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo preparar el cobro");
     }
-    if (!currentCashShift) {
-      toast.error("Abre la caja antes de cobrar");
-      return;
-    }
-    if (order.type !== "comedor" || (!order.table_id && !order.table_number)) {
-      setPaymentOrders([order]);
-      return;
-    }
-    const account = activeOrders.filter((candidate) => {
-      const sameTable = order.table_id
-        ? candidate.table_id === order.table_id
-        : candidate.table_number === order.table_number;
-      const sameBusiness = order.business_id
-        ? candidate.business_id === order.business_id
-        : !candidate.business_id;
-      return sameBusiness && sameTable && candidate.status !== "cancelled" && candidate.status !== "paid" && outstanding(candidate) > 0;
-    });
-    setPaymentOrders(account.length > 0 ? account : [order]);
   }
 
   async function handlePaymentCompleted(receipt: PaymentReceipt) {

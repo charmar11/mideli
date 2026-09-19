@@ -292,6 +292,8 @@ export interface SelectedModifier {
 export interface CartItem {
   id: string;
   menu_item_id: string;
+  /** Business that owns the item when the POS cart contains multiple menus. */
+  business_id?: string;
   name: string;
   price: number;
   quantity: number;

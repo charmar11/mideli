@@ -361,7 +361,10 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- El repositorio local contiene 62 migraciones, hasta `20260915190000_add_delivery_colony_to_orders.sql`. Las migraciones de seguridad, total operativo de pedidos automáticos, reanudación controlada del bot y colonia confirmada se aplicaron al proyecto remoto; `npx supabase migration list` confirmó que local y remoto están alineados en `20260915190000` el 2026-09-15.
+- El repositorio local contiene las migraciones históricas y las rebanadas
+  multinegocio de septiembre, hasta `20260919205139_multibusiness_account_payment_runtime.sql`.
+  `npx supabase migration list` confirmó que el repositorio y el proyecto
+  remoto están alineados en esa migración el 2026-09-19.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
@@ -549,6 +552,16 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   flujo final para administrar sus propias credenciales. Para crear esa cuenta
   faltan nombre, correo real y decisión explícita sobre el acceso de plataforma;
   no se deben inventar esos datos.
+- La migración `20260919205139_multibusiness_account_payment_runtime.sql`
+  completó el primer límite financiero de las cuentas de mesa. Los estados de
+  `business_accounts` ahora se sincronizan con los pagos de sus órdenes y una
+  orden nueva no puede reutilizar una cuenta pagada, cerrada o cancelada.
+  `StatusView` consulta la caja del negocio del pedido y agrupa por
+  `business_account_id`; el carrito marca las líneas de una comanda mixta por
+  negocio. La migración está aplicada en producción y la verificación remota
+  conservó los conteos existentes. El flujo visual completo para operar un
+  segundo negocio sigue pendiente porque todavía no existe un negocio real
+  adicional autorizado.
 - La navegación multinegocio también quedó cerrada contra el fallback de rol:
   `src/proxy.ts` y `DashboardShell` usan el contexto real para autorizar y
   mostrar POS, Cocina y WhatsApp. Si el contexto existe pero no otorga acceso,

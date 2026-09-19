@@ -225,12 +225,12 @@ function nextCashSuggestions(total: number) {
   return Array.from(new Set(values.map(roundMoney))).filter((value) => value >= total).slice(0, 4);
 }
 
-async function getPaymentBusinessContext() {
+async function getPaymentBusinessContext(targetBusinessId?: string | null) {
   const context = useBusinessContextStore.getState();
   await context.ensureLoaded();
   const current = useBusinessContextStore.getState();
   return {
-    businessId: current.selectedBusinessId,
+    businessId: targetBusinessId ?? current.selectedBusinessId,
     legacyFallback: current.legacyFallback,
   };
 }
@@ -304,10 +304,30 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
           if (!cancelled) setUsedQuantities(quantities);
         }
       }
-      const result = await listPaymentAuthorizersAction();
+      const targetBusinessId = orders.find((order) => order.business_id)?.business_id ?? null;
+      const context = await getPaymentBusinessContext(targetBusinessId);
+      const result = context.legacyFallback
+        ? await listPaymentAuthorizersAction()
+        : context.businessId
+          ? await (async () => {
+              const response = await supabase.rpc("multibusiness_cash_action", {
+                p_business_id: context.businessId,
+                p_action: "list_authorizers",
+                p_payload: {},
+              });
+              return {
+                authorizers: (response.data ?? []) as PaymentAuthorizer[],
+                error: response.error?.message ?? null,
+              };
+            })()
+          : {
+              authorizers: [] as PaymentAuthorizer[],
+              error: "No hay un negocio disponible para autorizar descuentos",
+            };
       if (!cancelled) {
         setAuthorizers(result.authorizers);
         setAuthorizerId(result.authorizers[0]?.id ?? "");
+        if (result.error) setErrorMessage(result.error);
         setAccountLoading(false);
       }
     }
@@ -413,7 +433,9 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
     }
     setAuthorizing(true);
     setErrorMessage(null);
-    const context = await getPaymentBusinessContext();
+    const context = await getPaymentBusinessContext(
+      orders.find((order) => order.business_id)?.business_id ?? null
+    );
     if (!context.legacyFallback && !context.businessId) {
       setAuthorizing(false);
       setPin("");
@@ -516,7 +538,9 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
     }
     setSubmitting(true);
     setErrorMessage(null);
-    const context = await getPaymentBusinessContext();
+    const context = await getPaymentBusinessContext(
+      orders.find((order) => order.business_id)?.business_id ?? null
+    );
     if (!context.legacyFallback && !context.businessId) {
       setSubmitting(false);
       setErrorMessage("No hay un negocio disponible para registrar el pago");

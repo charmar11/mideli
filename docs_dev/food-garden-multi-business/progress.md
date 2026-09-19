@@ -398,3 +398,21 @@
   rol se conserva solo para bases antiguas donde la función todavía no existe.
 - La corrección pasó lint, build y `git diff --check`. No cambia el esquema,
   no aplica migraciones remotas y no requiere deploy para validar la frontera.
+
+## 2026-09-19: cuentas y cobros separados por negocio
+
+- `20260919205139_multibusiness_account_payment_runtime.sql` sincroniza el
+  estado de cada `business_accounts` con sus órdenes no canceladas. Una cuenta
+  queda `open`, `partially_paid`, `paid` o `cancelled` según los importes
+  realmente registrados en el libro mayor.
+- Un pedido nuevo ya no puede reutilizar una cuenta pagada, cerrada o
+  cancelada. La comanda mixta crea la siguiente cuenta del negocio sin tocar
+  las cuentas de los demás negocios.
+- Estado consulta la caja del negocio del pedido y agrupa por
+  `business_account_id`, por lo que una mesera global no tiene que cambiar el
+  selector manualmente para cobrar una cuenta de otro local.
+- El carrito identifica cada línea cuando contiene productos de varios
+  negocios y avisa que el servidor enviará una comanda separada por negocio.
+- La migración se aplicó a Supabase y una verificación remota confirmó los
+  triggers, funciones y conteos operativos existentes. El pgTAP enlazado queda
+  pendiente de ejecutar en un equipo con Docker o Podman.

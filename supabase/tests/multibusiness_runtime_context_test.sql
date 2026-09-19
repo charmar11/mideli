@@ -2,7 +2,7 @@
 
 BEGIN;
 
-SELECT plan(18);
+SELECT plan(23);
 
 SELECT ok(
   to_regprocedure('public.get_my_multibusiness_context()') IS NOT NULL,
@@ -133,6 +133,43 @@ SELECT ok(
       NOT LIKE '%organization.manage_tables%'
   ),
   'shared table management is not a private business data capability'
+);
+
+SELECT ok(
+  to_regprocedure('private.multibusiness_refresh_business_account(uuid)') IS NOT NULL,
+  'business account refresh function exists'
+);
+SELECT ok(
+  (
+    SELECT prosecdef
+      FROM pg_proc
+     WHERE oid = 'private.multibusiness_refresh_business_account(uuid)'::regprocedure
+  ),
+  'business account refresh runs behind a controlled security definer'
+);
+SELECT ok(
+  to_regprocedure('private.multibusiness_validate_open_business_account()') IS NOT NULL,
+  'new orders validate that their business account is still open'
+);
+SELECT ok(
+  EXISTS (
+    SELECT 1
+      FROM pg_trigger
+     WHERE tgname = 'orders_sync_multibusiness_account'
+       AND tgrelid = 'public.orders'::regclass
+       AND NOT tgisinternal
+  ),
+  'order payment changes synchronize the business account'
+);
+SELECT ok(
+  EXISTS (
+    SELECT 1
+      FROM pg_trigger
+     WHERE tgname = 'orders_validate_open_multibusiness_account'
+       AND tgrelid = 'public.orders'::regclass
+       AND NOT tgisinternal
+  ),
+  'orders cannot attach to a paid or closed business account'
 );
 
 SELECT * FROM finish();
