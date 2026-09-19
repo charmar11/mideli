@@ -14,7 +14,8 @@ derive de una relación validada.
 - La fundación inicial crea organización, negocio, membresías, capacidades y
   auditoría; la siguiente rebanada asocia el catálogo a Mideli.
 - Las tablas operativas siguen perteneciendo al modelo actual hasta que su
-  etapa de migración pase pruebas de backfill y aislamiento.
+  etapa de migración pase pruebas de backfill y aislamiento. `orders` ya tiene
+  una primera asociación estructural, pero todavía no se cerró su RLS.
 - Un dato privado que no tenga negocio directo debe poder derivarlo de su
   padre sin aceptar un `business_id` contradictorio enviado por el navegador.
 - WhatsApp queda asociado explícitamente a Mideli al inicio.
@@ -59,8 +60,8 @@ objetivo, no existen todavía en las migraciones actuales.
 
 | Tabla | Alcance objetivo | Tratamiento |
 |---|---|---|
-| `orders` | Negocio + visita/cuenta opcional | Folios existentes se conservan; nuevos pedidos requieren contexto después del piloto. |
-| `order_items` | Negocio derivado de `orders` y producto | Rechazar líneas cruzadas aunque se manipule el cliente. |
+| `orders` | Negocio + visita/cuenta opcional | `20260919093000_multibusiness_order_boundary.sql` hace backfill a Mideli y exige `business_id`; los folios existentes se conservan. |
+| `order_items` | Negocio derivado de `orders` y producto | La misma migración rechaza líneas cruzadas aunque se manipule el cliente. |
 | `order_status_log` | Negocio derivado de `orders` | El personal local solo modifica su negocio; el historial permanece inmutable. |
 | `order_folio_counter` | Negocio | Decidir si cada negocio tendrá folio propio; nunca renumerar Mideli histórico. |
 | `cash_shift_pending_orders` | Caja + negocio derivado | No mezclar pedidos de cuentas o negocios incompatibles. |

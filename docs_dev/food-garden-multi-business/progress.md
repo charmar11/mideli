@@ -162,10 +162,14 @@
   categorías y productos a Mideli, impide categorías cruzadas, reemplaza las
   políticas globales por RLS de membresía/capacidad y limita el reordenamiento
   al negocio correspondiente.
+- Se agregó `20260919093000_multibusiness_order_boundary.sql`. Asocia los
+  pedidos históricos a Mideli, exige `orders.business_id` y rechaza artículos
+  cuyo producto pertenezca a otro negocio. Todavía no reemplaza el RLS de
+  pedidos ni separa cuentas mixtas de mesa.
 - WhatsApp sigue exclusivo de Mideli y ahora filtra el catálogo por negocio
   cuando la fundación está disponible; conserva un fallback acotado para el
   despliegue gradual mientras faltan columnas en una base anterior.
-- Se agregaron pruebas pgTAP estructurales para el límite del catálogo y se
+- Se agregaron pruebas pgTAP estructurales para catálogo y pedidos, y se
   actualizó el catálogo esperado a doce capacidades.
 - `npm run lint`, `npm run build`, `git diff --check` y
   `npx supabase db push --linked --dry-run` pasaron. El dry-run enumera cinco

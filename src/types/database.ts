@@ -254,6 +254,8 @@ export interface CartItem {
 export interface Order {
   id: string;
   creation_key?: string | null;
+  /** Optional while older clients roll forward to the business-bound order boundary. */
+  business_id?: string;
   cash_shift_id?: string | null;
   number: number;
   status: "pending" | "in_kitchen" | "ready" | "served" | "paid" | "cancelled";

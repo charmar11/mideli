@@ -11,6 +11,7 @@ preparados, sin credenciales ni datos inventados, en:
 - `supabase/migrations/20260919090030_multibusiness_global_waiter_capabilities.sql`.
 - `supabase/migrations/20260919090126_multibusiness_seed_mideli.sql`.
 - `supabase/migrations/20260919091500_multibusiness_catalog_boundary.sql`.
+- `supabase/migrations/20260919093000_multibusiness_order_boundary.sql`.
 
 La aplicación remota sigue pendiente de una revisión final y un `db push`
 explícito; no se creó staging porque no se usará otro proyecto ni Branching
@@ -29,9 +30,9 @@ organizaciones, negocios, membresías y capacidades.
 - Usar `jsonb` únicamente para metadatos opcionales, nunca para sustituir
   relaciones entre organización, negocio, usuario o capacidad.
 - Todas las claves foráneas nuevas tendrán índices explícitos.
-- La fundación no agrega todavía `business_id` a pedidos, caja o inventario.
-  El catálogo tiene una migración posterior y separada que ya añade el límite
-  a categorías y productos.
+- La fundación no agrega todavía `business_id` a caja o inventario. El catálogo
+  y la asociación básica de pedidos tienen migraciones posteriores y
+  separadas; el cobro, caja y la división de cuentas mixtas siguen pendientes.
 
 ## Entidades de la primera migración
 
