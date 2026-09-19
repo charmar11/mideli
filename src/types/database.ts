@@ -133,6 +133,8 @@ export type InventoryMovementType =
 
 export interface InventoryItem {
   id: string;
+  /** Optional while older clients roll forward to the business-bound inventory. */
+  business_id?: string;
   name: string;
   unit: string;
   current_stock: number;
@@ -158,6 +160,8 @@ export interface InventoryItem {
 
 export interface InventoryRecipe {
   id: string;
+  /** Optional while older clients roll forward to the business-bound inventory. */
+  business_id?: string;
   menu_item_id: string;
   inventory_item_id: string;
   quantity: number;
@@ -171,6 +175,8 @@ export interface InventoryRecipe {
 
 export interface InventoryMovement {
   id: string;
+  /** Optional while older clients roll forward to the business-bound inventory. */
+  business_id?: string;
   inventory_item_id: string;
   order_id: string | null;
   order_item_id: string | null;
@@ -192,6 +198,8 @@ export interface InventoryMovement {
 
 export interface InventoryCount {
   id: string;
+  /** Optional while older clients roll forward to the business-bound inventory. */
+  business_id?: string;
   scope: "full" | "critical";
   status: "draft" | "submitted" | "reconciled" | "cancelled";
   notes: string;
@@ -221,6 +229,8 @@ export interface InventoryCountLine {
 
 export interface InventoryPurchaseOrder {
   id: string;
+  /** Optional while older clients roll forward to the business-bound inventory. */
+  business_id?: string;
   number: number;
   status: "draft" | "ordered" | "partially_received" | "received" | "cancelled";
   supplier: string;
@@ -250,6 +260,8 @@ export interface InventoryPurchaseOrderLine {
 
 export interface InventoryLot {
   id: string;
+  /** Optional while older clients roll forward to the business-bound inventory. */
+  business_id?: string;
   inventory_item_id: string;
   receipt_line_id: string | null;
   lot_code: string;
@@ -286,6 +298,7 @@ export interface Order {
   creation_key?: string | null;
   /** Optional while older clients roll forward to the business-bound order boundary. */
   business_id?: string;
+  order_batch_id?: string | null;
   table_visit_id?: string | null;
   business_account_id?: string | null;
   cash_shift_id?: string | null;
