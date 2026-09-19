@@ -115,6 +115,11 @@ function conversationContext(value: unknown): WhatsappAdminConversation["context
         ? state.serviceType
         : null,
     address: typeof state.address === "string" ? state.address : "",
+    colony:
+      state.deliveryQuote && typeof state.deliveryQuote === "object" && !Array.isArray(state.deliveryQuote) &&
+      typeof (state.deliveryQuote as Record<string, unknown>).colony === "string"
+        ? String((state.deliveryQuote as Record<string, unknown>).colony)
+        : typeof state.colony === "string" ? state.colony : "",
     addressReference:
       typeof state.addressReference === "string" ? state.addressReference : "",
     addressConfirmed: state.addressConfirmed === true,
@@ -245,7 +250,7 @@ async function loadWhatsappConversations(
     const ordersPromise = admin
       .from("orders")
       .select(
-        "id,number,status,type,total,delivery_fee,payment_status,payment_method,delivery_status,delivery_address,delivery_reference,payment_method_requested,requested_cash_tendered,scheduled_for,schedule_status,created_at,channel_conversation_id"
+        "id,number,status,type,total,delivery_fee,payment_status,payment_method,delivery_status,delivery_address,delivery_colony,delivery_reference,payment_method_requested,requested_cash_tendered,scheduled_for,schedule_status,created_at,channel_conversation_id"
       )
       .in("channel_conversation_id", conversationIds)
       .order("created_at", { ascending: false })
@@ -297,6 +302,7 @@ async function loadWhatsappConversations(
         paymentStatus: order.payment_status,
         deliveryStatus: order.delivery_status ?? "pending",
         deliveryAddress: order.delivery_address ?? "",
+        deliveryColony: order.delivery_colony ?? "",
         deliveryReference: order.delivery_reference ?? "",
         paymentMethod: order.payment_method_requested ?? order.payment_method ?? "",
         requestedCashTendered: order.requested_cash_tendered,
@@ -845,7 +851,7 @@ export async function getWhatsappPosDraftAction(
 
     const latestOrder = await admin
       .from("orders")
-      .select("id,number,type,total,notes,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,channel_conversation_id")
+      .select("id,number,type,total,notes,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,channel_conversation_id")
       .eq("channel_conversation_id", conversationId)
       .eq("source_channel", "whatsapp")
       .order("created_at", { ascending: false })
@@ -902,6 +908,7 @@ export async function getWhatsappPosDraftAction(
         orderType: (latestOrder.data?.type ?? state.serviceType ?? null) as WhatsappPosDraft["orderType"],
         notes: latestOrder.data?.notes ?? (typeof state.orderNotes === "string" ? state.orderNotes : ""),
         address: latestOrder.data?.delivery_address ?? (typeof state.address === "string" ? state.address : ""),
+        colony: latestOrder.data?.delivery_colony ?? (typeof quote.colony === "string" ? quote.colony : ""),
         reference: latestOrder.data?.delivery_reference ?? (typeof state.addressReference === "string" ? state.addressReference : ""),
         addressConfirmed: state.addressConfirmed === true || Boolean(latestOrder.data?.delivery_address),
         latitude: latestOrder.data?.delivery_latitude === null || latestOrder.data?.delivery_latitude === undefined

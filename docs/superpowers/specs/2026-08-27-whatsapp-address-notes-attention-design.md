@@ -30,8 +30,8 @@ Actualmente una dirección escrita puede geocodificarse, cotizarse y guardarse s
 
 Para una dirección nueva escrita:
 
-1. El cliente escribe calle, número y colonia.
-2. Mideli solicita y guarda la referencia opcional como hasta ahora.
+1. El cliente escribe calle, número y colonia, o el nombre de una plaza, parque o punto conocido con la ciudad.
+2. Mideli calcula la ubicación y la colonia en esa misma consulta. La referencia de acceso es opcional y no bloquea la cotización.
 3. El servidor geocodifica la dirección y evalúa su precisión.
 4. Si el resultado es suficientemente preciso, Mideli conserva una cotización candidata sin marcarla como usada ni guardar el domicilio como confirmado.
 5. Mideli envía una ubicación estática de WhatsApp con latitud, longitud, nombre y dirección normalizada.

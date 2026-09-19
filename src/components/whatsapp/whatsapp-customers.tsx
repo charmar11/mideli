@@ -521,6 +521,9 @@ function CustomerDetail({
                   <div className="border-t border-border px-3 pb-3 pt-2">
                     {address.label ? <p className="font-body text-xs text-muted-foreground">{address.label}</p> : null}
                     {address.formattedAddress && address.formattedAddress !== address.addressText ? <p className="mt-1 break-words font-body text-xs text-muted-foreground">Capturado: {address.addressText}</p> : null}
+                    <p className={`mt-1 break-words font-heading text-xs font-bold ${address.colony ? "text-gold" : "text-warning"}`}>
+                      🏘️ Colonia: {address.colony || "⚠️ No registrada"}
+                    </p>
                     {address.reference ? <p className="mt-1 break-words font-body text-xs text-muted-foreground">Referencia: {address.reference}</p> : null}
                     <div className="mt-2 flex flex-wrap gap-2 font-body text-[11px] text-muted-foreground">
                       {address.deliveryFee !== null ? <span>Último envío: {formatMoney(address.deliveryFee)}</span> : null}
@@ -534,7 +537,7 @@ function CustomerDetail({
                         <Trash2 size={15} />
                       </Button>
                       <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.formattedAddress || address.addressText)}`}
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([address.formattedAddress || address.addressText, address.colony].filter(Boolean).join(", "))}`}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-heading text-xs font-bold text-brand hover:bg-brand/10"
@@ -595,7 +598,15 @@ function CustomerDetail({
                         {order.type === "domicilio" ? <Metric label="Envío externo" value={`${formatMoney(order.deliveryFee)} · aparte`} /> : null}
                         {order.type === "domicilio" ? <Metric label="Total informativo" value={formatMoney(customerOrderTotal(order))} /> : null}
                       </div>
-                      {order.deliveryAddress ? <p className="mt-3 break-words font-body text-xs text-muted-foreground">📍 {order.deliveryAddress}{order.deliveryReference ? ` · ${order.deliveryReference}` : ""}</p> : null}
+                      {order.type === "domicilio" ? (
+                        <div className="mt-3 space-y-1 break-words font-body text-xs text-muted-foreground">
+                          <p>📍 {order.deliveryAddress || "Domicilio no registrado"}</p>
+                          <p className={`font-heading font-bold ${order.deliveryColony ? "text-gold" : "text-warning"}`}>
+                            🏘️ Colonia: {order.deliveryColony || "⚠️ No registrada"}
+                          </p>
+                          {order.deliveryReference ? <p>Referencia: {order.deliveryReference}</p> : null}
+                        </div>
+                      ) : null}
                       {order.channelConversationId ? (
                         <Button variant="outline" className="mt-3 h-11 gap-2" onClick={() => onOpenConversation(order.channelConversationId!)}>
                           <MessageCircleMore size={15} />Abrir chat de este pedido

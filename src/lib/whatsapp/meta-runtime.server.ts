@@ -10,6 +10,7 @@ import { addressConfirmationReply, deliveryQuoteReply } from "./customer-message
 import { safeErrorDetail } from "./error-detail";
 import {
   createConversation,
+  canResumeBotAfterHandoff,
   conversationSummaryReply,
   handleConversationMessage,
   recoverDeliveryQuote,
@@ -575,13 +576,16 @@ async function processQueuedMessage(
   conversationId: string,
   owner: string,
   state: ConversationState,
+  assignedTo: string | null,
   catalog: ConversationCatalog,
   config: WhatsappConfig,
   operations: WhatsappOperationsConfig,
   summary: MetaProcessingSummary
 ) {
   try {
-    if (state.stage === "handoff" && operations.settings.human_handoff_enabled) {
+    const restartMessage = message.interactiveId ?? message.text;
+    const canResumeBot = canResumeBotAfterHandoff(state, assignedTo, restartMessage);
+    if (state.stage === "handoff" && operations.settings.human_handoff_enabled && !canResumeBot) {
       await commitConversationMessage(conversationId, owner, message.id, {
         state,
         action: "none",
@@ -590,7 +594,12 @@ async function processQueuedMessage(
       summary.processed += 1;
       return;
     }
-    if (state.stage === "handoff") {
+    if (canResumeBot) {
+      state = {
+        ...createConversation(message.phone),
+        savedAddress: state.savedAddress,
+      };
+    } else if (state.stage === "handoff") {
       state = { ...state, stage: "ordering" };
     }
     const preparedState = stateForInboundMessage(state, message);
@@ -692,7 +701,9 @@ async function processQueuedMessage(
           reply: `✅ Pedido #${createdOrder.number} confirmado${scheduledReply}. Total $${customerTotal}.`,
         };
         summary.ordersCreated += 1;
-      } catch {
+      } catch (error) {
+        const detail = safeErrorDetail(error);
+        console.warn(`[WhatsApp Meta] No se pudo registrar el pedido automático: ${detail}`);
         result = {
           state: { ...result.state, stage: "handoff" },
           action: "handoff",
@@ -849,6 +860,7 @@ async function processPersistentMessage(
         claimed.id,
         owner,
         conversation.state,
+        conversation.assignedTo,
         catalog,
         config,
         operations,

@@ -32,6 +32,7 @@ export type ConversationProcessingSnapshot = {
   id: string;
   phone: string;
   state: ConversationState;
+  assignedTo: string | null;
 };
 
 type PendingMessageRow = {
@@ -283,7 +284,7 @@ export async function loadConversationForProcessing(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("channel_conversations")
-    .select("id,external_contact_id,state")
+    .select("id,external_contact_id,state,assigned_to")
     .eq("id", conversationId)
     .single();
   if (error || !data) throw error ?? new Error("La conversación no existe");
@@ -291,6 +292,7 @@ export async function loadConversationForProcessing(
     id: data.id,
     phone: data.external_contact_id,
     state: conversationState(data.state, data.external_contact_id),
+    assignedTo: data.assigned_to ?? null,
   };
 }
 
@@ -544,7 +546,22 @@ export async function createExternalOrder(input: {
   if (error || !data) {
     throw error ?? new Error("No se pudo crear el pedido externo");
   }
-  const order = data as Order;
+  let order = data as Order;
+  const deliveryColony = state.serviceType === "domicilio"
+    ? state.deliveryQuote?.colony?.trim().slice(0, 160) || null
+    : null;
+  if (deliveryColony) {
+    const updated = await admin
+      .from("orders")
+      .update({ delivery_colony: deliveryColony })
+      .eq("id", order.id)
+      .select("*")
+      .single();
+    if (updated.error || !updated.data) {
+      throw updated.error ?? new Error("No se pudo guardar la colonia del domicilio");
+    }
+    order = updated.data as Order;
+  }
   if (state.deliveryQuote?.id) {
     const now = new Date().toISOString();
     await admin

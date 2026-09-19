@@ -252,7 +252,6 @@ export function createGeminiSemanticInterpreter(
             },
           ],
           generationConfig: {
-            temperature: 0,
             maxOutputTokens: 1200,
             responseMimeType: "application/json",
             responseJsonSchema: geminiResponseSchema(),

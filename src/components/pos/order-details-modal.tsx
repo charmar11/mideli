@@ -16,8 +16,9 @@ import {
   UtensilsCrossed,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CartItem, RestaurantTable, TableMapLabel, TableZone } from "@/types/database";
+import type { ManualDeliveryPlaceSuggestion } from "@/lib/actions/delivery";
 import type { PosCustomerMatch, WhatsappCustomerAddress } from "@/lib/whatsapp/admin-types";
 import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
 import { ORDER_TYPE_VISUALS } from "@/lib/order-visuals";
@@ -41,6 +42,7 @@ interface OrderDetailsModalProps {
   customerPhone: string;
   whatsappStatusOptIn: boolean;
   deliveryAddress: string;
+  deliveryColony: string;
   deliveryReference: string;
   deliveryFee: number;
   deliveryDistanceKm: number | null;
@@ -64,9 +66,11 @@ interface OrderDetailsModalProps {
   onDeliveryReferenceChange: (value: string) => void;
   onOrderNotesChange: (value: string) => void;
   onQuoteDelivery: () => void;
+  onSearchDeliveryPlaces: (input: string, sessionToken: string) => Promise<ManualDeliveryPlaceSuggestion[]>;
+  onSelectDeliveryPlace: (placeId: string, sessionToken: string) => Promise<void>;
   deliveryQuoteLoading: boolean;
-  onSubmit: () => void;
-  onPayAndSubmit?: () => void;
+  onSubmit: (allowUnconfirmedDelivery?: boolean) => void;
+  onPayAndSubmit?: (allowUnconfirmedDelivery?: boolean) => void;
 }
 
 const TYPE_INFO: Record<OrderType, { label: string; icon: typeof UtensilsCrossed }> = {
@@ -113,6 +117,7 @@ export function OrderDetailsModal({
   customerPhone,
   whatsappStatusOptIn,
   deliveryAddress,
+  deliveryColony,
   deliveryReference,
   deliveryFee,
   deliveryDistanceKm,
@@ -136,12 +141,18 @@ export function OrderDetailsModal({
   onDeliveryReferenceChange,
   onOrderNotesChange,
   onQuoteDelivery,
+  onSearchDeliveryPlaces,
+  onSelectDeliveryPlace,
   deliveryQuoteLoading,
   onSubmit,
   onPayAndSubmit,
 }: OrderDetailsModalProps) {
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [savedAddressesOpen, setSavedAddressesOpen] = useState(false);
+  const [deliveryWarningAction, setDeliveryWarningAction] = useState<"submit" | "pay" | null>(null);
+  const [placeSuggestions, setPlaceSuggestions] = useState<ManualDeliveryPlaceSuggestion[]>([]);
+  const [placeSearchLoading, setPlaceSearchLoading] = useState(false);
+  const sessionTokenRef = useRef<string | null>(null);
   const typeInfo = TYPE_INFO[orderType];
   const TypeIcon = typeInfo.icon;
   const selectedTable = tables.find((table) => table.id === tableId);
@@ -152,7 +163,9 @@ export function OrderDetailsModal({
   const selectedSavedAddress = selectedCustomer?.addresses.find((address) =>
     address.formattedAddress === deliveryAddress || address.addressText === deliveryAddress
   ) ?? null;
-  const phoneSearchable = customerPhone.replace(/\D/g, "").length >= 4;
+  const phoneDigits = customerPhone.replace(/\D/g, "");
+  const deliveryPhoneReady = phoneDigits.length >= 8 && phoneDigits.length <= 15;
+  const phoneSearchable = phoneDigits.length >= 4;
   const subtotal = items.reduce(
     (sum, item) =>
       sum +
@@ -164,13 +177,106 @@ export function OrderDetailsModal({
   const requirement = orderType === "comedor"
     ? { ready: Boolean(tableId || tableNumber), label: "Selecciona una mesa" }
     : orderType === "domicilio"
-      ? { ready: Boolean(deliveryAddress.trim()) && deliveryConfirmed, label: "Confirma el domicilio con Maps" }
+      ? { ready: Boolean(deliveryAddress.trim()) && Boolean(deliveryColony.trim()) && deliveryConfirmed, label: "Confirma domicilio con Google Maps" }
       : { ready: true, label: "Pedido listo para enviar" };
-  const canSubmit = requirement.ready;
+  const deliveryNeedsLocationWarning = orderType === "domicilio" && !requirement.ready;
+  const deliveryNeedsPhoneWarning = orderType === "domicilio" && !deliveryPhoneReady;
+  const deliveryNeedsWarning = deliveryNeedsLocationWarning || deliveryNeedsPhoneWarning;
+  const canSubmit = orderType === "domicilio" || requirement.ready;
+  const statusReady = requirement.ready && !deliveryNeedsPhoneWarning;
+  const statusLabel = deliveryNeedsLocationWarning
+    ? "Domicilio pendiente. Se pedirá confirmación al enviar"
+    : deliveryNeedsPhoneWarning
+      ? "Teléfono no registrado. Se pedirá confirmación al enviar"
+      : requirement.label;
   const googleMapEmbedUrl =
     deliveryLatitude !== null && deliveryLongitude !== null
       ? `https://www.google.com/maps?q=${deliveryLatitude},${deliveryLongitude}&z=16&output=embed`
       : null;
+
+  function newPlacesSession() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  useEffect(() => {
+    if (!sessionTokenRef.current) sessionTokenRef.current = newPlacesSession();
+  }, []);
+
+  useEffect(() => {
+    if (
+      orderType !== "domicilio" ||
+      deliveryConfirmed ||
+      deliveryQuoteLoading ||
+      deliveryAddress.trim().length < 3
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      setPlaceSearchLoading(true);
+      try {
+        const suggestions = await onSearchDeliveryPlaces(
+          deliveryAddress,
+          sessionTokenRef.current ?? newPlacesSession()
+        );
+        if (!cancelled) setPlaceSuggestions(suggestions);
+      } catch {
+        if (!cancelled) setPlaceSuggestions([]);
+      } finally {
+        if (!cancelled) setPlaceSearchLoading(false);
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [
+    deliveryAddress,
+    deliveryConfirmed,
+    deliveryQuoteLoading,
+    onSearchDeliveryPlaces,
+    orderType,
+  ]);
+
+  function handleDeliveryAddressChange(value: string) {
+    setPlaceSuggestions([]);
+    onDeliveryAddressChange(value);
+  }
+
+  async function handlePlaceSelect(suggestion: ManualDeliveryPlaceSuggestion) {
+    const sessionToken = sessionTokenRef.current ?? newPlacesSession();
+    setPlaceSuggestions([]);
+    handleDeliveryAddressChange(suggestion.description);
+    sessionTokenRef.current = newPlacesSession();
+    await onSelectDeliveryPlace(suggestion.placeId, sessionToken);
+  }
+
+  function requestSubmit(action: "submit" | "pay") {
+    if (deliveryNeedsWarning) {
+      setDeliveryWarningAction(action);
+      return;
+    }
+    if (action === "pay") {
+      onPayAndSubmit?.();
+    } else {
+      onSubmit();
+    }
+  }
+
+  function confirmUnconfirmedDelivery() {
+    const action = deliveryWarningAction;
+    setDeliveryWarningAction(null);
+    if (action === "pay") {
+      onPayAndSubmit?.(true);
+    } else if (action === "submit") {
+      onSubmit(true);
+    }
+  }
 
   return (
     <div
@@ -223,12 +329,12 @@ export function OrderDetailsModal({
         ) : null}
 
         <div
-          className={`shrink-0 border-b px-3 py-2.5 sm:px-6 ${canSubmit ? "border-success/20 bg-success/5" : "border-warning/20 bg-warning/5"}`}
+          className={`shrink-0 border-b px-3 py-2.5 sm:px-6 ${statusReady ? "border-success/20 bg-success/5" : "border-warning/20 bg-warning/5"}`}
           aria-live="polite"
         >
-          <div className={`flex items-center gap-2 font-heading text-xs font-bold ${canSubmit ? "text-success" : "text-warning"}`}>
-            {canSubmit ? <CheckCircle2 size={15} /> : <CircleAlert size={15} />}
-            <span>{requirement.label}</span>
+          <div className={`flex items-center gap-2 font-heading text-xs font-bold ${statusReady ? "text-success" : "text-warning"}`}>
+            {statusReady ? <CheckCircle2 size={15} /> : <CircleAlert size={15} />}
+            <span>{statusLabel}</span>
           </div>
         </div>
 
@@ -324,7 +430,7 @@ export function OrderDetailsModal({
                   inputMode="tel"
                   value={customerPhone ? formatPhoneForDisplay(customerPhone) : ""}
                   onChange={(event) => onCustomerPhoneChange(event.target.value)}
-                  placeholder={orderType === "comedor" ? "Opcional para comedor" : "Teléfono o últimos 4 dígitos"}
+                  placeholder={orderType === "domicilio" ? "Opcional · celular para avisos" : orderType === "comedor" ? "Opcional para comedor" : "Teléfono o últimos 4 dígitos"}
                   className="h-12 w-full rounded-xl border border-brand/35 bg-background px-3 font-data text-sm text-foreground outline-none transition-colors placeholder:font-body placeholder:text-xs placeholder:font-normal placeholder:text-muted-foreground sm:placeholder:text-sm focus:border-brand focus:ring-4 focus:ring-brand/15"
                 />
                 {phoneSearchable && (customerSearchLoading || customerMatches.length > 0) ? (
@@ -379,6 +485,11 @@ export function OrderDetailsModal({
                         <span className="mt-0.5 block break-words whitespace-normal font-body text-xs leading-5 text-foreground">
                           {selectedSavedAddress?.formattedAddress || selectedSavedAddress?.addressText || `${selectedCustomer.addresses.length} direcciones disponibles`}
                         </span>
+                        {selectedSavedAddress ? (
+                          <span className="mt-0.5 block font-heading text-[11px] font-bold text-gold">
+                            🏘️ Colonia: {selectedSavedAddress.colony || "No registrada"}
+                          </span>
+                        ) : null}
                       </span>
                       <ChevronDown size={17} className={`shrink-0 text-success transition-transform ${savedAddressesOpen ? "rotate-180" : ""}`} />
                     </button>
@@ -400,6 +511,9 @@ export function OrderDetailsModal({
                               </span>
                               <span className="block truncate font-body text-[11px] text-muted-foreground">
                                 {address.label || (address.isDefault ? "Principal" : "Dirección del cliente")}
+                              </span>
+                              <span className="block truncate font-heading text-[11px] font-bold text-gold">
+                                🏘️ {address.colony || "Colonia no registrada"}
                               </span>
                             </span>
                             {address.isDefault ? (
@@ -488,11 +602,53 @@ export function OrderDetailsModal({
                     <span className="mb-1.5 block font-heading text-xs font-bold text-muted-foreground">Domicilio</span>
                     <textarea
                       value={deliveryAddress}
-                      onChange={(event) => onDeliveryAddressChange(event.target.value)}
-                      placeholder="Calle, número y colonia"
+                      onChange={(event) => handleDeliveryAddressChange(event.target.value)}
+                      placeholder="Calle y número, colonia, plaza o parque"
                       rows={2}
                       className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 font-body text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/15"
                     />
+                    <span className="mt-1.5 block font-body text-[11px] leading-4 text-muted-foreground">
+                      Google Maps identificará automáticamente la colonia. También puedes escribir el nombre de una plaza, parque o punto conocido.
+                    </span>
+                    {!deliveryConfirmed && deliveryAddress.trim().length >= 3 ? (
+                      <div className="mt-2 overflow-hidden rounded-xl border border-border bg-background shadow-lg">
+                        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                          <span className="font-heading text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                            Buscar con Google Maps
+                          </span>
+                          <span className="font-body text-[10px] text-muted-foreground">Resultados cercanos</span>
+                        </div>
+                        {placeSearchLoading ? (
+                          <div className="flex min-h-11 items-center gap-2 px-3 font-body text-xs text-muted-foreground">
+                            <Loader2 size={14} className="animate-spin" /> Buscando ubicaciones...
+                          </div>
+                        ) : placeSuggestions.length > 0 ? (
+                          <div className="divide-y divide-border">
+                            {placeSuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion.placeId}
+                                type="button"
+                                onClick={() => void handlePlaceSelect(suggestion)}
+                                className="flex min-h-14 w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-surface-raised focus-visible:bg-surface-raised focus-visible:outline-none"
+                              >
+                                <MapPin size={16} className="mt-0.5 shrink-0 text-brand" />
+                                <span className="min-w-0">
+                                  <span className="block truncate font-heading text-xs font-bold text-foreground">
+                                    {suggestion.primaryText}
+                                  </span>
+                                  <span className="mt-0.5 block truncate font-body text-[11px] text-muted-foreground">
+                                    {suggestion.secondaryText || suggestion.description}
+                                  </span>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                        <p className="border-t border-border px-3 py-2 font-body text-[10px] leading-4 text-muted-foreground">
+                          Selecciona el resultado más parecido a la ubicación del cliente. Si no aparece, puedes continuar con la búsqueda manual.
+                        </p>
+                      </div>
+                    ) : null}
                   </label>
                   <div className="sm:col-span-2">
                     <button
@@ -527,6 +683,9 @@ export function OrderDetailsModal({
                           {deliveryDistanceKm !== null ? <span>{deliveryDistanceKm.toFixed(1)} km</span> : null}
                           <span>Envío ${formatPrice(deliveryFee)}</span>
                         </div>
+                        <p className="mt-1 font-heading text-xs font-bold text-gold">
+                          🏘️ Colonia: {deliveryColony || "No registrada"}
+                        </p>
                         {deliveryLatitude !== null && deliveryLongitude !== null ? (
                           <a
                             href={`https://www.google.com/maps/search/?api=1&query=${deliveryLatitude},${deliveryLongitude}`}
@@ -576,7 +735,7 @@ export function OrderDetailsModal({
               {onPayAndSubmit && !isEditing ? (
                 <button
                   type="button"
-                  onClick={onPayAndSubmit}
+                  onClick={() => requestSubmit("pay")}
                   disabled={isSubmitting || !canSubmit}
                   className="order-2 flex min-h-16 min-w-0 touch-manipulation items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 font-heading text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-white/15 active:scale-[0.99] disabled:opacity-60 sm:order-1 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
                 >
@@ -585,7 +744,7 @@ export function OrderDetailsModal({
               ) : null}
               <button
                 type="button"
-                onClick={onSubmit}
+                onClick={() => requestSubmit("submit")}
                 disabled={isSubmitting || !canSubmit}
                 className="action-success order-1 flex min-h-16 min-w-0 touch-manipulation items-center justify-center gap-2 rounded-2xl px-4 font-heading text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 sm:order-2 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
               >
@@ -596,6 +755,54 @@ export function OrderDetailsModal({
           </div>
         </footer>
       </section>
+
+      {deliveryWarningAction ? (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-ink/75 p-4 backdrop-blur-sm">
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delivery-warning-title"
+            className="w-full max-w-md rounded-2xl border border-warning/35 bg-surface p-5 shadow-float"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 text-warning">
+                <CircleAlert size={21} />
+              </div>
+              <div>
+                  <h2 id="delivery-warning-title" className="font-heading text-base font-bold text-foreground">
+                  Datos de entrega incompletos
+                  </h2>
+                <p className="mt-2 font-body text-sm leading-5 text-muted-foreground">
+                  El pedido puede enviarse a cocina, pero quedará pendiente completar:
+                </p>
+                <ul className="mt-2 space-y-1 font-body text-sm leading-5 text-muted-foreground">
+                  {deliveryNeedsLocationWarning ? <li>• Ubicación, colonia o cálculo de envío</li> : null}
+                  {deliveryNeedsPhoneWarning ? <li>• Teléfono de contacto del cliente</li> : null}
+                </ul>
+                <p className="mt-2 font-body text-sm leading-5 text-muted-foreground">
+                  Si estás seguro, puedes enviarlo así y completarlo después desde Estado.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setDeliveryWarningAction(null)}
+                className="min-h-12 rounded-xl border border-border px-4 font-heading text-sm font-bold text-muted-foreground transition-colors hover:border-brand/50 hover:text-foreground"
+              >
+                Revisar domicilio
+              </button>
+              <button
+                type="button"
+                onClick={confirmUnconfirmedDelivery}
+                className="min-h-12 rounded-xl bg-warning px-4 font-heading text-sm font-bold text-ink transition-colors hover:bg-warning/85"
+              >
+                Enviar así
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

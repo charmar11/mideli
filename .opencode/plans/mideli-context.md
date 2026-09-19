@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-09-12
+Actualizado: 2026-09-15
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para cualquier agente de IA, no solo OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -24,7 +24,10 @@ Usuarios principales:
 
 Objetivo del producto: que el equipo pueda pasar de pedido a cocina y de pedido listo a cobro con el menor número de pasos posible, sin depender de papel.
 
-No es una plataforma multi-sucursal ni un marketplace. El alcance actual es un solo local y operación interna.
+La implementación actual no es una plataforma multi-sucursal ni un marketplace:
+opera un solo local y un solo negocio. La evolución multinegocio aprobada para
+Rincón 404 Food Park se describe en la sección de transición de este documento
+y aún no se ha aplicado.
 
 ## 2. Forma de colaborar con el dueño
 
@@ -126,6 +129,12 @@ Flujo aprobado:
 7. Cocina prepara y cambia el estado.
 8. Mesero sirve y registra el cobro.
 
+En pedidos manuales a domicilio, Google Maps intenta confirmar la dirección, colonia,
+coordenadas y tarifa. Si no puede hacerlo, Mesero puede enviar el pedido a cocina tras
+confirmar un aviso explícito de que queda sin ubicación validada. El teléfono del cliente
+es opcional; si falta o está incompleto, se muestra el mismo aviso antes de enviar y el
+pedido se guarda sin teléfono para completarlo después desde Estado.
+
 El campo visible `Referencia` se eliminó porque ocupaba espacio y duplicaba el flujo de selección de mesa. La orden conserva `table_id` y `table_number` para trazabilidad.
 
 El panel del pedido debe ser legible y dominante: nombres de platillos, cantidad, modificadores, notas, total y botón de envío deben tener espacio suficiente. En tablet no debe convertirse en una barra angosta ni quedar cortado.
@@ -222,11 +231,14 @@ La sección `/dashboard/whatsapp` funciona como una bandeja operativa para owner
 - La carga inicial ya no consulta el catálogo completo para un simulador. La bandeja usa una instantánea ligera cada dos segundos solo mientras la página está visible.
 - Owner y admin tienen la pestaña `Clientes` dentro de WhatsApp. Permite buscar globalmente por nombre, teléfono o folio, revisar totales pagados, domicilios e historial de hasta 100 pedidos, editar nombre y domicilios y abrir la conversación asociada. Los datos se cargan bajo demanda y no se agrega otra opción a la navegación principal.
 - Toda dirección nueva escrita se geocodifica como candidata y se envía al cliente como ubicación nativa de WhatsApp. El costo de envío y el domicilio se guardan solo después de que el cliente confirma el punto. Una ubicación compartida o un domicilio previamente confirmado conserva el flujo rápido.
-- La geocodificación acepta como candidata una dirección aproximada solo cuando coinciden ciudad, calle y número; sigue rechazando puntos de interés. El cliente siempre confirma el mapa y dispone de dos correcciones antes del relevo humano.
+- La geocodificación valida direcciones numeradas por ciudad, calle y número, y también acepta lugares nombrados como plazas, parques, escuelas y comercios cuando Google devuelve un destino concreto dentro de Ciudad Obregón. Si el primer resultado no trae colonia, se intenta enriquecer con una consulta de geocodificación inversa y se reconocen componentes administrativos o textos etiquetados como fraccionamiento/colonia; la tarifa no se calcula con una colonia inventada. El domicilio y la colonia se envían en un solo paso, sin pedir la colonia como dato separado; la referencia de entrega queda opcional. El cliente siempre confirma el mapa y dispone de dos correcciones antes del relevo humano.
 - Las decisiones breves usan botones nativos cuando caben en tres opciones: bebida, tipo de entrega, confirmación del domicilio, método de pago y confirmación final. El catálogo y las variaciones amplias conservan texto natural y numeración.
+- El menú de WhatsApp consume las categorías reales activas del catálogo y muestra automáticamente cualquier categoría nueva. Las categorías compuestas únicamente por productos alcohólicos/cheves quedan fuera; los productos alcohólicos también se filtran si comparten una categoría con otros productos.
 - El bot reconoce indicaciones naturales de preparación, notas generales y datos de acceso. Las notas de producto llegan a la comanda; las generales se guardan en el pedido; los PIN y accesos privados se reservan para entrega y no aparecen en avisos Push.
 - Cada dispositivo puede activar o pausar `Chats por atender`. El primer relevo humano del ciclo genera un Push idempotente y abre directamente la conversación correspondiente.
-- El intérprete semántico usa `gemini-3.1-flash-lite` de forma predeterminada y conserva `WHATSAPP_GEMINI_MODEL` como anulación. Mideli clasifica credencial, cuota, modelo, solicitud incompatible, timeout y respuesta inválida sin mostrar datos del proveedor; solo reintenta una vez fallos transitorios dentro de un presupuesto de tres segundos. El esquema enviado a Google omite límites numéricos y de longitud que el endpoint rechaza; los mismos límites se validan localmente antes de tocar el carrito. Para reducir latencia y consumo, Gemini recibe solo productos mencionados, productos presentes en el carrito o, como respaldo, hasta doce productos de la categoría activa, nunca el catálogo completo. Las distribuciones explícitas de un mismo producto con opciones distintas, como `uno de res y otro de pollo`, se resuelven localmente y no dependen de la variabilidad de Gemini.
+- La creación automática de pedidos valida la configuración técnica y operativa, registra la orden mediante un RPC protegido y solicita el aviso a Cocina después de persistirla. En pedidos a domicilio, `orders.total` conserva el subtotal de productos y `delivery_fee` conserva la tarifa informativa del repartidor externo.
+- Si una creación automática falla, la conversación pasa a atención humana. Mientras ninguna persona la haya tomado, un saludo, `Hacer pedido` o `Ver menú` permite retomar el bot desde cero; una conversación ya asignada a una persona permanece en silencio para no interferir con la atención manual.
+- El intérprete semántico usa `gemini-3.5-flash-lite` de forma predeterminada y conserva `WHATSAPP_GEMINI_MODEL` como anulación. Es un modelo estable y de baja latencia; los botones y reglas locales siguen siendo la ruta principal, y Gemini solo interviene ante instrucciones libres complejas o ambiguas. Mideli clasifica credencial, cuota, modelo, solicitud incompatible, timeout y respuesta inválida sin mostrar datos del proveedor; solo reintenta una vez fallos transitorios dentro de un presupuesto de tres segundos. El esquema enviado a Google omite límites numéricos y de longitud que el endpoint rechaza; los mismos límites se validan localmente antes de tocar el carrito. Para reducir latencia y consumo, Gemini recibe solo productos mencionados, productos presentes en el carrito o, como respaldo, hasta doce productos de la categoría activa, nunca el catálogo completo. Las distribuciones explícitas de un mismo producto con opciones distintas, como `uno de res y otro de pollo`, se resuelven localmente y no dependen de la variabilidad de Gemini.
 
 ### Imágenes de productos
 
@@ -349,7 +361,7 @@ Proyecto:
 - URL pública: `https://qgnjennimvbrfxvcmowb.supabase.co`.
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
-- El repositorio local contiene 55 migraciones, hasta `20260907090000_cash_movements_management.sql`. La migración de gastos y correcciones se aplicó al proyecto remoto y `npx supabase db push --linked --dry-run` confirmó que la base quedó al día el 2026-09-07.
+- El repositorio local contiene 62 migraciones, hasta `20260915190000_add_delivery_colony_to_orders.sql`. Las migraciones de seguridad, total operativo de pedidos automáticos, reanudación controlada del bot y colonia confirmada se aplicaron al proyecto remoto; `npx supabase migration list` confirmó que local y remoto están alineados en `20260915190000` el 2026-09-15.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
@@ -387,7 +399,7 @@ Estado remoto verificado funcionalmente el 2026-08-09. Los conteos inferiores so
 - 1 licencia registrada en `app_license`.
 - 12 suscripciones push activas.
 
-Cambios posteriores documentados en el código local incluyen el ciclo de vida de domicilios manuales con avisos opcionales por WhatsApp, snapshots de ubicación, separación del envío que cobra el repartidor externo, y deduplicación canónica de domicilios. Antes de depender de estos cambios en una tarea de base de datos, confirmar su estado remoto.
+Cambios posteriores documentados en el código local incluyen el ciclo de vida de domicilios manuales con avisos opcionales por WhatsApp, snapshots de ubicación, separación del envío que cobra el repartidor externo, deduplicación canónica de domicilios y conservación de la colonia confirmada en la orden para el mensaje del repartidor. La colonia se muestra de forma explícita en WhatsApp, Mesero, Estado, Historial y Clientes; el cotizador automático rechaza una ubicación si Google Maps no identifica una colonia para evitar tarifas de zona incorrectas. Antes de depender de estos cambios en una tarea de base de datos, confirmar su estado remoto.
 
 El menú vigente proviene de `Menu_Mideli_Completo_Provisional.docx` mediante la migración `20260731060825_menu_reset_from_docx.sql`. Mango Habanero fue reemplazado por Buffalo Ranch, Cajun, Ajo Parmesano y Honey Mustard. Los modificadores de sabor y proteína tienen precio cero; solo "Con papas" agrega 30 pesos.
 
@@ -421,6 +433,22 @@ Pendientes prioritarios:
 6. Después de estabilizar el piloto, priorizar clientes/lealtad y pedidos directos.
 
 El plan ordenado para continuar vive en `.opencode/plans/next-session-plan.md`.
+
+### Evolución aprobada en diseño: Rincón 404 Food Park
+
+La implementación actual sigue siendo de un solo local y no debe interpretarse como multinegocio todavía. Durante septiembre de 2026 se diseñó, sin aplicar cambios, la evolución para `Rincón 404 Food Park`:
+
+- `Mideli` será el primer negocio migrado y conservará credenciales, folios, WhatsApp y funcionamiento visible.
+- `Just Dipping` es el segundo negocio confirmado, pero no se registrará ni se importarán datos hasta contar con autorización y datos reales.
+- La aplicación será única. La separación se hará con organización, negocios, membresías, capacidades, RLS y RPCs, no con copias de la aplicación.
+- El administrador de plataforma será una cuenta separada del dueño actual de Mideli (`admin`). El `Coordinador` administrará meseras globales y mesas compartidas. Cada dueño administrará su propio personal y operación.
+- Una mesera global podrá capturar y cobrar para varios negocios. Una cuenta local quedará limitada a su negocio. Una mesa podrá contener una visita con cuentas hijas por negocio.
+- Mideli conservará Cocina. Just Dipping utilizará Estado con `Pendiente`, `Preparando` y `Listo`; una impresora propia es una capacidad contemplada, pero no se habilitará hasta confirmar su configuración.
+- Como regla operativa recomendada, el personal autorizado de cada negocio cambia sus estados de preparación; la mesera global consulta, recibe avisos, entrega y cobra, pero no marca `Listo` de otro negocio por defecto. Una excepción deberá ser una capacidad explícita y auditada.
+- WhatsApp seguirá exclusivo de Mideli en la primera etapa.
+- No se implementará esta evolución hasta aprobar `docs_dev/food-garden-multi-business/10-especificacion-final-y-gates.md`. La preparación actual y sus brechas verificadas están en `docs_dev/food-garden-multi-business/11-auditoria-de-preparacion.md`. Esa carpeta contiene el modelo, brechas, migración, pruebas, reversión y gates de seguridad.
+
+La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 
 ## 10. Verificación obligatoria
 

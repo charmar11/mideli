@@ -10,7 +10,7 @@ Mantener la interpretación semántica de pedidos de WhatsApp sin contratar otro
 
 ## Decisión
 
-Mideli usará `gemini-3.1-flash-lite` como modelo predeterminado. El proyecto conserva `WHATSAPP_GEMINI_MODEL` como anulación explícita para poder cambiar de modelo sin modificar código.
+Mideli usará `gemini-3.5-flash-lite` como modelo predeterminado. El proyecto conserva `WHATSAPP_GEMINI_MODEL` como anulación explícita para poder cambiar de modelo sin modificar código. La actualización reemplaza a `gemini-3.1-flash-lite`, cuyo retiro fue anunciado por Google para 2027.
 
 Este modelo se selecciona porque el proyecto de Google AI Studio muestra una cuota gratuita de 15 solicitudes por minuto y 500 solicitudes diarias, y porque admite salidas estructuradas. El intérprete local seguirá siendo la primera ruta; Gemini se invocará únicamente cuando una instrucción sea compleja, ambigua o no haya podido resolverse localmente.
 

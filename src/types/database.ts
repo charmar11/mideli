@@ -267,6 +267,7 @@ export interface Order {
   customer_phone?: string | null;
   whatsapp_status_opt_in?: boolean;
   delivery_address?: string | null;
+  delivery_colony?: string | null;
   delivery_reference?: string | null;
   delivery_fee?: number;
   delivery_distance_meters?: number | null;

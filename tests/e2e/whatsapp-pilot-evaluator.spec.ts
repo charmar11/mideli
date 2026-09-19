@@ -332,8 +332,8 @@ test("un fallo de autenticación solo afecta escenarios que realmente usan Gemin
   });
 });
 
-test("usa Gemini 3.1 Flash-Lite como modelo gratuito predeterminado", () => {
-  expect(DEFAULT_GEMINI_MODEL).toBe("gemini-3.1-flash-lite");
+test("usa Gemini 3.5 Flash-Lite como modelo estable predeterminado", () => {
+  expect(DEFAULT_GEMINI_MODEL).toBe("gemini-3.5-flash-lite");
 });
 
 test("clasifica errores de Gemini sin exponer el cuerpo del proveedor", () => {

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   addressQueryCandidates,
+  extractColonyFromResult,
   normalizeAddressQuery,
   selectConfidentAddressResult,
 } from "../../src/lib/whatsapp/address-confidence";
@@ -47,6 +48,46 @@ test("normaliza calle, número y colonia antes de consultar Google", () => {
     "Sinagogas, 1230, san xavier",
     "Sinagogas 1230, col san xavier",
   ]);
+});
+
+test("detecta fraccionamientos que Google entrega como área administrativa o texto etiquetado", () => {
+  expect(
+    extractColonyFromResult({
+      formatted_address: "Calle Puente de Rialto 1430, Puente Real, Ciudad Obregón, Sonora",
+      address_components: [
+        { long_name: "Puente Real", types: ["administrative_area_level_3", "political"] },
+        { long_name: "Ciudad Obregón", types: ["locality", "political"] },
+        { long_name: "Cajeme", types: ["administrative_area_level_2", "political"] },
+      ],
+    })
+  ).toBe("Puente Real");
+
+  expect(
+    extractColonyFromResult({
+      formatted_address: "Calle Puente de Rialto 1430, Fraccionamiento Puente Real, Ciudad Obregón",
+    })
+  ).toBe("Puente Real");
+});
+
+test("reconoce las variantes habituales de zonas residenciales", () => {
+  const variants = [
+    ["Colonia Centro", "Centro"],
+    ["Residencial Las Palmas", "Las Palmas"],
+    ["Privada Los Arcos", "Los Arcos"],
+    ["Condominio Los Pinos", "Los Pinos"],
+    ["Barrio Norte", "Norte"],
+    ["Comunidad El Campito", "El Campito"],
+    ["Conjunto residencial Los Olivos", "Los Olivos"],
+    ["Unidad habitacional Las Flores", "Las Flores"],
+    ["Sección: Centro", "Centro"],
+    ["Fracc. Puerta Real", "Puerta Real"],
+  ] as const;
+
+  for (const [formattedAddress, expected] of variants) {
+    expect(
+      extractColonyFromResult({ formatted_address: `${formattedAddress}, Ciudad Obregón, Sonora` })
+    ).toBe(expected);
+  }
 });
 
 test("calcula el rango por kilómetros y suma el recargo de colonia", () => {
@@ -109,19 +150,38 @@ test("descarta un parque y elige la dirección que coincide con calle y número"
   expect(selected.formatted_address).toContain("Las Palmas 1747");
 });
 
-test("no acepta un punto de interés como domicilio aunque sea el único resultado", () => {
+test("acepta una plaza o parque nombrado aunque no tenga número exterior", () => {
+  const selected = selectConfidentAddressResult("Parque Villa del Palmar, Ciudad Obregón", [
+    {
+      formatted_address: "Parque Villa del Palmar, Ciudad Obregón, Sonora",
+      types: ["park", "point_of_interest"],
+      geometry: {
+        location: { lat: 27.5, lng: -109.9 },
+        location_type: "GEOMETRIC_CENTER",
+      },
+      address_components: [
+        { long_name: "Villa del Palmar", types: ["sublocality_level_1"] },
+        { long_name: "Ciudad Obregón", types: ["locality"] },
+      ],
+    },
+  ]);
+
+  expect(selected.formatted_address).toContain("Parque Villa del Palmar");
+});
+
+test("sigue pidiendo número cuando Google solo devuelve una zona amplia", () => {
   expect(() =>
-    selectConfidentAddressResult("Las Palmas 1747, Villas del Palmar", [
+    selectConfidentAddressResult("Villas del Palmar, Ciudad Obregón", [
       {
-        formatted_address: "Parque Villa del Palmar, Ciudad Obregón, Sonora",
-        types: ["park", "point_of_interest"],
+        formatted_address: "Villas del Palmar, Ciudad Obregón, Sonora",
+        types: ["sublocality", "political"],
         geometry: {
           location: { lat: 27.5, lng: -109.9 },
-          location_type: "GEOMETRIC_CENTER",
+          location_type: "APPROXIMATE",
         },
       },
     ])
-  ).toThrow("address_low_confidence");
+  ).toThrow("address_number_required");
 });
 
 test("acepta como candidato confirmable un domicilio numerado aunque Google lo marque aproximado", () => {

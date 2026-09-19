@@ -2,6 +2,11 @@
 
 Sistema operativo para un restaurante de un solo local: punto de venta, cocina, caja, inventario, menú, analíticas y atención de pedidos por WhatsApp.
 
+La implementación productiva actual sigue siendo de un solo negocio. Existe una
+evolución aprobada para convertir el núcleo en multinegocio dentro de Rincón 404
+Food Park; todavía no está aplicada. Su índice y gates viven en
+`docs_dev/food-garden-multi-business/README.md`.
+
 ## Cómo orientarse rápidamente
 
 Si eres una persona o un agente de IA que entra por primera vez:
@@ -16,7 +21,7 @@ Si eres una persona o un agente de IA que entra por primera vez:
 
 La documentación anterior describe el sistema; el código actual y el estado remoto verificable tienen prioridad si existe una contradicción.
 
-## Producto
+## Producto actual
 
 Mideli es una herramienta interna para el personal durante un turno real en Ciudad Obregón, Sonora. No es un marketplace, no es multi-sucursal y no tiene una superficie de pedido para el comensal.
 
@@ -27,6 +32,15 @@ Flujos principales:
 - El personal cobra con efectivo, tarjeta o transferencia mediante un libro mayor transaccional.
 - Owner y admin administran menú, categorías, mesas, usuarios, inventario, caja, impresión y analíticas.
 - WhatsApp recibe pedidos, conserva el contexto del cliente y permite relevo humano cuando el bot no puede continuar.
+
+## Evolución aprobada, aún no implementada
+
+La siguiente etapa convertirá el sistema en una aplicación única con una
+organización de Rincón 404 Food Park, negocios independientes, membresías y
+permisos por alcance. Mideli será el primer negocio migrado sin cambiar sus
+credenciales ni su funcionamiento visible. WhatsApp permanecerá exclusivo de
+Mideli al inicio; Just Dipping se incorporará después de superar el piloto y
+contar con autorización y datos reales.
 
 ## Stack actual
 

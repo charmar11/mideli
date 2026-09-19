@@ -87,6 +87,14 @@ export function buildConversationCatalog(menuItems: MenuItemWithCategory[]): Con
   };
 }
 
+export function conversationMenuCategories(catalog: ConversationCatalog) {
+  return catalog.categories.filter((category) =>
+    catalog.items.some(
+      (item) => item.categoryId === category.id && !item.isAlcoholic
+    )
+  );
+}
+
 function phraseIndexes(text: string, phrase: string) {
   const indexes: number[] = [];
   let cursor = 0;

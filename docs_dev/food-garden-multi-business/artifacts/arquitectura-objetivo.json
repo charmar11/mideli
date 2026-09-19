@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Mideli hacia multinegocio",
+    "subtitle": "Fundación de Rincón 404 Food Park con Mideli primero",
+    "quality_profile": "showcase",
+    "visual_preset": "signal-flow",
+    "repository": {
+      "url": "https://github.com/charmar11/mideli",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1cd31e0377909b45cd7af47edd2c0718eeb88a13"
+    }
+  },
+  "components": [
+    {
+      "id": "staff-ui",
+      "type": "frontend",
+      "label": "App del personal",
+      "sublabel": "POS · Estado · Caja",
+      "pos": [40, 250],
+      "size": [170, 70],
+      "sources": [{ "path": "docs/ARCHITECTURE.md", "label": "módulos actuales" }]
+    },
+    {
+      "id": "platform-admin",
+      "type": "security",
+      "label": "Plataforma",
+      "sublabel": "alta y ciclo de vida",
+      "pos": [40, 90],
+      "size": [170, 70],
+      "sources": [{ "path": "docs/DECISIONS.md", "label": "alcance aprobado" }]
+    },
+    {
+      "id": "server-guards",
+      "type": "backend",
+      "label": "Guardas de servidor",
+      "sublabel": "membresía · capacidad · negocio",
+      "pos": [290, 250],
+      "size": [190, 70],
+      "sources": [{ "path": "docs/ARCHITECTURE.md", "label": "arquitectura actual" }]
+    },
+    {
+      "id": "organization",
+      "type": "database",
+      "label": "Rincón 404 Food Park",
+      "sublabel": "organización · membresías",
+      "pos": [290, 90],
+      "size": [190, 70],
+      "sources": [{ "path": "docs/DECISIONS.md", "label": "decisiones aprobadas" }]
+    },
+    {
+      "id": "mideli",
+      "type": "database",
+      "label": "Mideli",
+      "sublabel": "primer negocio · WhatsApp",
+      "pos": [550, 180],
+      "size": [170, 70],
+      "sources": [{ "path": "PRODUCT.md", "label": "producto actual" }]
+    },
+    {
+      "id": "future-business",
+      "type": "database",
+      "label": "Just Dipping",
+      "sublabel": "posterior · no creado aún",
+      "pos": [550, 350],
+      "size": [170, 70],
+      "sources": [{ "path": "docs/DECISIONS.md", "label": "alcance de transición" }]
+    },
+    {
+      "id": "shared-tables",
+      "type": "database",
+      "label": "Mesas compartidas",
+      "sublabel": "visita · cuenta por negocio",
+      "pos": [790, 90],
+      "size": [190, 70],
+      "sources": [{ "path": "docs/ARCHITECTURE.md", "label": "flujo de órdenes" }]
+    },
+    {
+      "id": "business-domains",
+      "type": "database",
+      "label": "Dominios por negocio",
+      "sublabel": "menú · pedidos · inventario · caja",
+      "pos": [790, 250],
+      "size": [210, 70],
+      "sources": [{ "path": "docs/ARCHITECTURE.md", "label": "dominios actuales" }]
+    },
+    {
+      "id": "whatsapp",
+      "type": "external",
+      "label": "WhatsApp Mideli",
+      "sublabel": "canal exclusivo inicial",
+      "pos": [300, 410],
+      "size": [190, 70],
+      "sources": [{ "path": "docs/DECISIONS.md", "label": "decisión de canal" }]
+    },
+    {
+      "id": "postgres-rls",
+      "type": "database",
+      "label": "Supabase PostgreSQL",
+      "sublabel": "RLS · RPC · auditoría",
+      "pos": [1050, 250],
+      "size": [190, 70],
+      "sources": [{ "path": "docs/ARCHITECTURE.md", "label": "fuente transaccional" }]
+    }
+  ],
+  "boundaries": [
+    { "kind": "security-group", "label": "Contexto seguro por organización y negocio", "wraps": ["server-guards", "organization", "mideli", "future-business", "shared-tables", "business-domains", "postgres-rls"] },
+    { "kind": "region", "label": "Aplicación única de Rincón 404", "wraps": ["staff-ui", "platform-admin", "server-guards", "organization", "mideli", "future-business", "shared-tables", "business-domains", "postgres-rls"] }
+  ],
+  "connections": [
+    { "id": "staff-guards", "from": "staff-ui", "to": "server-guards", "variant": "emphasis" },
+    { "id": "platform-org", "from": "platform-admin", "to": "organization", "variant": "security" },
+    { "id": "guards-org", "from": "server-guards", "to": "organization", "label": "membresía", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "id": "guards-mideli", "from": "server-guards", "to": "mideli" },
+    { "id": "tables-mideli", "from": "shared-tables", "to": "mideli" },
+    { "id": "mideli-domains", "from": "mideli", "to": "business-domains" },
+    { "id": "future-domains", "from": "future-business", "to": "business-domains", "variant": "dashed" },
+    { "id": "domains-db", "from": "business-domains", "to": "postgres-rls", "label": "RLS / RPC" },
+    { "id": "whatsapp-mideli", "from": "whatsapp", "to": "mideli", "variant": "security" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Primera etapa", "items": ["Staging aislado", "Solo Mideli", "Credenciales actuales"] },
+    { "dot": "amber", "title": "No habilitar aún", "items": ["Pedidos mixtos en producción", "Just Dipping real", "WhatsApp para otro negocio"] }
+  ]
+}

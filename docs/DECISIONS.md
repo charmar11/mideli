@@ -4,7 +4,29 @@ Este archivo resume decisiones que no deben revertirse por accidente al modifica
 
 ## Alcance
 
-Mideli opera un solo local Burger & Sushi. No agregar abstracciones multi-tenant, multisucursal o marketplace sin una decisión explícita de producto.
+Producción actualmente opera un solo negocio, Mideli, dentro de un local de
+comida Burger & Sushi. Se aprobó diseñar una evolución multinegocio para
+Rincón 404 Food Park, con Mideli como primer negocio migrado y Just Dipping como
+incorporación posterior. Esta evolución aún no está implementada en producción.
+
+La fundación debe probarse en staging antes de habilitar selección de negocio,
+pedidos mixtos o datos reales de un segundo negocio. No se agregará una
+abstracción de marketplace o multisucursal distinta de este alcance aprobado.
+
+## Multinegocio en transición
+
+- Cada negocio tendrá su propio catálogo, inventario, pedidos, caja, pagos,
+  gastos, historial, personal y permisos.
+- Rincón 404 tendrá una cuenta de plataforma separada de los dueños.
+- El dueño administra su propio personal; el Coordinador administra meseras
+  globales y recursos compartidos, no las finanzas o personal interno de cada
+  negocio.
+- Una mesera global puede capturar, entregar y cobrar pedidos de negocios
+  habilitados, pero no marca `Listo` de otro negocio por defecto.
+- Las credenciales actuales de Mideli se conservan.
+- WhatsApp permanece exclusivo de Mideli durante la primera etapa.
+- Just Dipping no se crea ni se migra hasta contar con autorización y datos
+  reales de su dueño.
 
 ## Orden de servicio
 

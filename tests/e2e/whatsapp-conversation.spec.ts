@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import {
   createConversation,
+  canResumeBotAfterHandoff,
+  conversationSummaryReply,
   handleConversationMessage,
   recoverDeliveryQuote,
   reconcileCartWithCatalog,
@@ -12,6 +14,7 @@ import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
 import { formatPhoneForCopy, normalizePhone, normalizeText, phoneAliases } from "@/lib/whatsapp/normalize";
 import { deliveryQuoteReply } from "@/lib/whatsapp/customer-messages";
 import { safeErrorDetail } from "@/lib/whatsapp/error-detail";
+import { interactionForState } from "@/lib/whatsapp/quick-replies";
 import type { MenuItem } from "@/types/database";
 
 const now = "2026-08-25T00:00:00.000Z";
@@ -201,6 +204,46 @@ test("recibe un saludo sin contarlo como producto desconocido", () => {
   expect(result.reply).toContain("menú");
   expect(result.reply).toContain("👋");
   expect(result.reply).not.toContain("Caguama");
+});
+
+test("hacer pedido abre las categorías sin repetir la bienvenida", () => {
+  const greeted = handleConversationMessage(
+    createConversation("5216440000000"),
+    "Hola",
+    navigationCatalog
+  );
+
+  const result = handleConversationMessage(
+    greeted.state,
+    "cmd:start",
+    navigationCatalog
+  );
+
+  expect(result.state.stage).toBe("browsing_catalog");
+  expect(result.state.selectedCategoryId).toBeNull();
+  expect(result.reply).toContain("Hamburguesas");
+  expect(result.reply).toContain("Sushis");
+  expect(result.reply).toContain("Bebidas");
+  expect(result.reply).not.toContain("Bienvenido a Mideli");
+
+  const interaction = interactionForState(result.state, navigationCatalog);
+  expect(interaction?.kind).toBe("list");
+  if (interaction?.kind === "list") {
+    expect(interaction.sections[0].rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "category:bebidas", title: "🥤 Bebidas" }),
+      ])
+    );
+  }
+});
+
+test("retoma el bot con un saludo solo si nadie tomó la atención humana", () => {
+  const handoff = { ...createConversation("5216440000000"), stage: "handoff" as const };
+
+  expect(canResumeBotAfterHandoff(handoff, null, "Hola")).toBe(true);
+  expect(canResumeBotAfterHandoff(handoff, null, "Hacer pedido")).toBe(true);
+  expect(canResumeBotAfterHandoff(handoff, "worker-id", "Hola")).toBe(false);
+  expect(canResumeBotAfterHandoff(handoff, null, "¿Qué pasó con mi pedido?")).toBe(false);
 });
 
 test("no repite el saludo cuando el cliente mezcla saludo con una acción", () => {
@@ -538,6 +581,62 @@ test("permite elegir variaciones opcionales múltiples y muestra el precio final
   expect(result.reply).not.toContain("de Dracarys");
   expect(result.reply).not.toContain("$125 + $30 extras");
   expect(result.reply).not.toContain("Dracarys +$30");
+});
+
+test("desglosa precio base, extras y total del producto en el resumen", () => {
+  const summary = conversationSummaryReply({
+    ...createConversation("5216440000000"),
+    stage: "awaiting_confirmation",
+    cart: [{
+      id: "line-1",
+      menuItemId: "hamburguesa-sencilla",
+      categoryId: "hamburguesas",
+      name: "Hamburguesa Sencilla",
+      quantity: 1,
+      unitPrice: 135,
+      selectedModifiers: [
+        {
+          groupId: "extras",
+          groupName: "Extras",
+          optionId: "bbq",
+          optionName: "Aderezo BBQ",
+          price: 15,
+        },
+        {
+          groupId: "extras",
+          groupName: "Extras",
+          optionId: "tocino",
+          optionName: "Tocino",
+          price: 20,
+        },
+      ],
+      notes: "",
+    }],
+    serviceType: "domicilio",
+    address: "Sinagogas 1230, Misión de San Xavier",
+    addressConfirmed: true,
+    deliveryQuote: {
+      id: "quote-1",
+      formattedAddress: "Sinagogas 1230, Misión de San Xavier",
+      colony: "Misión de San Xavier",
+      latitude: 27.5,
+      longitude: -109.9,
+      distanceMeters: 3000,
+      baseFee: 50,
+      surcharge: 0,
+      totalFee: 50,
+    },
+    payment: { method: "transferencia", cashTendered: null },
+    total: 220,
+  });
+
+  expect(summary).toContain("1 × Hamburguesa Sencilla · $135");
+  expect(summary).toContain("Extras: Aderezo BBQ +$15, Tocino +$20");
+  expect(summary).toContain("Total de este producto: $170");
+  expect(summary).toContain("Subtotal de productos: *$170*");
+  expect(summary).toContain("Costo de envío: $50");
+  expect(summary).toContain("Total a pagar: $220");
+  expect(summary).not.toContain("$170 c/u");
 });
 
 test("cambia una variación desde el menú guiado sin duplicar el producto", () => {
@@ -944,7 +1043,7 @@ test("recuerda domicilio y evita preguntarlo otra vez después de bebidas", () =
   expect(result.state.stage).toBe("awaiting_beverage");
   result = handleConversationMessage(result.state, "No gracias", configurableCatalog);
   expect(result.state.stage).toBe("awaiting_address");
-  expect(result.reply).toContain("dirección");
+  expect(result.reply).toContain("domicilio");
   expect(result.reply).not.toContain("recoger o a domicilio");
 });
 
@@ -1019,9 +1118,6 @@ test("completa domicilio, efectivo y solicita crear solo después de confirmar",
     "Calle Kino 123, colonia Centro, portón negro",
     catalog
   );
-  expect(result.state.stage).toBe("awaiting_address_reference");
-
-  result = handleConversationMessage(result.state, "Omitir", catalog);
   expect(result.state.stage).toBe("awaiting_delivery_quote");
   expect(result.action).toBe("request_delivery_quote");
 

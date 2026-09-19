@@ -27,7 +27,11 @@ import {
   ensurePosCustomerAction,
   getWhatsappPosDraftAction,
 } from "@/lib/actions/whatsapp";
-import { quoteManualDeliveryAction } from "@/lib/actions/delivery";
+import {
+  quoteManualDeliveryAction,
+  quoteManualDeliveryPlaceAction,
+  searchManualDeliveryPlacesAction,
+} from "@/lib/actions/delivery";
 import type {
   PosCustomerMatch,
   WhatsappCustomerAddress,
@@ -92,6 +96,7 @@ export function MeseroView() {
   const [customerMatches, setCustomerMatches] = useState<PosCustomerMatch[]>([]);
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryColony, setDeliveryColony] = useState("");
   const [deliveryReference, setDeliveryReference] = useState("");
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryDistanceKm, setDeliveryDistanceKm] = useState<number | null>(null);
@@ -140,7 +145,7 @@ export function MeseroView() {
   async function handleQuoteDelivery() {
     if (deliveryAddress.trim().length < 8 || deliveryQuoteLoading) return;
     setDeliveryQuoteLoading(true);
-    const result = await quoteManualDeliveryAction(deliveryAddress);
+    const result = await quoteManualDeliveryAction(deliveryAddress, deliveryColony);
     setDeliveryQuoteLoading(false);
     if (!result.success) {
       setDeliveryConfirmed(false);
@@ -150,11 +155,33 @@ export function MeseroView() {
       return;
     }
     setDeliveryAddress(result.quote.formattedAddress);
+    setDeliveryColony(result.quote.colony);
     setDeliveryFee(result.quote.totalFee);
     setDeliveryDistanceKm(Math.round((result.quote.distanceMeters / 1000) * 10) / 10);
     setDeliveryCoordinates({ latitude: result.quote.latitude, longitude: result.quote.longitude });
     setDeliveryConfirmed(true);
     toast.success(`Domicilio confirmado · ${Math.round(result.quote.distanceMeters / 100) / 10} km · $${result.quote.totalFee}`);
+  }
+
+  async function handleSelectDeliveryPlace(placeId: string, sessionToken: string) {
+    setDeliveryQuoteLoading(true);
+    const result = await quoteManualDeliveryPlaceAction(placeId, sessionToken);
+    setDeliveryQuoteLoading(false);
+    if (!result.success) {
+      setDeliveryConfirmed(false);
+      setDeliveryFee(0);
+      setDeliveryDistanceKm(null);
+      setDeliveryCoordinates({ latitude: null, longitude: null });
+      toast.error(result.error);
+      return;
+    }
+    setDeliveryAddress(result.quote.formattedAddress);
+    setDeliveryColony(result.quote.colony);
+    setDeliveryFee(result.quote.totalFee);
+    setDeliveryDistanceKm(Math.round((result.quote.distanceMeters / 1000) * 10) / 10);
+    setDeliveryCoordinates({ latitude: result.quote.latitude, longitude: result.quote.longitude });
+    setDeliveryConfirmed(true);
+    toast.success(`Ubicación confirmada · ${Math.round(result.quote.distanceMeters / 100) / 10} km · $${result.quote.totalFee}`);
   }
 
   function handleCustomerPhoneChange(value: string) {
@@ -176,6 +203,7 @@ export function MeseroView() {
 
   function handleSelectCustomerAddress(address: WhatsappCustomerAddress) {
     setDeliveryAddress(address.formattedAddress || address.addressText);
+    setDeliveryColony(address.colony);
     setDeliveryReference(address.reference);
     setDeliveryFee(address.deliveryFee ?? 0);
     setDeliveryCoordinates({ latitude: address.latitude, longitude: address.longitude });
@@ -234,9 +262,10 @@ export function MeseroView() {
       setOrderType(draft.orderType ?? "domicilio");
       setCustomerId(draft.customerId);
       setCustomerName(draft.customerName);
-    setCustomerPhone(draft.phone);
+      setCustomerPhone(draft.phone);
       setWhatsappStatusOptIn(false);
       setDeliveryAddress(draft.address);
+      setDeliveryColony(draft.colony);
       setDeliveryReference(draft.reference);
       setDeliveryFee(draft.deliveryFee);
       setDeliveryDistanceKm(distanceMetersToKilometers(draft.distanceMeters));
@@ -357,7 +386,7 @@ export function MeseroView() {
     [addItem, markProductAdded, variationItem]
   );
 
-  async function handleSubmitOrder(payNow = false) {
+  async function handleSubmitOrder(payNow = false, allowUnconfirmedDelivery = false) {
     if (items.length === 0 || isSubmitting) return;
     if (!currentCashShift) {
       toast.error("Abre la caja antes de registrar pedidos", {
@@ -369,23 +398,25 @@ export function MeseroView() {
       toast.error("Selecciona una mesa en el plano antes de enviar el pedido");
       return;
     }
-    if (orderType === "domicilio" && (!deliveryAddress.trim() || !deliveryConfirmed)) {
+    if (
+      orderType === "domicilio" &&
+      !allowUnconfirmedDelivery &&
+      (!deliveryAddress.trim() || !deliveryColony.trim() || !deliveryConfirmed)
+    ) {
       toast.error("Confirma el domicilio con Google Maps antes de enviar");
       return;
     }
     const phoneDigits = customerPhone.replace(/\D/g, "");
-    if (orderType === "domicilio" && (phoneDigits.length < 8 || phoneDigits.length > 15)) {
-      toast.error("Escribe el teléfono del cliente para continuar", {
-        description: "Es el dato principal para identificar y reutilizar sus domicilios.",
-      });
-      return;
-    }
+    const phoneIsUsable = phoneDigits.length >= 8 && phoneDigits.length <= 15;
+    const persistedCustomerPhone = orderType === "domicilio"
+      ? (phoneIsUsable ? customerPhone : "")
+      : customerPhone;
     setIsSubmitting(true);
     let resolvedCustomerId = customerId;
-    if (phoneDigits.length > 0) {
+    if (orderType !== "domicilio" ? phoneDigits.length > 0 : phoneIsUsable) {
       const customerResult = await ensurePosCustomerAction({
         customerId,
-        phone: customerPhone,
+        phone: persistedCustomerPhone,
         displayName: customerName,
       });
       if (!customerResult.success) {
@@ -396,6 +427,7 @@ export function MeseroView() {
       resolvedCustomerId = customerResult.data.customerId;
       setCustomerId(resolvedCustomerId);
     } else {
+      resolvedCustomerId = null;
       setCustomerId(null);
     }
     let orderNumber = editingOrderNumber;
@@ -412,12 +444,13 @@ export function MeseroView() {
         orderType === "domicilio"
           ? {
               address: deliveryAddress,
+              colony: deliveryColony,
               reference: deliveryReference,
               fee: deliveryFee,
-              phone: customerPhone,
+              phone: persistedCustomerPhone,
               paymentMethod: deliveryPaymentMethod,
               cashTendered: deliveryCashTendered,
-              whatsappStatusOptIn,
+              whatsappStatusOptIn: whatsappStatusOptIn && phoneIsUsable,
               distanceMeters: deliveryDistanceKm === null ? null : Math.round(deliveryDistanceKm * 1000),
               latitude: deliveryCoordinates.latitude,
               longitude: deliveryCoordinates.longitude,
@@ -425,7 +458,7 @@ export function MeseroView() {
           : undefined,
         orderNotes,
         resolvedCustomerId,
-        customerPhone,
+        persistedCustomerPhone,
         whatsappConversationId,
         scheduledFor && kitchenReleaseAt
           ? { scheduledFor, kitchenReleaseAt }
@@ -443,19 +476,20 @@ export function MeseroView() {
         orderType === "domicilio"
           ? {
               address: deliveryAddress,
+              colony: deliveryColony,
               reference: deliveryReference,
               fee: deliveryFee,
-              phone: customerPhone,
+              phone: persistedCustomerPhone,
               paymentMethod: deliveryPaymentMethod,
               cashTendered: deliveryCashTendered,
-              whatsappStatusOptIn,
+              whatsappStatusOptIn: whatsappStatusOptIn && phoneIsUsable,
               distanceMeters: deliveryDistanceKm === null ? null : Math.round(deliveryDistanceKm * 1000),
               latitude: deliveryCoordinates.latitude,
               longitude: deliveryCoordinates.longitude,
             }
           : undefined,
         resolvedCustomerId,
-        customerPhone,
+        persistedCustomerPhone,
         whatsappConversationId,
         scheduledFor && kitchenReleaseAt
           ? { scheduledFor, kitchenReleaseAt }
@@ -527,6 +561,7 @@ export function MeseroView() {
     setKitchenReleaseAt(null);
     setCustomerMatches([]);
     setDeliveryAddress("");
+    setDeliveryColony("");
     setDeliveryReference("");
     setDeliveryFee(0);
     setDeliveryDistanceKm(null);
@@ -566,6 +601,7 @@ export function MeseroView() {
       order.source_channel === "whatsapp" ? order.channel_conversation_id ?? null : null
     );
     setDeliveryAddress(order.delivery_address ?? "");
+    setDeliveryColony(order.delivery_colony ?? "");
     setDeliveryReference(order.delivery_reference ?? "");
     setDeliveryFee(Number(order.delivery_fee ?? 0));
     setDeliveryDistanceKm(null);
@@ -603,6 +639,7 @@ export function MeseroView() {
     setKitchenReleaseAt(null);
     setCustomerMatches([]);
     setDeliveryAddress("");
+    setDeliveryColony("");
     setDeliveryReference("");
     setDeliveryFee(0);
     setDeliveryDistanceKm(null);
@@ -631,6 +668,7 @@ export function MeseroView() {
       setKitchenReleaseAt(null);
       setCustomerMatches([]);
       setDeliveryAddress("");
+      setDeliveryColony("");
       setDeliveryReference("");
       setDeliveryFee(0);
       setDeliveryConfirmed(false);
@@ -825,6 +863,7 @@ export function MeseroView() {
           customerPhone={customerPhone}
           whatsappStatusOptIn={whatsappStatusOptIn}
           deliveryAddress={deliveryAddress}
+          deliveryColony={deliveryColony}
           deliveryReference={deliveryReference}
           deliveryFee={deliveryFee}
           deliveryDistanceKm={deliveryDistanceKm}
@@ -849,6 +888,7 @@ export function MeseroView() {
           onSelectCustomerAddress={handleSelectCustomerAddress}
           onDeliveryAddressChange={(value) => {
             setDeliveryAddress(value);
+            setDeliveryColony("");
             setDeliveryConfirmed(false);
             setDeliveryFee(0);
             setDeliveryDistanceKm(null);
@@ -857,11 +897,16 @@ export function MeseroView() {
           onDeliveryReferenceChange={setDeliveryReference}
           onOrderNotesChange={setOrderNotes}
           onQuoteDelivery={() => void handleQuoteDelivery()}
+          onSearchDeliveryPlaces={searchManualDeliveryPlacesAction}
+          onSelectDeliveryPlace={handleSelectDeliveryPlace}
           deliveryQuoteLoading={deliveryQuoteLoading}
-          onSubmit={() => void handleSubmitOrder(false)}
+          onSubmit={(allowUnconfirmedDelivery) =>
+            void handleSubmitOrder(false, allowUnconfirmedDelivery)
+          }
           onPayAndSubmit={
             !editingOrderId && orderType !== "comedor"
-              ? () => void handleSubmitOrder(true)
+              ? (allowUnconfirmedDelivery) =>
+                  void handleSubmitOrder(true, allowUnconfirmedDelivery)
               : undefined
           }
         />

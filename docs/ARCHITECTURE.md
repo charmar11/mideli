@@ -23,6 +23,25 @@ Supabase
   └─ Storage para imágenes de menú
 ```
 
+## Estado de arquitectura multinegocio
+
+La base actual y la operación productiva siguen siendo de un solo negocio:
+Mideli. El esquema todavía no tiene `business_id`, `organization_id` ni
+membresías por negocio. No se debe interpretar esta sección como evidencia de
+que la migración ya fue aplicada.
+
+La arquitectura objetivo agrega una organización de Rincón 404 Food Park,
+negocios con ciclo de vida, membresías y capacidades por alcance. El pedido,
+catálogo, inventario, caja, pagos, reportes y notificaciones deberán resolver
+el negocio en servidor y en RLS, no solamente en la interfaz. Las mesas pueden
+seguir siendo compartidas físicamente, pero cada visita tendrá cuentas y
+órdenes separadas por negocio.
+
+La migración será Mideli-first y aditiva. Primero se probará en una rama o base
+de staging con variables separadas; después se migrará el catálogo y los
+dominios transaccionales por etapas. WhatsApp seguirá asignado explícitamente a
+Mideli y no se habilitará para Just Dipping en esta fase.
+
 ## Mapa de módulos
 
 | Módulo | Interfaz | Estado y lógica |

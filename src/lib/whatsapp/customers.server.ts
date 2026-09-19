@@ -199,7 +199,7 @@ async function loadDetailedOrders(admin: AdminClient, customerId: string) {
   const result = await admin
     .from("orders")
     .select(
-      "id,number,status,type,total,paid_amount,payment_status,payment_method,payment_method_requested,source_channel,delivery_status,delivery_address,delivery_reference,delivery_fee,channel_conversation_id,created_at"
+      "id,number,status,type,total,paid_amount,payment_status,payment_method,payment_method_requested,source_channel,delivery_status,delivery_address,delivery_colony,delivery_reference,delivery_fee,channel_conversation_id,created_at"
     )
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
@@ -260,6 +260,7 @@ async function loadDetailedOrders(admin: AdminClient, customerId: string) {
     sourceChannel: order.source_channel ?? "pos",
     deliveryStatus: order.delivery_status ?? "",
     deliveryAddress: order.delivery_address ?? "",
+    deliveryColony: order.delivery_colony ?? "",
     deliveryReference: order.delivery_reference ?? "",
     deliveryFee: Number(order.delivery_fee ?? 0),
     channelConversationId: order.channel_conversation_id,

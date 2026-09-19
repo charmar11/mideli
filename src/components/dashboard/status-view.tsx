@@ -81,6 +81,19 @@ function formatDistance(distanceMeters: number | null | undefined) {
     : `${(distanceMeters / 1000).toFixed(1)} km`;
 }
 
+function compactDriverAddress(value: string) {
+  const parts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => {
+      if (/\b\d{5}\b/.test(part)) return false;
+      return !/^(?:c(?:dad|iudad)?\.?\s*)?obreg[oó]n$|^(?:son\.?|sonora)$|^m[eé]xico$|^cajeme$/i.test(part);
+    });
+  const compact = parts.join(", ") || value.trim() || "Domicilio no disponible";
+  return compact;
+}
+
 export function StatusView({ onEditOrder }: StatusViewProps) {
   const activeOrders = useOrderStore((state) => state.activeOrders);
   const lastError = useOrderStore((state) => state.lastError);
@@ -422,6 +435,7 @@ function StatusSection({
             const details = deliveryDetails[order.id];
             const distance = formatDistance(details?.distanceMeters);
             const address = order.delivery_address?.trim() ?? "";
+            const colony = order.delivery_colony?.trim() ?? "";
             const reference = order.delivery_reference?.trim() ?? "";
             const deliveryFee = orderExternalDeliveryFee(order);
             const subtotal = orderProductsTotal(order);
@@ -429,7 +443,7 @@ function StatusSection({
             const destinationMapHref = details?.destinationLatitude !== null && details?.destinationLatitude !== undefined && details?.destinationLongitude !== null && details?.destinationLongitude !== undefined
               ? `https://www.google.com/maps/search/?api=1&query=${details.destinationLatitude},${details.destinationLongitude}`
               : address
-                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([address, colony].filter(Boolean).join(", "))}`
                 : null;
             const originMapHref = details?.storeLatitude !== null && details?.storeLatitude !== undefined && details?.storeLongitude !== null && details?.storeLongitude !== undefined
               ? `https://www.google.com/maps/search/?api=1&query=${details.storeLatitude},${details.storeLongitude}`
@@ -437,21 +451,20 @@ function StatusSection({
                 ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(details.storeAddress)}`
                 : null;
             const driverMessage = [
-              "*🛵 Mideli*",
+              "*🛵 SALE PEDIDO DE MIDELI*",
               "",
-              "*Sale de:*",
-              details?.storeAddress || "Mideli",
-              originMapHref,
+              `📍 *De:* ${compactDriverAddress(details?.storeAddress || "Mideli")}`,
+              originMapHref ? `🗺️ ${originMapHref}` : null,
               "",
-              "*Para:*",
-              address,
-              destinationMapHref,
-              reference ? `*Referencia:* ${reference}` : null,
+              `🏠 *Para:* ${compactDriverAddress(address)}`,
+              `🏘️ *Colonia:* ${colony || "⚠️ NO REGISTRADA"}`,
+              destinationMapHref ? `🗺️ ${destinationMapHref}` : null,
+              reference ? `📌 *Referencia:* ${reference}` : null,
               "",
-              `*Cobro a Mideli:* ${formatPaymentMoney(subtotal)}`,
-              `*Envío al repartidor:* ${formatPaymentMoney(deliveryFee)} aparte`,
-              order.customer_name ? `*Cliente:* ${order.customer_name}` : null,
-              order.customer_phone ? `*Teléfono:* ${formatPhoneForCopy(order.customer_phone)}` : null,
+              `💳 *Pago:* ${paymentMethodLabel(order.payment_method_requested)}`,
+              `💰 *Total:* ${formatPaymentMoney(subtotal)}`,
+              `🛵 *Envío:* ${formatPaymentMoney(deliveryFee)}`,
+              order.customer_phone ? `📞 *Celular del cliente:* ${formatPhoneForCopy(order.customer_phone)}` : null,
             ].filter((line) => line !== null && line !== undefined).join("\n");
             const whatsappShareHref = `https://wa.me/?text=${encodeURIComponent(driverMessage)}`;
             const requestedCash = Number(order.requested_cash_tendered ?? 0);
@@ -503,6 +516,9 @@ function StatusSection({
                       <p className="flex min-w-0 items-start gap-1.5 text-muted-foreground">
                         <MapPin size={13} className="mt-0.5 shrink-0" />
                         <span className="min-w-0 break-words">{address || "Domicilio no disponible"}</span>
+                      </p>
+                      <p className={`pl-[19px] font-heading text-xs font-bold ${colony ? "text-gold" : "text-warning"}`}>
+                        🏘️ Colonia: {colony || "⚠️ No registrada"}
                       </p>
                       {reference ? <p className="pl-[19px] text-muted-foreground">Referencia: {reference}</p> : null}
                     </div>

@@ -71,17 +71,20 @@ La creación de órdenes continuará desactivada mediante la configuración exis
 
 La búsqueda agregará el contexto fijo de Ciudad Obregón, Sonora, México y evaluará todos los candidatos devueltos por Google.
 
-Para aceptar una dirección escrita que contiene número exterior se requerirá:
+Para aceptar una dirección escrita se usarán dos rutas seguras:
 
-- coincidencia del número exterior;
-- una calle o ruta identificable;
-- localidad compatible con Ciudad Obregón o Cajeme;
-- resultado de tipo dirección, no parque, comercio ni punto de interés;
-- precisión suficiente y sin coincidencia parcial dudosa.
+- si contiene número exterior, se requerirá:
+  - coincidencia del número exterior;
+  - una calle o ruta identificable;
+  - localidad compatible con Ciudad Obregón o Cajeme;
+  - resultado de tipo dirección;
+- si es un destino sin número, como una plaza, parque, escuela o comercio, se aceptará un lugar nombrado concreto devuelto por Google, con coordenadas y localidad compatibles.
+
+Los domicilios se consultarán primero con Geocoding. Cuando el texto sea un punto de interés que no pueda resolver esa API, se usará opcionalmente Places Text Search con la misma clave de servidor, si está habilitado en Google Cloud.
 
 Si ningún candidato cumple, el bot no calculará el envío. Responderá de manera breve:
 
-> 📍 No pude confirmar el número exacto. Envíame calle, número y colonia, o comparte tu ubicación desde WhatsApp.
+> 📍 No pude ubicarlo con seguridad. Envíame en un solo mensaje calle, número y colonia, o el nombre de la plaza/parque con la ciudad. También puedes compartir tu ubicación desde WhatsApp.
 
 Una ubicación compartida por el cliente se considerará el destino principal. El sistema podrá obtener una descripción legible, pero no reemplazará las coordenadas elegidas.
 
@@ -155,8 +158,9 @@ El panel de diagnóstico distinguirá recibido, en espera, procesando, enviado, 
 
 ### Domicilios
 
-- Un resultado que sea parque se rechaza aunque sea el primer resultado de Google.
+- Un parque, plaza u otro punto nombrado se acepta cuando Google devuelve un destino concreto dentro de la localidad esperada.
 - Una dirección con número distinto se rechaza.
+- La colonia se obtiene del resultado original o de una búsqueda inversa sobre las coordenadas del destino; nunca se inventa.
 - Una dirección válida calcula rango y recargo de colonia correctamente.
 - Una ubicación compartida calcula desde sus coordenadas.
 - Una dirección ambigua solicita más información y no inventa una tarifa.

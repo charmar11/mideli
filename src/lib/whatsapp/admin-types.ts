@@ -33,6 +33,7 @@ export type WhatsappAdminConversation = {
     paymentStatus: string;
     deliveryStatus: string;
     deliveryAddress: string;
+    deliveryColony: string;
     deliveryReference: string;
     paymentMethod: string;
     requestedCashTendered: number | null;
@@ -46,6 +47,7 @@ export type WhatsappAdminConversation = {
     deliveryFee: number;
     serviceType: "domicilio" | "para_llevar" | null;
     address: string;
+    colony: string;
     addressReference: string;
     addressConfirmed: boolean;
     orderNotes: string;
@@ -74,6 +76,7 @@ export type WhatsappPosDraft = {
   orderType: "domicilio" | "para_llevar" | null;
   notes: string;
   address: string;
+  colony: string;
   reference: string;
   addressConfirmed: boolean;
   latitude: number | null;
@@ -158,6 +161,7 @@ export type WhatsappCustomerOrder = {
   sourceChannel: string;
   deliveryStatus: string;
   deliveryAddress: string;
+  deliveryColony: string;
   deliveryReference: string;
   deliveryFee: number;
   channelConversationId: string | null;

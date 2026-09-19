@@ -1,4 +1,4 @@
-export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const MAX_GEMINI_ACTIONS = 16;
 export const MAX_GEMINI_QUANTITY = 20;
 export const MAX_GEMINI_OPTION_IDS = 12;

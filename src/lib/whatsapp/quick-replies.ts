@@ -4,6 +4,7 @@ import type {
   ConversationCartLine,
   ConversationState,
 } from "./types";
+import { conversationMenuCategories } from "./catalog";
 
 export type WhatsappQuickReply = {
   id: string;
@@ -25,6 +26,7 @@ export type WhatsappInteraction =
     };
 
 const PAGE_SIZE = 5;
+const CATEGORY_PAGE_SIZE = 8;
 
 function encoded(value: string) {
   return encodeURIComponent(value);
@@ -42,15 +44,6 @@ function categoryEmoji(name: string) {
   return "🍽️";
 }
 
-function foodCategories(catalog: ConversationCatalog) {
-  const ids = new Set(
-    catalog.items
-      .filter((item) => !item.isBeverage && !item.isAlcoholic)
-      .map((item) => item.categoryId)
-  );
-  return catalog.categories.filter((category) => ids.has(category.id));
-}
-
 function selectedItems(state: ConversationState, catalog: ConversationCatalog) {
   if (state.selectedCategoryId === "__beverages__") {
     return catalog.items.filter((item) => item.isBeverage && !item.isAlcoholic);
@@ -58,7 +51,9 @@ function selectedItems(state: ConversationState, catalog: ConversationCatalog) {
   if (state.selectedCategoryId === "__alcohol__") {
     return catalog.items.filter((item) => item.isAlcoholic);
   }
-  return catalog.items.filter((item) => item.categoryId === state.selectedCategoryId);
+  return catalog.items.filter(
+    (item) => item.categoryId === state.selectedCategoryId && !item.isAlcoholic
+  );
 }
 
 function pageRows<T>(
@@ -66,10 +61,11 @@ function pageRows<T>(
   page: number,
   row: (value: T) => WhatsappListRow,
   moreId: string,
-  backId: string
+  backId: string,
+  pageSize = PAGE_SIZE
 ) {
-  const start = Math.max(0, page) * PAGE_SIZE;
-  const visible = values.slice(start, start + PAGE_SIZE);
+  const start = Math.max(0, page) * pageSize;
+  const visible = values.slice(start, start + pageSize);
   const rows = visible.map(row);
   if (start + visible.length < values.length) {
     rows.push({ id: moreId, title: "Ver más", description: "Mostrar más opciones" });
@@ -160,7 +156,7 @@ export function interactionForState(
         sections: [{
           title: "Menú",
           rows: pageRows(
-            foodCategories(catalog),
+            conversationMenuCategories(catalog),
             state.catalogPage,
             (category) => ({
               id: `category:${encoded(category.id)}`,
@@ -168,7 +164,8 @@ export function interactionForState(
               description: "Ver productos",
             }),
             "catalog:more",
-            state.catalogPage > 0 ? "catalog:previous" : "catalog:close"
+            state.catalogPage > 0 ? "catalog:previous" : "catalog:close",
+            CATEGORY_PAGE_SIZE
           ),
         }],
       };

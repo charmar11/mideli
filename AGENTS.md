@@ -95,7 +95,8 @@ Los cambios sin commit son trabajo en curso. No los trates como una versión est
 ## Notas
 
 - Sistema de gestión para un local de comida (Burger & Sushi)
-- Un solo local, no multi-tenant
+- Producción actual de un solo negocio; evolución multinegocio aprobada para
+  Rincón 404 Food Park, todavía no implementada
 - UI en español (mercado México/LATAM)
 - Identidad de marca: fondo negro, rosa #F5145F, crema #FBF8E7, dorado #F6DDA4
 - Tipografías: Pacifico (marca), Sora (headings), Karla (body), JetBrains Mono (datos)
@@ -103,3 +104,13 @@ Los cambios sin commit son trabajo en curso. No los trates como una versión est
 - El flujo de pedido es: armar pedido, elegir zona y mesa en el plano si es comedor, confirmar y enviar a cocina
 - El mapa de mesas muestra todas las zonas activas juntas y permite mover zonas y mesas desde administración
 - El inventario es configurable por insumos, recetas, existencias y movimientos
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

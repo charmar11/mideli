@@ -20,6 +20,7 @@ export interface OrderWithItems extends Order {
 
 export interface PosDeliveryDetails {
   address: string;
+  colony?: string | null;
   reference: string;
   fee: number;
   phone?: string;
@@ -190,7 +191,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         const supabase = createClient();
         const legacyOrderSelect =
           "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at";
-        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_id,customer_phone,whatsapp_status_opt_in,delivery_address,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status`;
+        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_id,customer_phone,whatsapp_status_opt_in,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status`;
         const ordersDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
         let activeResult;
         try {
@@ -375,6 +376,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
                 customer_phone: delivery.phone || null,
                 whatsapp_status_opt_in: delivery.whatsappStatusOptIn ?? false,
                 delivery_address: delivery.address.trim(),
+                delivery_colony: delivery.colony?.trim() || null,
                 delivery_reference: delivery.reference.trim() || null,
                 delivery_fee: Math.max(0, Math.round(delivery.fee)),
                 delivery_distance_meters: delivery.distanceMeters ?? null,
@@ -537,6 +539,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
                 customer_phone: delivery.phone || null,
                 whatsapp_status_opt_in: delivery.whatsappStatusOptIn ?? false,
                 delivery_address: delivery.address.trim(),
+                delivery_colony: delivery.colony?.trim() || null,
                 delivery_reference: delivery.reference.trim() || null,
                 delivery_fee: Math.max(0, Math.round(delivery.fee)),
                 delivery_distance_meters: delivery.distanceMeters ?? null,
@@ -599,6 +602,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           customer_phone: customerPhone ?? delivery?.phone ?? currentOrder.customer_phone,
           whatsapp_status_opt_in: delivery?.whatsappStatusOptIn ?? currentOrder.whatsapp_status_opt_in,
           delivery_address: delivery?.address || currentOrder.delivery_address,
+          delivery_colony: delivery?.colony ?? currentOrder.delivery_colony,
           delivery_reference: delivery?.reference || currentOrder.delivery_reference,
           delivery_fee: delivery?.fee ?? currentOrder.delivery_fee,
           delivery_distance_meters: delivery?.distanceMeters ?? currentOrder.delivery_distance_meters,

@@ -151,7 +151,8 @@ function getDeliveryMapHref(order: SalesHistoryOrder) {
     return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
   }
   if (order.delivery_address?.trim()) {
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address.trim())}`;
+    const query = [order.delivery_address.trim(), order.delivery_colony?.trim()].filter(Boolean).join(", ");
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
   }
   return null;
 }
@@ -559,6 +560,9 @@ function OrderDetail({
               <p className="font-body text-sm leading-5 text-foreground">
                 {order.delivery_address || "Domicilio no disponible"}
               </p>
+              <p className={`mt-2 font-heading text-xs font-bold ${order.delivery_colony ? "text-gold" : "text-warning"}`}>
+                🏘️ Colonia: {order.delivery_colony || "⚠️ No registrada"}
+              </p>
               {order.delivery_reference ? (
                 <p className="mt-2 rounded-xl bg-surface-raised px-3 py-2 font-body text-xs leading-5 text-muted-foreground">
                   Referencia: {order.delivery_reference}
@@ -781,6 +785,7 @@ export function SalesHistory() {
       order.customer_name ?? "",
       order.customer_phone ?? "",
       order.delivery_address ?? "",
+      order.delivery_colony ?? "",
       order.delivery_reference ?? "",
       order.created_by_name ?? "",
         itemText,
@@ -1386,10 +1391,10 @@ function HistoryOrderRow({
           {itemsCount} {itemsCount === 1 ? "artículo" : "artículos"}
           {order.items.length > 0 ? ` · ${order.items[0].menu_item_name}` : ""}
         </span>
-          {order.type === "domicilio" && order.delivery_address ? (
-          <span className="mt-1 flex items-center gap-1 truncate font-body text-[11px] text-muted-foreground/70">
+          {order.type === "domicilio" ? (
+          <span className={`mt-1 flex min-w-0 items-center gap-1 truncate font-body text-[11px] ${order.delivery_colony ? "text-gold/80" : "text-warning"}`}>
             <MapPin size={12} className="shrink-0 text-brand/80" />
-            {order.delivery_address}
+            {order.delivery_address || "Domicilio pendiente"} · Col. {order.delivery_colony || "no registrada"}
           </span>
           ) : null}
           {order.schedule_status === "scheduled" && order.scheduled_for ? (

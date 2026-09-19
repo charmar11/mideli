@@ -8,6 +8,8 @@ Este documento sirve para agentes y personas que necesiten levantar, verificar o
 - Producción: [https://mideli.vercel.app](https://mideli.vercel.app).
 - Salud: [https://mideli.vercel.app/api/health](https://mideli.vercel.app/api/health).
 - Base de datos: proyecto Supabase `qgnjennimvbrfxvcmowb`.
+- Staging multinegocio: todavía no provisionado. No usar producción para
+  ejecutar la primera migración de organización, negocio y membresías.
 
 `.env.example` documenta los nombres de variables. `.env.local` nunca se lee para imprimirlo, nunca se commitea y nunca se comparte.
 
@@ -45,6 +47,12 @@ npx supabase db push --linked --dry-run
 Después de revisar el dry-run, aplicar solo la migración aprobada. Nunca ejecutar `supabase db reset --linked`, borrar tablas remotas ni eliminar datos sin autorización explícita para esa operación concreta.
 
 La copia local incluye 54 migraciones hasta `20260906160106_cash_shift_digital_close.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
+
+Para la preparación multinegocio, la rama Preview de Supabase debe ser
+persistente y usar variables propias. No crearla con `--with-data` por defecto:
+los clientes, domicilios, conversaciones y teléfonos son datos personales.
+Usar fixtures anonimizados o documentar una copia controlada y restringida
+antes de probar backfills.
 
 ## Publicación
 

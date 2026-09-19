@@ -9,7 +9,11 @@ import type {
 } from "@/types/database";
 import { isWhatsappBusinessOpen, type ScheduleException } from "./business-hours";
 import { calculateDeliveryPrice } from "./delivery-pricing";
-import { computeDrivingDistance, geocodeDestination } from "./google-maps.server";
+import {
+  computeDrivingDistance,
+  geocodeDestination,
+  type GeocodedDestination,
+} from "./google-maps.server";
 import { normalizeAddressForComparison } from "./normalize";
 import type { ConversationDeliveryQuote } from "./types";
 
@@ -274,6 +278,7 @@ export async function quoteWhatsappDelivery(input: {
   conversationId: string | null;
   address: string;
   config: WhatsappOperationsConfig;
+  destination?: GeocodedDestination;
 }): Promise<
   | { status: "quoted"; quote: ConversationDeliveryQuote }
   | { status: "needs_handoff"; reason: string }
@@ -299,7 +304,21 @@ export async function quoteWhatsappDelivery(input: {
   }
 
   try {
-    const destination = await geocodeDestination(input.address);
+    const destination = input.destination ?? (await geocodeDestination(input.address));
+    if (!destination.colony.trim()) {
+      if (input.conversationId && input.config.persisted) {
+        await createAdminClient().from("whatsapp_delivery_quotes").insert({
+          conversation_id: input.conversationId,
+          input_address: input.address,
+          formatted_address: destination.formattedAddress,
+          latitude: destination.latitude,
+          longitude: destination.longitude,
+          status: "failed",
+          failure_reason: "colony_missing",
+        });
+      }
+      return { status: "needs_handoff", reason: "colony_missing" };
+    }
     const distanceMeters = await computeDrivingDistance(
       {
         latitude: settings.store_latitude,

@@ -330,6 +330,7 @@ function OrderContext({
 }) {
   const order = conversation.latestOrder;
   const address = order?.deliveryAddress || conversation.context.address;
+  const colony = order?.deliveryColony || conversation.context.colony;
   const reference = order?.deliveryReference || conversation.context.addressReference;
   const paymentMethod = order?.paymentMethod || conversation.context.paymentMethod;
   const items = conversation.context.items;
@@ -339,8 +340,9 @@ function OrderContext({
   const isDelivery = order?.type === "domicilio" || conversation.context.serviceType === "domicilio";
   const productTotal = order?.total ?? Math.max(0, conversation.context.total - (isDelivery ? deliveryFee : 0));
   const customerTotal = productTotal + (isDelivery ? deliveryFee : 0);
-  const mapsUrl = address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+  const mapsQuery = [address, colony].filter(Boolean).join(", ");
+  const mapsUrl = mapsQuery
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`
     : "";
 
   async function copy(value: string, success: string) {
@@ -452,6 +454,9 @@ function OrderContext({
         <p className="mt-2 font-body text-xs leading-relaxed text-cream">
           {address || "Domicilio pendiente"}
         </p>
+        <p className={`mt-1 font-heading text-xs font-bold ${colony ? "text-gold" : "text-warning"}`}>
+          🏘️ Colonia: {colony || "⚠️ No registrada"}
+        </p>
         {reference ? (
           <p className="mt-1 font-body text-xs text-muted-foreground">Referencia: {reference}</p>
         ) : null}
@@ -473,7 +478,7 @@ function OrderContext({
               type="button"
               variant="outline"
               className="h-11 gap-2"
-              onClick={() => void copy([address, reference].filter(Boolean).join(", "), "Dirección copiada")}
+              onClick={() => void copy([address, colony ? `Col. ${colony}` : "", reference].filter(Boolean).join(", "), "Dirección copiada")}
             >
               <Copy aria-hidden size={14} />
               Copiar

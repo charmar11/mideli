@@ -1,4 +1,5 @@
 import {
+  conversationMenuCategories,
   findCatalogProducts,
   findCatalogProductsInCategory,
   matchItemModifiers,
@@ -32,6 +33,7 @@ import type {
 } from "./types";
 
 const DEFAULT_PAGE_SIZE = 5;
+const CATEGORY_PAGE_SIZE = 8;
 
 const CATEGORY_EMOJIS = [
   { terms: ["hamburguesa", "burger"], emoji: "🍔" },
@@ -186,6 +188,34 @@ function lineDescription(line: ConversationCartLine) {
   return `${line.quantity} ${displayName} · $${finalUnitPrice} c/u${extras}${note}`;
 }
 
+function summaryLineDescription(line: ConversationCartLine) {
+  const descriptiveVariants = descriptiveVariantModifiers(line);
+  const displayName = descriptiveVariants.length > 0
+    ? `${line.name} de ${descriptiveVariants.map((modifier) => modifier.optionName).join(" y ")}`
+    : line.name;
+  const modifiers = line.selectedModifiers
+    .filter((modifier) => !descriptiveVariants.includes(modifier))
+    .map((modifier) =>
+      modifier.price > 0
+        ? `${modifier.optionName} +$${modifier.price}`
+        : modifier.optionName
+    );
+  const modifiersTotal = line.selectedModifiers.reduce(
+    (total, modifier) => total + modifier.price,
+    0
+  );
+  const finalUnitPrice = line.unitPrice + modifiersTotal;
+  const basePrice = line.quantity > 1 ? ` · $${line.unitPrice} c/u` : ` · $${line.unitPrice}`;
+  const extras = modifiers.length > 0
+    ? `\n  Extras${line.quantity > 1 ? " por unidad" : ""}: ${modifiers.join(", ")}`
+    : "";
+  const total = modifiers.length > 0 || line.quantity > 1
+    ? `\n  Total de ${line.quantity > 1 ? "estos productos" : "este producto"}: $${finalUnitPrice * line.quantity}`
+    : "";
+  const note = line.notes.trim() ? `\n  Indicación: ${line.notes.trim()}` : "";
+  return `${line.quantity} × ${displayName}${basePrice}${extras}${total}${note}`;
+}
+
 function cartBreakdown(cart: ConversationCartLine[]) {
   return groupedCartLines(cart)
     .map((line) => `• ${lineDescription(line)}`)
@@ -292,6 +322,30 @@ export function recoverDeliveryQuote(
       { ...state, stage: "handoff", deliveryQuoteAttempts: attempts },
       "📍 Ese domicilio necesita una revisión especial de cobertura. Ya lo pasé al equipo para ayudarte con la mejor opción 😊",
       "handoff"
+    );
+  }
+  if (reason === "colony_missing") {
+    if (attempts >= 3) {
+      return result(
+        { ...state, stage: "handoff", deliveryQuoteAttempts: attempts },
+        "📍 No pude identificar la colonia con seguridad. Ya compartí tu domicilio con el equipo para que confirme el envío contigo 😊",
+        "handoff"
+      );
+    }
+    return result(
+      {
+        ...state,
+        stage: "awaiting_address",
+        address: null,
+        addressReference: "",
+        addressReferenceCollected: true,
+        addressSource: null,
+        addressConfirmed: false,
+        deliveryQuote: null,
+        pendingDeliveryQuote: null,
+        deliveryQuoteAttempts: attempts,
+      },
+      "📍 No pude ubicar la colonia con seguridad. Envíame en un solo mensaje la calle, número y colonia, o el nombre de la plaza/parque con la ciudad. También puedes compartir tu ubicación desde WhatsApp 😊"
     );
   }
   if (
@@ -451,6 +505,26 @@ function requestsNewOrder(text: string) {
   return ["hola", "nuevo pedido", "otra orden", "quiero pedir de nuevo"].some(
     (phrase) => text === phrase || includesPhrase(text, phrase)
   );
+}
+
+export function isBotRestartMessage(value: string) {
+  const text = normalizeText(customerReplyText(value));
+  return (
+    text === "cmd:start" ||
+    text === "cmd:menu" ||
+    text === "hacer pedido" ||
+    text === "ver menu" ||
+    text === "menu" ||
+    requestsNewOrder(text)
+  );
+}
+
+export function canResumeBotAfterHandoff(
+  state: ConversationState,
+  assignedTo: string | null,
+  message: string
+) {
+  return state.stage === "handoff" && !assignedTo && isBotRestartMessage(message);
 }
 
 function itemForLine(line: ConversationCartLine, catalog: ConversationCatalog) {
@@ -746,11 +820,13 @@ function finishModifierSelection(
 }
 
 function cartSummary(state: ConversationState) {
-  const lines = cartBreakdown(state.cart);
+  const lines = groupedCartLines(state.cart)
+    .map((line) => `• ${summaryLineDescription(line)}`)
+    .join("\n");
   const subtotal = itemsSubtotal(state.cart);
   const fulfillment =
     state.serviceType === "domicilio"
-      ? `\n📍 ${state.address}${state.addressReference ? `, ${state.addressReference}` : ""}\nEnvío: $${state.deliveryQuote?.totalFee ?? 0}`
+      ? `\n📍 Entrega a:\n${state.address}${state.addressReference ? `, ${state.addressReference}` : ""}\n🏘️ Colonia: ${state.deliveryQuote?.colony || "⚠️ Por confirmar"}\nCosto de envío: $${state.deliveryQuote?.totalFee ?? 0}`
       : "\nPara recoger en Mideli";
   const payment = state.payment ? `\nPago: ${state.payment.method}` : "";
   const orderNotes = state.orderNotes.trim()
@@ -762,7 +838,7 @@ function cartSummary(state: ConversationState) {
   const schedule = state.scheduledForLabel
     ? `\n🕒 Programado para *hoy a las ${state.scheduledForLabel}*`
     : "";
-  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal: *$${subtotal}*${fulfillment}${schedule}${orderNotes}${deliveryNotes}${payment}\n*Total: $${state.total}*\n\n¿Confirmas el pedido? 😊\nSi necesitas agregar una indicación, puedes escribirla antes de confirmar.`;
+  return `🧾 *Resumen de tu pedido*\n\n${lines}\n\nSubtotal de productos: *$${subtotal}*${fulfillment}${schedule}${orderNotes}${deliveryNotes}${payment}\n*Total a pagar: $${state.total}*\n\n¿Confirmas el pedido? 😊\nSi necesitas agregar una indicación, puedes escribirla antes de confirmar.`;
 }
 
 function appendNote(existing: string, note: string) {
@@ -1051,19 +1127,10 @@ export function hydrateConversation(
   };
 }
 
-function foodCategories(catalog: ConversationCatalog) {
-  const ids = new Set(
-    catalog.items
-      .filter((item) => !item.isBeverage && !item.isAlcoholic)
-      .map((item) => item.categoryId)
-  );
-  return catalog.categories.filter((category) => ids.has(category.id));
-}
-
 function categoryMessage(catalog: ConversationCatalog, page: number) {
-  const categories = foodCategories(catalog);
-  const start = Math.max(0, page) * DEFAULT_PAGE_SIZE;
-  const visible = categories.slice(start, start + DEFAULT_PAGE_SIZE);
+  const categories = conversationMenuCategories(catalog);
+  const start = Math.max(0, page) * CATEGORY_PAGE_SIZE;
+  const visible = categories.slice(start, start + CATEGORY_PAGE_SIZE);
   if (visible.length === 0) return "No hay más categorías disponibles. Escribe volver para regresar.";
   const lines = visible
     .map((category, index) => `${index + 1}. ${categoryEmoji(category.name)} *${category.name}*`)
@@ -1079,7 +1146,9 @@ function catalogItemsForSelection(state: ConversationState, catalog: Conversatio
   if (state.selectedCategoryId === "__alcohol__") {
     return catalog.items.filter((item) => item.isAlcoholic);
   }
-  return catalog.items.filter((item) => item.categoryId === state.selectedCategoryId);
+  return catalog.items.filter(
+    (item) => item.categoryId === state.selectedCategoryId && !item.isAlcoholic
+  );
 }
 
 function productMessage(state: ConversationState, catalog: ConversationCatalog) {
@@ -1091,7 +1160,7 @@ function productMessage(state: ConversationState, catalog: ConversationCatalog) 
   const categoryName = state.selectedCategoryId === "__beverages__"
     ? "Bebidas"
     : state.selectedCategoryId === "__alcohol__"
-      ? "Cervezas"
+      ? "Cheve"
       : selectedCategory?.name ?? visible[0]?.categoryName ?? "Menú";
   const lines = visible
     .map((item, index) => {
@@ -1147,7 +1216,7 @@ function catalogQuestionReply(
 }
 
 function categoryFromText(text: string, catalog: ConversationCatalog) {
-  return foodCategories(catalog)
+  return conversationMenuCategories(catalog)
     .flatMap((category) =>
       categoryAliases(category.name).flatMap((alias) => {
         const index = ` ${text} `.lastIndexOf(` ${alias} `);
@@ -1636,7 +1705,7 @@ function handleBrowsingCatalog(
 
   const categoryId = commandValue(raw, "category:");
   if (categoryId) {
-    const category = foodCategories(catalog).find((candidate) => candidate.id === categoryId);
+    const category = conversationMenuCategories(catalog).find((candidate) => candidate.id === categoryId);
     if (!category) {
       return result(
         { ...state, selectedCategoryId: null, catalogPage: 0 },
@@ -1725,7 +1794,7 @@ function handleBrowsingCatalog(
       if (item) return addMatches(state, findCatalogProducts(item.name, catalog), catalog);
     } else {
       const start = state.catalogPage * DEFAULT_PAGE_SIZE;
-      const category = foodCategories(catalog).slice(start, start + DEFAULT_PAGE_SIZE)[numeric - 1];
+      const category = conversationMenuCategories(catalog).slice(start, start + CATEGORY_PAGE_SIZE)[numeric - 1];
       if (category) {
         const next = { ...state, selectedCategoryId: category.id, catalogPage: 0 };
         return result(next, productMessage(next, catalog));
@@ -1744,7 +1813,7 @@ function handleBrowsingCatalog(
 function deliveryAddressPrompt(state: ConversationState) {
   return state.savedAddress
     ? `📍 ¿Usamos tu domicilio anterior?\n${state.savedAddress.address}`
-    : "📍 Escribe la dirección con calle, número y colonia, o comparte tu ubicación desde WhatsApp.";
+    : "📍 Para el domicilio, envíame en un solo mensaje la calle, número y colonia. Si es una plaza, parque o punto conocido, escribe su nombre y la ciudad. También puedes compartir tu ubicación desde WhatsApp.";
 }
 
 function continueAfterBeverages(state: ConversationState) {
@@ -2139,38 +2208,27 @@ function handleAddress(state: ConversationState, message: string) {
   if (state.savedAddress && isNegative(text)) {
     return result(
       { ...state, savedAddress: null },
-      "Perfecto. Escribe la nueva dirección: calle, número y colonia, o comparte tu ubicación."
+      "Perfecto. Envíame en un solo mensaje la calle, número y colonia, o el nombre de la plaza/parque con la ciudad. También puedes compartir tu ubicación."
     );
   }
   if (text.length < 8) {
     return result(state, "Necesito una dirección un poco más completa para evitar retrasos.");
   }
-  if (state.addressReferenceCollected) {
-    return result(
-      {
-        ...state,
-        address: message.trim(),
-        addressSource: state.addressSource === "shared_location" ? "shared_location" : "text",
-        addressConfirmed: false,
-        pendingDeliveryQuote: null,
-        stage: "awaiting_delivery_quote",
-      },
-      "🛵 Estoy validando el domicilio corregido y calculando el envío 😊",
-      "request_delivery_quote"
-    );
-  }
   return result(
     {
       ...state,
       address: message.trim(),
-      addressReference: "",
-      addressReferenceCollected: false,
+      addressReference: state.addressReference,
+      // La calle, el número, la colonia o el punto conocido se procesan en
+      // una sola consulta. La referencia queda como dato opcional.
+      addressReferenceCollected: true,
       addressSource: state.addressSource === "shared_location" ? "shared_location" : "text",
       addressConfirmed: false,
       pendingDeliveryQuote: null,
-      stage: "awaiting_address_reference",
+      stage: "awaiting_delivery_quote",
     },
-    "🏠 ¿Hay alguna referencia que ayude a encontrar el domicilio? Si no, escribe *omitir*."
+    "🛵 Estoy ubicando tu domicilio y calculando el envío. Dame un momento 😊",
+    "request_delivery_quote"
   );
 }
 
@@ -3019,7 +3077,10 @@ function interactiveCommandAllowed(state: ConversationState, command: string) {
     return !["handoff", "confirmed", "cancelled"].includes(state.stage);
   }
   if (command === "cmd:start") {
-    return ["ordering", "confirmed", "cancelled"].includes(state.stage);
+    return (
+      (state.stage === "ordering" && state.cart.length === 0) ||
+      ["confirmed", "cancelled"].includes(state.stage)
+    );
   }
   if (command === "cmd:menu" || command === "cart:add") {
     return ["ordering", "browsing_catalog"].includes(state.stage);
@@ -3093,7 +3154,8 @@ function currentStepReply(state: ConversationState, catalog: ConversationCatalog
   }
   if (state.stage === "awaiting_address_confirmation") {
     const address = state.pendingDeliveryQuote?.formattedAddress ?? state.address ?? "el domicilio encontrado";
-    return `📍 *Encontré este domicilio:*\n${address}\n\n¿Es aquí? Responde *sí* o envía otra dirección o ubicación.`;
+    const colony = state.pendingDeliveryQuote?.colony || "Por confirmar";
+    return `📍 *Encontré este domicilio:*\n${address}\n🏘️ *Colonia:* ${colony}\n\n¿Es aquí? Responde *sí* o envía otra dirección o ubicación.`;
   }
   if (state.stage === "awaiting_payment") return paymentQuestion(state);
   if (state.stage === "awaiting_cash_tendered") {
@@ -3142,6 +3204,19 @@ export function handleConversationMessage(
   if (isKnownInteractiveCommand(command) && !interactiveCommandAllowed(state, command)) {
     return result(state, currentStepReply(state, catalog));
   }
+  if (command === "cmd:start") {
+    const startingState = ["confirmed", "cancelled"].includes(state.stage)
+      ? createConversation(state.phone)
+      : state;
+    const next: ConversationState = {
+      ...startingState,
+      stage: "browsing_catalog",
+      selectedCategoryId: null,
+      catalogPage: 0,
+      ambiguityCount: 0,
+    };
+    return result(next, categoryMessage(catalog, 0));
+  }
   if (command === "cmd:menu" || command === "cart:add") {
     const next: ConversationState = {
       ...state,
@@ -3189,10 +3264,6 @@ export function handleConversationMessage(
     return result(next, cartUpdatedReply(next));
   }
   if (command === "cart:finish") message = "sería todo";
-  if (command === "cmd:start" && ["confirmed", "cancelled"].includes(state.stage)) {
-    return handleOrdering(createConversation(state.phone), "hola", catalog);
-  }
-
   const effectiveMessage = semanticMessageForCommand(message);
   const text = normalizeText(effectiveMessage);
 
