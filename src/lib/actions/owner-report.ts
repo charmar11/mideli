@@ -8,6 +8,7 @@ import {
   isOwnerReportEmailEnabled,
   OWNER_REPORT_EMAIL_DISABLED_MESSAGE,
 } from "@/lib/owner-report/feature";
+import { getSelectedBusinessContext } from "@/lib/server/selected-business";
 import { createClient } from "@/lib/supabase/server";
 
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -37,7 +38,11 @@ async function requireReportAdmin() {
 
 export async function fetchOwnerControl(period: AnalyticsPeriod) {
   const { supabase } = await requireReportAdmin();
-  return fetchOwnerOperationalData(supabase, period);
+  const businessContext = await getSelectedBusinessContext(supabase);
+  if (businessContext.multibusinessAvailable && !businessContext.businessId) {
+    throw new Error("No hay un negocio disponible para esta cuenta.");
+  }
+  return fetchOwnerOperationalData(supabase, period, businessContext.businessId);
 }
 
 export async function updateOwnerReportSettings(input: {

@@ -274,3 +274,12 @@
   conserva el fallback histórico mientras no existan las migraciones nuevas.
 - La migración y su prueba pgTAP pasan la verificación local de lint, build y
   `db push --linked --dry-run`. Aún no se aplican al proyecto productivo.
+- El centro de control de Analíticas y el reporte diario ahora reciben el
+  `business_id` seleccionado. Caja, inventario, menú, mermas, recetas, cocina,
+  ventas, cancelaciones, pagos y cuentas abiertas ya se filtran por negocio;
+  el cron identifica explícitamente a Mideli cuando la fundación está activa y
+  conserva el modo anterior si todavía no existe.
+- La configuración del correo y el registro de ejecuciones siguen siendo
+  globales de transición. No mezclan ventas, pero su separación por dueño se
+  mantiene como una rebanada posterior antes de habilitar reportes para otro
+  negocio.

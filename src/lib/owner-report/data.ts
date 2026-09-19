@@ -134,10 +134,68 @@ export function previousHermosilloDateKey(now = new Date()): string {
 
 export async function fetchOwnerOperationalData(
   supabase: SupabaseClient,
-  period: AnalyticsPeriod
+  period: AnalyticsPeriod,
+  businessId?: string | null
 ): Promise<OwnerOperationalData> {
   const start = queryTimestamp(period.from, "start");
   const end = queryTimestamp(period.to, "end");
+
+  let cashQuery = supabase
+    .from("cash_shifts")
+    .select("expected_cash,counted_cash,difference,archived_at")
+    .eq("status", "closed")
+    .gte("closed_at", start)
+    .lte("closed_at", end);
+  const kitchenQuery = businessId
+    ? supabase
+        .from("order_status_log")
+        .select("order_id,to_status,created_at,orders!inner(business_id)")
+        .eq("orders.business_id", businessId)
+        .in("to_status", ["in_kitchen", "ready"])
+        .gte("created_at", start)
+        .lte("created_at", end)
+        .order("created_at", { ascending: true })
+    : supabase
+        .from("order_status_log")
+        .select("order_id,to_status,created_at")
+        .in("to_status", ["in_kitchen", "ready"])
+        .gte("created_at", start)
+        .lte("created_at", end)
+        .order("created_at", { ascending: true });
+  let inventoryQuery = supabase
+    .from("inventory_items")
+    .select("id,name,current_stock,minimum_stock,cost_per_unit")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  let movementsQuery = supabase
+    .from("inventory_movements")
+    .select("inventory_item_id,quantity_change,unit_cost_snapshot")
+    .in("movement_type", ["waste", "internal_use", "damage", "expired"])
+    .gte("created_at", start)
+    .lte("created_at", end);
+  let menuQuery = supabase
+    .from("menu_items")
+    .select("id,name,price")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  let recipesQuery = supabase
+    .from("inventory_recipes")
+    .select("menu_item_id,quantity,modifier_option_id,inventory_items(cost_per_unit)");
+  let soldOrdersQuery = supabase
+    .from("orders")
+    .select("id,order_items(menu_item_id)")
+    .eq("payment_status", "paid")
+    .gte("paid_at", start)
+    .lte("paid_at", end);
+
+  if (businessId) {
+    cashQuery = cashQuery.eq("business_id", businessId);
+    inventoryQuery = inventoryQuery.eq("business_id", businessId);
+    movementsQuery = movementsQuery.eq("business_id", businessId);
+    menuQuery = menuQuery.eq("business_id", businessId);
+    recipesQuery = recipesQuery.eq("business_id", businessId);
+    soldOrdersQuery = soldOrdersQuery.eq("business_id", businessId);
+  }
 
   const [
     cashResult,
@@ -150,44 +208,13 @@ export async function fetchOwnerOperationalData(
     settingsResult,
     lastRunResult,
   ] = await Promise.all([
-    supabase
-      .from("cash_shifts")
-      .select("expected_cash,counted_cash,difference,archived_at")
-      .eq("status", "closed")
-      .gte("closed_at", start)
-      .lte("closed_at", end),
-    supabase
-      .from("order_status_log")
-      .select("order_id,to_status,created_at")
-      .in("to_status", ["in_kitchen", "ready"])
-      .gte("created_at", start)
-      .lte("created_at", end)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("inventory_items")
-      .select("id,name,current_stock,minimum_stock,cost_per_unit")
-      .eq("is_active", true)
-      .order("name", { ascending: true }),
-    supabase
-      .from("inventory_movements")
-      .select("inventory_item_id,quantity_change,unit_cost_snapshot")
-      .in("movement_type", ["waste", "internal_use", "damage", "expired"])
-      .gte("created_at", start)
-      .lte("created_at", end),
-    supabase
-      .from("menu_items")
-      .select("id,name,price")
-      .eq("is_active", true)
-      .order("name", { ascending: true }),
-    supabase
-      .from("inventory_recipes")
-      .select("menu_item_id,quantity,modifier_option_id,inventory_items(cost_per_unit)"),
-    supabase
-      .from("orders")
-      .select("id,order_items(menu_item_id)")
-      .eq("payment_status", "paid")
-      .gte("paid_at", start)
-      .lte("paid_at", end),
+    cashQuery,
+    kitchenQuery,
+    inventoryQuery,
+    movementsQuery,
+    menuQuery,
+    recipesQuery,
+    soldOrdersQuery,
     supabase
       .from("owner_report_settings")
       .select("enabled,recipient_email")
@@ -368,39 +395,47 @@ export async function fetchOwnerOperationalData(
 
 export async function fetchOwnerDailySalesData(
   supabase: SupabaseClient,
-  reportDate: string
+  reportDate: string,
+  businessId?: string | null
 ): Promise<OwnerDailySalesData> {
   const start = queryTimestamp(reportDate, "start");
   const end = queryTimestamp(reportDate, "end");
 
+  let paymentsQuery = supabase
+    .from("payment_transactions")
+    .select(
+      "id,status,subtotal_amount,discount_amount,tip_amount,payment_tenders(method,amount)"
+    )
+    .gte("created_at", start)
+    .lte("created_at", end);
+  let paidOrdersQuery = supabase
+    .from("orders")
+    .select(
+      "id,order_items(menu_item_id,quantity,unit_price,menu_items(name))"
+    )
+    .eq("payment_status", "paid")
+    .gte("paid_at", start)
+    .lte("paid_at", end);
+  let cancelledQuery = supabase
+    .from("orders")
+    .select("id")
+    .eq("status", "cancelled")
+    .gte("created_at", start)
+    .lte("created_at", end);
+  let openQuery = supabase
+    .from("orders")
+    .select("total,paid_amount")
+    .in("status", ["pending", "in_kitchen", "ready", "served"]);
+
+  if (businessId) {
+    paymentsQuery = paymentsQuery.eq("business_id", businessId);
+    paidOrdersQuery = paidOrdersQuery.eq("business_id", businessId);
+    cancelledQuery = cancelledQuery.eq("business_id", businessId);
+    openQuery = openQuery.eq("business_id", businessId);
+  }
+
   const [paymentsResult, paidOrdersResult, cancelledResult, openResult] =
-    await Promise.all([
-      supabase
-        .from("payment_transactions")
-        .select(
-          "id,status,subtotal_amount,discount_amount,tip_amount,payment_tenders(method,amount)"
-        )
-        .gte("created_at", start)
-        .lte("created_at", end),
-      supabase
-        .from("orders")
-        .select(
-          "id,order_items(menu_item_id,quantity,unit_price,menu_items(name))"
-        )
-        .eq("payment_status", "paid")
-        .gte("paid_at", start)
-        .lte("paid_at", end),
-      supabase
-        .from("orders")
-        .select("id")
-        .eq("status", "cancelled")
-        .gte("created_at", start)
-        .lte("created_at", end),
-      supabase
-        .from("orders")
-        .select("total,paid_amount")
-        .in("status", ["pending", "in_kitchen", "ready", "served"]),
-    ]);
+    await Promise.all([paymentsQuery, paidOrdersQuery, cancelledQuery, openQuery]);
 
   const error = firstError([
     paymentsResult,

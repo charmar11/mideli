@@ -28,11 +28,47 @@ function dayPeriod(date: string) {
   return { view: "dia" as const, from: date, to: date };
 }
 
+interface ReportBusinessContext {
+  businessId: string | null;
+  multibusinessAvailable: boolean;
+}
+
+function isMissingMultibusinessSchema(error: { code?: string | null } | null) {
+  return Boolean(
+    error?.code &&
+      new Set(["PGRST202", "PGRST205", "42883", "42P01"]).has(error.code)
+  );
+}
+
+async function resolveReportBusinessContext(
+  supabase: ReturnType<typeof createAdminClient>
+): Promise<ReportBusinessContext> {
+  const result = await supabase
+    .from("businesses")
+    .select("id")
+    .eq("slug", "mideli")
+    .maybeSingle();
+  if (result.error) {
+    if (isMissingMultibusinessSchema(result.error)) {
+      return { businessId: null, multibusinessAvailable: false };
+    }
+    throw result.error;
+  }
+  return {
+    businessId: result.data?.id ?? null,
+    multibusinessAvailable: true,
+  };
+}
+
 async function prepareReportData(reportDate: string) {
   const supabase = createAdminClient();
+  const businessContext = await resolveReportBusinessContext(supabase);
+  if (businessContext.multibusinessAvailable && !businessContext.businessId) {
+    throw new Error("Mideli todavía no está asociado a un negocio.");
+  }
   const [sales, operation] = await Promise.all([
-    fetchOwnerDailySalesData(supabase, reportDate),
-    fetchOwnerOperationalData(supabase, dayPeriod(reportDate)),
+    fetchOwnerDailySalesData(supabase, reportDate, businessContext.businessId),
+    fetchOwnerOperationalData(supabase, dayPeriod(reportDate), businessContext.businessId),
   ]);
   return { sales, operation };
 }

@@ -457,6 +457,11 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   Estado usan la pasarela y el filtro del negocio seleccionado, con fallback
   histórico mientras la fundación no exista en remoto. Esta migración aún no se
   ha aplicado a producción.
+- Analíticas y el reporte diario también reciben el negocio seleccionado para
+  filtrar caja, inventario, menú, cocina, ventas, pagos, cancelaciones y cuentas
+  abiertas. El cron usa el negocio canónico `mideli` cuando la fundación existe;
+  la configuración del correo y sus ejecuciones siguen globales de transición
+  hasta diseñar su separación por dueño.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 
