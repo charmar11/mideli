@@ -383,3 +383,18 @@
 - `npx supabase db push --linked --dry-run` confirmó que las migraciones
   multinegocio están listas para revisión, pero no se aplicó ninguna a
   producción. Tampoco se hizo deploy de esta etapa.
+
+## 2026-09-19: cierre de navegación por alcance real
+
+- Se corrigió un hueco de coherencia: una cuenta no administradora con una
+  membresía inactiva o sin negocio visible podía conservar los enlaces de
+  Mesero, Cocina o WhatsApp por el rol histórico, aunque las consultas de
+  negocio ya no le devolvieran datos.
+- Cuando `get_my_multibusiness_context()` existe, el proxy y el layout usan
+  únicamente las capacidades evaluadas para la sesión. WhatsApp además exige
+  que Mideli esté visible, porque el canal sigue siendo exclusivo de Mideli.
+- Si el contexto existe pero falla o no otorga acceso, la ruta se cierra de
+  forma segura y la sesión vuelve a login con `reason=scope`. El fallback por
+  rol se conserva solo para bases antiguas donde la función todavía no existe.
+- La corrección pasó lint, build y `git diff --check`. No cambia el esquema,
+  no aplica migraciones remotas y no requiere deploy para validar la frontera.

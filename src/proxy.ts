@@ -9,7 +9,14 @@ const adminRoutes = ["/menu", "/settings"];
 const ROLE_HEADER = "x-mideli-role";
 const USER_NAME_HEADER = "x-mideli-user-name";
 const CAPABILITIES_HEADER = "x-mideli-capabilities";
+const MULTIBUSINESS_CONTEXT_HEADER = "x-mideli-multibusiness-context";
+const WHATSAPP_ACCESS_HEADER = "x-mideli-whatsapp-access";
 const SESSION_RECOVERY_ROUTE = "/reconectando";
+const MISSING_MULTIBUSINESS_CONTEXT_CODES = new Set([
+  "PGRST202",
+  "42883",
+  "42P01",
+]);
 
 function getRoleHome(role: string) {
   return role === "kitchen" ? "/dashboard/cocina" : "/dashboard/mesero";
@@ -121,6 +128,8 @@ export async function proxy(request: NextRequest) {
   requestHeaders.delete(ROLE_HEADER);
   requestHeaders.delete(USER_NAME_HEADER);
   requestHeaders.delete(CAPABILITIES_HEADER);
+  requestHeaders.delete(MULTIBUSINESS_CONTEXT_HEADER);
+  requestHeaders.delete(WHATSAPP_ACCESS_HEADER);
 
   let cookiesToSet: Array<{
     name: string;
@@ -195,6 +204,11 @@ export async function proxy(request: NextRequest) {
     return redirectWithAuth(`${url.pathname}${url.search}`);
   };
 
+  const redirectWithoutScopedAccess = async () => {
+    await supabase.auth.signOut();
+    return redirectWithAuth("/login", "scope");
+  };
+
   if (
     (isProtected || isLicenseBlockedRoute || isSessionRecovery) &&
     !userId &&
@@ -233,6 +247,8 @@ export async function proxy(request: NextRequest) {
     full_name: string | null;
   } | null = null;
   let multibusinessCapabilities: string[] = [];
+  let multibusinessContextAvailable = false;
+  let mideliBusinessVisible = false;
 
   if ((isProtected || isSessionRecovery) && userId) {
     let profileResult = await supabase
@@ -281,11 +297,32 @@ export async function proxy(request: NextRequest) {
         "get_my_multibusiness_context"
       );
       if (!contextError) {
+        multibusinessContextAvailable = true;
+        const contexts = (contextRows ?? []) as BusinessContextRow[];
+        mideliBusinessVisible = contexts.some(
+          (context) => context.business_slug === "mideli"
+        );
         multibusinessCapabilities = resolveScopedCapabilities(
           request,
-          (contextRows ?? []) as BusinessContextRow[]
+          contexts
         );
+      } else if (
+        !MISSING_MULTIBUSINESS_CONTEXT_CODES.has(contextError.code ?? "")
+      ) {
+        // If the boundary exists but cannot be evaluated, fail closed for
+        // scoped staff instead of silently restoring the old role access.
+        multibusinessContextAvailable = true;
       }
+    }
+    if (multibusinessContextAvailable) {
+      requestHeaders.set(MULTIBUSINESS_CONTEXT_HEADER, "available");
+      requestHeaders.set(
+        WHATSAPP_ACCESS_HEADER,
+        mideliBusinessVisible &&
+          (profile.role === "waiter" || profile.role === "supervisor")
+          ? "true"
+          : "false"
+      );
     }
     if (multibusinessCapabilities.length > 0) {
       requestHeaders.set(
@@ -327,26 +364,41 @@ export async function proxy(request: NextRequest) {
     if (
       isPosRoute &&
       !(
-        canUsePos(profile.role) ||
+        (!multibusinessContextAvailable && canUsePos(profile.role)) ||
         hasCapability(multibusinessCapabilities, "business.operate_orders") ||
         hasCapability(multibusinessCapabilities, "organization.operate_orders")
       )
     ) {
-      return redirectWithAuth(getRoleHome(profile.role));
+      return multibusinessContextAvailable
+        ? redirectWithoutScopedAccess()
+        : redirectWithAuth(getRoleHome(profile.role));
     }
 
     if (
       isKitchenRoute &&
       !(
-        canUseKitchen(profile.role) ||
+        (!multibusinessContextAvailable && canUseKitchen(profile.role)) ||
         hasCapability(multibusinessCapabilities, "business.update_preparation")
       )
     ) {
-      return redirectWithAuth(getRoleHome(profile.role));
+      return multibusinessContextAvailable
+        ? redirectWithoutScopedAccess()
+        : redirectWithAuth(getRoleHome(profile.role));
     }
 
-    if (isWhatsappRoute && !canUseWhatsapp(profile.role)) {
-      return redirectWithAuth(getRoleHome(profile.role));
+    if (
+      isWhatsappRoute &&
+      !(
+        multibusinessContextAvailable
+          ? isAdminRole(profile.role) ||
+            (mideliBusinessVisible &&
+              (profile.role === "waiter" || profile.role === "supervisor"))
+          : canUseWhatsapp(profile.role)
+      )
+    ) {
+      return multibusinessContextAvailable
+        ? redirectWithoutScopedAccess()
+        : redirectWithAuth(getRoleHome(profile.role));
     }
   }
 

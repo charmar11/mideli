@@ -495,9 +495,12 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   partir de la membresía real y la cookie solo funciona como pista; el proxy
   publica capacidades efímeras hacia el layout para mostrar y proteger Menú,
   Personal, Mesas, Caja, Inventario, POS y Cocina. Si la función de contexto
-  todavía no existe, se conserva el fallback histórico de Mideli. WhatsApp y
-  Analíticas permanecen con sus reglas heredadas porque WhatsApp sigue siendo
-  exclusivo de Mideli y las analíticas aún no tienen una capacidad separada.
+  todavía no existe, se conserva el fallback histórico de Mideli. Cuando la
+  función existe, una cuenta no administradora sin contexto o con un error de
+  evaluación queda bloqueada, en vez de recuperar permisos por su rol legado.
+  WhatsApp mantiene su alcance exclusivo de Mideli y solo se publica para una
+  membresía visible de Mideli; Analíticas conserva su regla heredada porque
+  todavía no tiene una capacidad separada.
 
 ### Auditoría de cierre de la primera rebanada
 
@@ -521,6 +524,12 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   flujo final para administrar sus propias credenciales. Para crear esa cuenta
   faltan nombre, correo real y decisión explícita sobre el acceso de plataforma;
   no se deben inventar esos datos.
+- La navegación multinegocio también quedó cerrada contra el fallback de rol:
+  `src/proxy.ts` y `DashboardShell` usan el contexto real para autorizar y
+  mostrar POS, Cocina y WhatsApp. Si el contexto existe pero no otorga acceso,
+  la sesión se cierra y vuelve al login con una razón técnica, evitando bucles
+  entre `/dashboard` y una vista sin permisos. El fallback por rol queda solo
+  para instalaciones antiguas donde todavía no existe la función de contexto.
 
 La auditoría remota del 2026-09-19 confirmó que el esquema y las migraciones siguen siendo de un solo negocio. También detectó funciones privilegiadas y políticas RLS que deben endurecerse antes de crear un segundo negocio. Esto es un requisito de implementación futura, no un cambio aplicado en esta sesión.
 

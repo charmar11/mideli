@@ -458,6 +458,8 @@ interface DashboardShellProps {
   userName: string;
   userRole: Profile["role"];
   capabilities?: string[];
+  multibusinessContextAvailable?: boolean;
+  whatsappAccess?: boolean;
 }
 
 export function DashboardShell({
@@ -465,6 +467,8 @@ export function DashboardShell({
   userName,
   userRole,
   capabilities = [],
+  multibusinessContextAvailable = false,
+  whatsappAccess = false,
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -473,17 +477,20 @@ export function DashboardShell({
   const hasCapability = (capability: string) => capabilities.includes(capability);
   const canUsePos =
     isAdmin ||
-    userRole === "waiter" ||
-    userRole === "supervisor" ||
+    (!multibusinessContextAvailable &&
+      (userRole === "waiter" || userRole === "supervisor")) ||
     hasCapability("business.operate_orders") ||
     hasCapability("organization.operate_orders");
   const canUseKitchen =
     isAdmin ||
-    userRole === "kitchen" ||
-    userRole === "supervisor" ||
+    (!multibusinessContextAvailable &&
+      (userRole === "kitchen" || userRole === "supervisor")) ||
     hasCapability("business.update_preparation");
   const canUseWhatsapp =
-    isAdmin || userRole === "waiter" || userRole === "supervisor";
+    isAdmin ||
+    (multibusinessContextAvailable
+      ? whatsappAccess
+      : userRole === "waiter" || userRole === "supervisor");
   const adminItems = ADMIN_ITEMS.filter((item) => {
     if (item.href === "/menu") {
       return isAdmin || hasCapability("business.manage_catalog");

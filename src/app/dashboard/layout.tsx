@@ -33,6 +33,10 @@ function decodeCapabilities(value: string | null) {
     .filter(Boolean);
 }
 
+function hasScopedMultibusinessContext(value: string | null) {
+  return value === "available";
+}
+
 export default async function DashboardLayout({
   children,
 }: Readonly<{
@@ -52,6 +56,10 @@ export default async function DashboardLayout({
       capabilities={decodeCapabilities(
         requestHeaders.get("x-mideli-capabilities")
       )}
+      multibusinessContextAvailable={hasScopedMultibusinessContext(
+        requestHeaders.get("x-mideli-multibusiness-context")
+      )}
+      whatsappAccess={requestHeaders.get("x-mideli-whatsapp-access") === "true"}
     >
       {children}
     </DashboardShell>
