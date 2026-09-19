@@ -2,7 +2,7 @@
 
 BEGIN;
 
-SELECT plan(20);
+SELECT plan(21);
 
 SELECT ok(
   to_regprocedure('public.create_business_staff_membership(uuid,uuid,text,boolean)') IS NOT NULL,
@@ -139,6 +139,16 @@ SELECT ok(
      WHERE oid = 'public.update_business_staff_membership_role(uuid,text)'::regprocedure
   ),
   'role changes replace capabilities and create an audit event'
+);
+SELECT ok(
+  (
+    SELECT prosrc LIKE '%target_membership%'
+      AND prosrc LIKE '%business.manage_staff%'
+      AND prosrc LIKE '%platform.manage_businesses%'
+      FROM pg_proc
+     WHERE oid = 'private.set_staff_authorization_pin(uuid,text)'::regprocedure
+  ),
+  'authorization PIN changes require a business or platform scope'
 );
 
 SELECT * FROM finish();

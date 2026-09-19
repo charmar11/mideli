@@ -7,8 +7,9 @@ procedimiento para futuras reversiones forward-only y para agregar negocios.
 
 ## Estado actual
 
-- Las migraciones `20260919082935` a `20260919134500` y la corrección de
-  privilegios `20260919200649` están aplicadas a producción.
+- Las migraciones `20260919082935` a `20260919134500`, la corrección de
+  privilegios `20260919200649` y la frontera de credenciales
+  `20260919202503` están aplicadas a producción.
 - La validación aislada se ejecuta en GitHub Actions con una base efímera de
   Supabase local.
 - WhatsApp conserva el alcance exclusivo de Mideli.

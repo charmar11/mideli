@@ -486,10 +486,12 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   auditadas; el navegador ya no puede insertar o actualizar membresías
   directamente. Las bajas son reversibles y las cuentas multinegocio no se
   eliminan para conservar historial. La pantalla `/settings` ya filtra la lista
-  por el alcance actual y adapta los roles visibles. La pantalla todavía usa
-  las acciones heredadas de dueño/admin para restablecer contraseñas y definir
-  PIN; ese acceso debe pasar por una política de membresía antes de entregar
-  la administración de credenciales a un Coordinador.
+  por el alcance actual y adapta los roles visibles. Restablecer contraseñas y
+  configurar PIN ahora exigen la membresía administrable del alcance actual en
+  `src/lib/actions/users.ts`; la función de PIN también lo valida en Supabase
+  mediante `20260919202503_multibusiness_scope_staff_credentials.sql`. El
+  Coordinador todavía requiere una política de credenciales propia antes de
+  recibir permisos de plataforma.
 - La autorización de navegación ya consume las capacidades del contexto
   multinegocio desde `src/proxy.ts`. El negocio seleccionado se resuelve a
   partir de la membresía real y la cookie solo funciona como pista; el proxy
@@ -509,7 +511,8 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   `35461058199`, incluyendo las migraciones y 260 checks pgTAP.
 - La versión compatible se publicó en producción en `mideli.vercel.app` y las
   migraciones `20260919082935` a `20260919134500`, más
-  `20260919200649_multibusiness_security_revoke_staff_anon.sql`, quedaron
+  `20260919200649_multibusiness_security_revoke_staff_anon.sql` y
+  `20260919202503_multibusiness_scope_staff_credentials.sql`, quedaron
   aplicadas en Supabase. `npx supabase db push --linked --dry-run` reporta
   `upToDate: true`.
 - El preflight remoto antes y después del corte conservó 214 pedidos, 215

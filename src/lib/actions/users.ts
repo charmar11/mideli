@@ -784,6 +784,37 @@ export async function resetUserPasswordAction(
   password: string
 ): Promise<ActionResult> {
   try {
+    const scope = await resolveStaffScope();
+
+    if (scope.mode === "unavailable") {
+      return { success: false, error: "No tienes un alcance de personal asignado" };
+    }
+
+    if (scope.mode === "business" || scope.mode === "organization") {
+      const membership = await findManagedMembership(scope, userId);
+      if (!membership) {
+        return {
+          success: false,
+          error: "No puedes cambiar la contraseña de una cuenta fuera de tu alcance",
+        };
+      }
+
+      if (password.length < 6) {
+        return {
+          success: false,
+          error: "La contraseña debe tener al menos 6 caracteres",
+        };
+      }
+
+      const { error } = await scope.adminClient.auth.admin.updateUserById(userId, {
+        password,
+      });
+
+      return error
+        ? { success: false, error: error.message }
+        : { success: true, error: null };
+    }
+
     const { currentRole, adminClient } = await requireAdmin();
     const { data: target, error: targetError } = await adminClient
       .from("profiles")
@@ -1105,13 +1136,26 @@ export async function setStaffAuthorizationPinAction(
   pin: string
 ): Promise<ActionResult> {
   try {
-    await requireAdmin();
+    const scope = await resolveStaffScope();
+    if (scope.mode === "unavailable") {
+      return { success: false, error: "No tienes un alcance de personal asignado" };
+    }
+
     if (!/^\d{4}$/.test(pin)) {
       return { success: false, error: "El PIN debe tener exactamente 4 dígitos" };
     }
 
-    const supabase = await createClient();
-    const { error } = await supabase.rpc("set_staff_authorization_pin", {
+    if (scope.mode === "business" || scope.mode === "organization") {
+      const membership = await findManagedMembership(scope, userId);
+      if (!membership) {
+        return {
+          success: false,
+          error: "No puedes cambiar el PIN de una cuenta fuera de tu alcance",
+        };
+      }
+    }
+
+    const { error } = await scope.supabase.rpc("set_staff_authorization_pin", {
       p_user_id: userId,
       p_pin: pin,
     });
