@@ -1,6 +1,6 @@
 # Mideli: contexto completo para OpenCode
 
-Actualizado: 2026-09-19
+Actualizado: 2026-09-20
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para cualquier agente de IA, no solo OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -362,7 +362,7 @@ Proyecto:
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
 - El repositorio local contiene las migraciones históricas y las rebanadas
-  multinegocio de septiembre, hasta `20260919205139_multibusiness_account_payment_runtime.sql`.
+  multinegocio de septiembre, hasta `20260920100000_multibusiness_rls_privilege_cleanup.sql`.
   `npx supabase migration list` confirmó que el repositorio y el proyecto
   remoto están alineados en esa migración el 2026-09-19.
 
@@ -519,6 +519,11 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   compartido, pero las políticas privadas continúan usando
   `private.multibusiness_can_view_business(uuid)`, que no considera ese permiso
   suficiente para leer menú, pedidos, inventario, caja o finanzas.
+- La migración `20260920100000_multibusiness_rls_privilege_cleanup.sql` restauró
+  el permiso `EXECUTE` de las funciones RLS que usan las lecturas por negocio y
+  retiró las políticas legacy abiertas que sobrevivieron a la migración inicial.
+  La verificación remota confirmó lecturas autenticadas de pedidos, pagos, caja,
+  inventario, historial e impresión, sin permisos equivalentes para `anon`.
 
 ### Auditoría de cierre de la primera rebanada
 
@@ -530,7 +535,8 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   `20260919200649_multibusiness_security_revoke_staff_anon.sql` y
   `20260919202503_multibusiness_scope_staff_credentials.sql` y
   `20260919203147_multibusiness_scope_visibility.sql` y
-  `20260919203953_multibusiness_context_metadata_scope.sql`, quedaron
+  `20260919203953_multibusiness_context_metadata_scope.sql` y
+  `20260920100000_multibusiness_rls_privilege_cleanup.sql`, quedaron
   aplicadas en Supabase. `npx supabase db push --linked --dry-run` reporta
   `upToDate: true`.
 - El preflight remoto antes y después del corte conservó 214 pedidos, 215
