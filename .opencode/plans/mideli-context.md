@@ -524,6 +524,10 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   retiró las políticas legacy abiertas que sobrevivieron a la migración inicial.
   La verificación remota confirmó lecturas autenticadas de pedidos, pagos, caja,
   inventario, historial e impresión, sin permisos equivalentes para `anon`.
+- La consulta de analíticas identifica explícitamente la relación compuesta
+  `menu_items_business_category_fkey` al leer categorías. Esto evita el error
+  `PGRST201` que aparece al conservar simultáneamente la relación histórica por
+  `category_id` y la relación delimitada por `business_id`.
 
 ### Auditoría de cierre de la primera rebanada
 

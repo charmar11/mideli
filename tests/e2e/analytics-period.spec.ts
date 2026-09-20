@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ANALYTICS_ORDER_SELECT } from "@/lib/analytics/query-select";
 import {
   getTodayKey,
   normalizePeriod,
@@ -39,4 +40,10 @@ test("el periodo compartido genera límites reutilizables para otras vistas", ()
     desde: "2026-08-31T00:00:00-07:00",
     hasta: "2026-09-06T23:59:59.999-07:00",
   });
+});
+
+test("analíticas usa la relación de categoría delimitada por negocio", () => {
+  expect(ANALYTICS_ORDER_SELECT).toContain(
+    "categories!menu_items_business_category_fkey (name)"
+  );
 });

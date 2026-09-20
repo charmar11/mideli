@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getSelectedBusinessContext } from "@/lib/server/selected-business";
+import { ANALYTICS_ORDER_SELECT } from "@/lib/analytics/query-select";
 import {
   addDays,
   getPreviousPeriod,
@@ -155,24 +156,6 @@ const SHORT_DAY = new Intl.DateTimeFormat("es-MX", {
 });
 
 const SHORT_MONTH = new Intl.DateTimeFormat("es-MX", { month: "short" });
-
-const ORDER_SELECT = `
-  id,
-  number,
-  type,
-  total,
-  payment_method,
-  paid_at,
-  order_items (
-    menu_item_id,
-    quantity,
-    unit_price,
-    menu_items (
-      name,
-      categories (name)
-    )
-  )
-`;
 
 function firstRelation<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
@@ -440,7 +423,7 @@ export async function fetchAnalytics({
 
   let currentQuery = supabase
     .from("orders")
-    .select(ORDER_SELECT)
+    .select(ANALYTICS_ORDER_SELECT)
     .eq("payment_status", "paid")
     .gte("paid_at", currentStart)
     .lte("paid_at", currentEnd)
