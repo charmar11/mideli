@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 import { useCartStore } from "@/lib/stores";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
-import type { RestaurantTable, TableMapLabel, TableZone } from "@/types/database";
+import type {
+  CartItem,
+  RestaurantTable,
+  TableMapLabel,
+  TableZone,
+} from "@/types/database";
 import { ORDER_TYPE_VISUALS } from "@/lib/order-visuals";
 import { TablePicker } from "./table-picker";
 
@@ -36,6 +41,14 @@ const priceFormatter = new Intl.NumberFormat("es-MX");
 
 function formatPrice(price: number): string {
   return priceFormatter.format(price);
+}
+
+function cartItemTotal(item: CartItem) {
+  const modifiersTotal = item.selected_modifiers.reduce(
+    (sum, modifier) => sum + modifier.price,
+    0
+  );
+  return (item.price + modifiersTotal) * item.quantity;
 }
 
 const ORDER_TYPES = [
@@ -78,6 +91,109 @@ export function CartPanel({
     [items]
   );
   const isMixedBusinessCart = cartBusinessIds.size > 1;
+  const businessGroups = useMemo(() => {
+    const groups = new Map<string, { label: string; items: CartItem[]; subtotal: number }>();
+    for (const item of items) {
+      const businessId = item.business_id ?? selectedBusinessId ?? "unknown";
+      const current = groups.get(businessId) ?? {
+        label: businessNames.get(businessId) ?? "Negocio seleccionado",
+        items: [],
+        subtotal: 0,
+      };
+      current.items.push(item);
+      current.subtotal += cartItemTotal(item);
+      groups.set(businessId, current);
+    }
+    return [...groups.entries()].map(([businessId, group]) => ({
+      businessId,
+      ...group,
+    }));
+  }, [businessNames, items, selectedBusinessId]);
+
+  const renderCartItem = (item: CartItem) => {
+    const itemTotal = cartItemTotal(item);
+    return (
+      <li
+        key={item.id}
+        className="rounded-2xl border border-border bg-background p-4 shadow-sm"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="font-heading text-base font-bold leading-snug text-foreground">
+              {item.name}
+            </p>
+            <p className="font-data text-sm text-muted-foreground">
+              ${formatPrice(item.price)} c/u
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => removeItem(item.id)}
+            aria-label={`Quitar ${item.name}`}
+            className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+
+        {item.selected_modifiers.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {item.selected_modifiers.map((modifier, index) => (
+              <span
+                key={`${modifier.group}-${modifier.option}-${index}`}
+                className="inline-flex flex-col rounded-xl bg-surface-raised px-2.5 py-1.5 font-body text-xs font-medium text-muted-foreground"
+              >
+                <span>
+                  {modifier.option}
+                  {modifier.price > 0 ? ` +$${formatPrice(modifier.price)}` : ""}
+                </span>
+                {modifier.description ? (
+                  <span className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground/80">
+                    {modifier.description}
+                  </span>
+                ) : null}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1 rounded-full bg-surface-raised p-0.5">
+            <button
+              type="button"
+              onClick={() => updateQuantity(item.id, item.quantity - 1)}
+              aria-label={`Reducir ${item.name}`}
+              className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
+            >
+              <Minus size={14} />
+            </button>
+            <span className="w-9 text-center font-data text-base font-bold">
+              {item.quantity}
+            </span>
+            <button
+              type="button"
+              onClick={() => updateQuantity(item.id, item.quantity + 1)}
+              aria-label={`Aumentar ${item.name}`}
+              className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+          <span className="font-data text-base font-bold text-foreground">
+            ${formatPrice(itemTotal)}
+          </span>
+        </div>
+
+        <input
+          type="text"
+          value={item.notes}
+          onChange={(event) => updateNotes(item.id, event.target.value)}
+          placeholder="Notas (sin cebolla...)"
+          className="mt-3 h-11 w-full rounded-xl border border-border bg-surface px-3 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
+        />
+      </li>
+    );
+  };
 
   return (
     <div
@@ -169,100 +285,25 @@ export function CartPanel({
                 </p>
               </div>
             ) : null}
-            <ul className="flex flex-col gap-3">
-            {items.map((item) => {
-              const itemTotal =
-                (item.price +
-                  item.selected_modifiers.reduce((sum, modifier) => sum + modifier.price, 0)) *
-                item.quantity;
-              return (
-                <li
-                  key={item.id}
-                  className="rounded-2xl border border-border bg-background p-4 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      {isMixedBusinessCart ? (
-                        <span className="mb-1 inline-flex rounded-full bg-brand/10 px-2 py-1 font-heading text-[10px] font-bold text-brand">
-                          {businessNames.get(item.business_id ?? selectedBusinessId ?? "") ?? "Negocio seleccionado"}
-                        </span>
-                      ) : null}
-                      <p className="font-heading text-base font-bold leading-snug text-foreground">
-                        {item.name}
-                      </p>
-                      <p className="font-data text-sm text-muted-foreground">
-                        ${formatPrice(item.price)} c/u
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.id)}
-                      aria-label={`Quitar ${item.name}`}
-                      className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-
-                  {item.selected_modifiers.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {item.selected_modifiers.map((modifier, index) => (
-                        <span
-                          key={`${modifier.group}-${modifier.option}-${index}`}
-                          className="inline-flex flex-col rounded-xl bg-surface-raised px-2.5 py-1.5 font-body text-xs font-medium text-muted-foreground"
-                        >
-                          <span>
-                            {modifier.option}
-                            {modifier.price > 0 ? ` +$${formatPrice(modifier.price)}` : ""}
-                          </span>
-                          {modifier.description ? (
-                            <span className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground/80">
-                              {modifier.description}
-                            </span>
-                          ) : null}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <div className="mt-4 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1 rounded-full bg-surface-raised p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                        aria-label={`Reducir ${item.name}`}
-                        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <span className="w-9 text-center font-data text-base font-bold">
-                        {item.quantity}
+            {isMixedBusinessCart ? (
+              <div className="flex flex-col gap-4">
+                {businessGroups.map((group) => (
+                  <section key={group.businessId}>
+                    <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                      <h2 className="font-heading text-xs font-bold uppercase tracking-wide text-brand">
+                        {group.label}
+                      </h2>
+                      <span className="font-data text-xs font-bold text-muted-foreground">
+                        Subtotal ${formatPrice(group.subtotal)}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                        aria-label={`Aumentar ${item.name}`}
-                        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
-                      >
-                        <Plus size={14} />
-                      </button>
                     </div>
-                    <span className="font-data text-base font-bold text-foreground">
-                      ${formatPrice(itemTotal)}
-                    </span>
-                  </div>
-
-                  <input
-                    type="text"
-                    value={item.notes}
-                    onChange={(event) => updateNotes(item.id, event.target.value)}
-                    placeholder="Notas (sin cebolla...)"
-                    className="mt-3 h-11 w-full rounded-xl border border-border bg-surface px-3 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
-                  />
-                </li>
-              );
-            })}
-            </ul>
+                    <ul className="flex flex-col gap-3">{group.items.map(renderCartItem)}</ul>
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-3">{items.map(renderCartItem)}</ul>
+            )}
           </>
         )}
       </div>

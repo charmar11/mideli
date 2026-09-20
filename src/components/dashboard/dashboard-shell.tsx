@@ -30,6 +30,7 @@ import {
 import { RoleOnboardingTour } from "@/components/onboarding/role-onboarding-tour";
 import { createClient } from "@/lib/supabase/client";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
+import { useCartStore } from "@/lib/stores/cart-store";
 import type { Profile } from "@/types/database";
 
 type NavItem = {
@@ -276,18 +277,26 @@ function HeaderGroup({
 
 function BusinessSelector({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
   const businesses = useBusinessContextStore((state) => state.businesses);
   const selectedBusinessId = useBusinessContextStore(
     (state) => state.selectedBusinessId
   );
   const ensureLoaded = useBusinessContextStore((state) => state.ensureLoaded);
   const selectBusiness = useBusinessContextStore((state) => state.selectBusiness);
+  const hasActiveComanda = useCartStore((state) => state.items.length > 0);
 
   useEffect(() => {
     void ensureLoaded();
   }, [ensureLoaded]);
 
-  if (businesses.length <= 1 || !selectedBusinessId) return null;
+  if (
+    businesses.length <= 1 ||
+    !selectedBusinessId ||
+    (pathname === "/dashboard/mesero" && hasActiveComanda)
+  ) {
+    return null;
+  }
 
   return (
     <label

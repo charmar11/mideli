@@ -1,7 +1,7 @@
 # Diseño frontend multinegocio para Rincón 404 Food Park
 
 **Fecha:** 2026-09-20  
-**Estado:** Diseño aprobado por secciones, pendiente de revisión escrita antes de implementar  
+**Estado:** Diseño aprobado; primera rebanada de POS implementada localmente, pendiente de prueba con más de un negocio real
 **Alcance:** Entrada al sistema, contexto de negocio, Nuevo pedido, comanda mixta, cobro, Estado, Historial y administración visual de negocios
 
 ## 1. Decisiones de producto
@@ -310,6 +310,16 @@ La firma será el contexto visible de la operación: una comanda única que mues
 - No se usarán datos inventados para crear `Just Dipping`.
 - Un negocio se pausa o archiva lógicamente y conserva historial.
 - Las credenciales actuales de Mideli se mantienen compatibles.
+
+## 12.1 Estado de la primera rebanada implementada
+
+- Mesero cuenta con un selector local de menús por negocio. Cambiarlo no cambia la sesión, la caja ni el negocio global seleccionado.
+- El carrito conserva `business_id` por línea y agrupa los productos mixtos por negocio con subtotales visibles.
+- La creación de una comanda mixta usa el RPC transaccional existente para comedor y crea un pedido por negocio relacionado con la misma mesa.
+- Domicilio y para llevar mixtos quedan bloqueados de forma explícita hasta contar con un RPC atómico equivalente. Se conserva el flujo actual de un solo negocio.
+- El resumen previo al envío explica cuántos pedidos relacionados se crearán y exige Comedor cuando la comanda contiene más de un negocio.
+- Historial acepta el alcance de varios negocios para cuentas con capacidad organizacional, mantiene la restricción por negocio local y muestra el nombre del negocio en cada pedido.
+- La primera rebanada no crea ni registra `Just Dipping`, no cambia WhatsApp y no se considera lista para producción hasta probarla con un segundo negocio autorizado.
 
 ## 12. Criterios de aceptación frontend
 

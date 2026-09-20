@@ -7,9 +7,12 @@ import { useBusinessContextStore } from "./business-context-store";
 interface CatalogState {
   categories: Category[];
   menuItems: MenuItem[];
+  /** Business whose catalog is currently shown in the POS. */
+  catalogBusinessId: string | null;
   loading: boolean;
   lastError: string | null;
   fetchCatalog: (force?: boolean) => Promise<void>;
+  fetchCatalogForBusiness: (businessId: string, force?: boolean) => Promise<boolean>;
   fetchCategories: () => Promise<void>;
   fetchMenuItems: () => Promise<void>;
   subscribeToCatalog: () => () => void;
@@ -31,6 +34,7 @@ interface CatalogState {
 }
 
 let catalogRequest: Promise<void> | null = null;
+let scopedCatalogRequest: Promise<boolean> | null = null;
 let catalogFetchedAt = 0;
 let catalogScopeKey = "";
 const CATALOG_CACHE_MS = 30_000;
@@ -55,10 +59,119 @@ function hasModernScope(scope: Awaited<ReturnType<typeof getCatalogScope>>) {
 export const useCatalogStore = create<CatalogState>((set, get) => ({
   categories: [],
   menuItems: [],
+  catalogBusinessId: null,
   loading: false,
   lastError: null,
 
+  fetchCatalogForBusiness: async (businessId: string, force = false) => {
+    const context = useBusinessContextStore.getState();
+    await context.ensureLoaded();
+    const currentContext = useBusinessContextStore.getState();
+    const business = currentContext.businesses.find(
+      (candidate) => candidate.business_id === businessId
+    );
+
+    if (
+      currentContext.legacyFallback ||
+      !business ||
+      business.business_lifecycle_status !== "active"
+    ) {
+      set({
+        lastError: "Este negocio no está disponible para recibir pedidos.",
+      });
+      return false;
+    }
+
+    const requestKey = `business:${businessId}`;
+    if (
+      !force &&
+      get().catalogBusinessId === businessId &&
+      catalogScopeKey === requestKey &&
+      Date.now() - catalogFetchedAt < CATALOG_CACHE_MS &&
+      (get().categories.length > 0 || get().menuItems.length > 0)
+    ) {
+      return true;
+    }
+
+    if (catalogRequest) await catalogRequest;
+    if (scopedCatalogRequest) await scopedCatalogRequest;
+
+    if (
+      !force &&
+      get().catalogBusinessId === businessId &&
+      catalogScopeKey === requestKey &&
+      Date.now() - catalogFetchedAt < CATALOG_CACHE_MS
+    ) {
+      return true;
+    }
+
+    const request = (async () => {
+      set({ loading: true, lastError: null });
+      try {
+        const supabase = createClient();
+        const [categoriesResult, menuItemsResult] = await Promise.all([
+          supabase
+            .from("categories")
+            .select("id,business_id,name,sort_order,is_active,created_at,updated_at")
+            .eq("business_id", businessId)
+            .order("sort_order", { ascending: true }),
+          supabase
+            .from("menu_items")
+            .select(
+              "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
+            )
+            .eq("business_id", businessId)
+            .order("sort_order", { ascending: true }),
+        ]);
+
+        const catalogError = categoriesResult.error ?? menuItemsResult.error;
+        if (catalogError) {
+          set({
+            lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
+          });
+          return false;
+        }
+
+        set({
+          categories: categoriesResult.data ?? [],
+          menuItems: menuItemsResult.data ?? [],
+          catalogBusinessId: businessId,
+          lastError: null,
+        });
+        catalogScopeKey = requestKey;
+        catalogFetchedAt = Date.now();
+        return true;
+      } catch {
+        set({
+          lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
+        });
+        return false;
+      } finally {
+        set({ loading: false });
+      }
+    })();
+
+    scopedCatalogRequest = request;
+    try {
+      return await request;
+    } finally {
+      if (scopedCatalogRequest === request) scopedCatalogRequest = null;
+    }
+  },
+
   fetchCatalog: async (force = false) => {
+    const initialScope = await getCatalogScope();
+    if (hasModernScope(initialScope)) {
+      if (!initialScope.businessId) {
+        set({
+          lastError: "No hay un negocio disponible para esta cuenta.",
+        });
+        return;
+      }
+      await get().fetchCatalogForBusiness(initialScope.businessId, force);
+      return;
+    }
+
     const hasCatalog = get().categories.length > 0 || get().menuItems.length > 0;
     if (catalogRequest) return catalogRequest;
     if (!force && hasCatalog && Date.now() - catalogFetchedAt < CATALOG_CACHE_MS) {
@@ -73,7 +186,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         if (scope.key !== catalogScopeKey) {
           catalogScopeKey = scope.key;
           catalogFetchedAt = 0;
-          set({ categories: [], menuItems: [] });
+          set({ categories: [], menuItems: [], catalogBusinessId: null });
         }
 
         if (hasModernScope(scope) && !scope.businessId) {
@@ -118,6 +231,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         set({
           categories: categoriesResult.data ?? [],
           menuItems: menuItemsResult.data ?? [],
+          catalogBusinessId: scope.businessId,
           lastError: null,
         });
         catalogFetchedAt = Date.now();
@@ -181,15 +295,25 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   subscribeToCatalog: () => {
     const supabase = createClient();
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => {
+    const scheduleRefresh = (targetBusinessId?: string | null) => {
       catalogFetchedAt = 0;
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
-        void get().fetchCatalog();
+        const businessId =
+          targetBusinessId === undefined
+            ? get().catalogBusinessId
+            : targetBusinessId;
+        if (businessId && !useBusinessContextStore.getState().legacyFallback) {
+          void get().fetchCatalogForBusiness(businessId, true);
+        } else {
+          void get().fetchCatalog();
+        }
       }, 150);
     };
-    const handleBusinessChange = () => refresh();
+    const refresh = () => scheduleRefresh();
+    const handleBusinessChange = () =>
+      scheduleRefresh(useBusinessContextStore.getState().selectedBusinessId);
     const channel = supabase
       .channel(`catalog-updates-${crypto.randomUUID()}`)
       .on(

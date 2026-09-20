@@ -79,13 +79,15 @@ export async function fetchSalesHistory({
     let ordersQuery = supabase
       .from("orders")
       .select(
-        "id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,customer_phone,source_channel,whatsapp_status_opt_in,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
+        "id,business_id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,customer_phone,source_channel,whatsapp_status_opt_in,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
       )
       .gte("created_at", from.toISOString())
       .lte("created_at", to.toISOString())
       .order("created_at", { ascending: false })
       .limit(500);
-    if (businessContext.businessId) {
+    if (businessContext.businessIds.length > 1) {
+      ordersQuery = ordersQuery.in("business_id", businessContext.businessIds);
+    } else if (businessContext.businessId) {
       ordersQuery = ordersQuery.eq("business_id", businessContext.businessId);
     }
     const { data: ordersData, error: ordersError } = await ordersQuery;
@@ -215,7 +217,9 @@ export async function deleteSalesHistoryOrder(
       .from("orders")
       .select("id,number,business_id")
       .eq("id", orderId)
-    if (businessContext.businessId) {
+    if (businessContext.businessIds.length > 1) {
+      orderQuery = orderQuery.in("business_id", businessContext.businessIds);
+    } else if (businessContext.businessId) {
       orderQuery = orderQuery.eq("business_id", businessContext.businessId);
     }
     const { data: order, error: orderError } = await orderQuery.maybeSingle();
@@ -299,7 +303,9 @@ export async function deleteSalesHistoryOrder(
     }
 
     let deleteQuery = admin.from("orders").delete().eq("id", orderId);
-    if (businessContext.businessId) {
+    if (businessContext.businessIds.length > 1) {
+      deleteQuery = deleteQuery.in("business_id", businessContext.businessIds);
+    } else if (businessContext.businessId) {
       deleteQuery = deleteQuery.eq("business_id", businessContext.businessId);
     }
     const { error: deleteError } = await deleteQuery;

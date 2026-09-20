@@ -550,10 +550,15 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
   huérfanos. La verificación repetible está en
   `supabase/verification/mideli_post_multibusiness.sql`; el contexto por
   perfil se comprueba en `supabase/verification/mideli_runtime_context.sql`.
-- El POS ya puede resolver un negocio seleccionado, pero la comanda mixta de
-  una mesa y la creación atómica de cuentas por negocio todavía no están
-  conectadas a una experiencia completa de Mesero. No se debe presentar el
-  selector como prueba de que Just Dipping ya está operativo.
+- La primera rebanada visual de la comanda mixta ya está conectada localmente:
+  BusinessMenuSelector cambia el catálogo sin cambiar la sesión ni la caja,
+  cada línea conserva business_id, el carrito y el resumen agrupan por
+  negocio, y Mesero usa create_multibusiness_table_orders para comedor. La
+  creación mixta de domicilio y para llevar se bloquea explícitamente porque
+  todavía no existe un RPC atómico equivalente. Historial amplía su consulta
+  al alcance organizacional autorizado y etiqueta cada pedido con su negocio.
+  Esto aún requiere probarse con un segundo negocio autorizado; no se debe
+  presentar el selector como prueba de que Just Dipping ya está operativo.
 - La configuración del correo de reportes y sus ejecuciones siguen siendo
   globales de transición. Antes de habilitar reportes para otro negocio deben
   tener `business_id`, permisos por dueño y folios de ejecución separados.

@@ -133,6 +133,13 @@ function orderLoadError(error: unknown, fallback: string) {
   return fallback;
 }
 
+function resolveCartItemBusinessId(
+  item: CartItem,
+  menuItemsBusinessMap: Map<string, string>
+) {
+  return item.business_id ?? menuItemsBusinessMap.get(item.menu_item_id) ?? null;
+}
+
 function parseCreatedOrders(data: unknown): Order[] {
   if (!data || typeof data !== "object") return [];
   const candidate = (data as { orders?: unknown }).orders;
@@ -406,6 +413,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const creationFingerprint = JSON.stringify({
       items: items.map((item) => ({
         menu_item_id: item.menu_item_id,
+        business_id: item.business_id,
         quantity: item.quantity,
         price: item.price,
         notes: item.notes,
@@ -433,18 +441,47 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }));
     const itemBusinessIds = new Set(
       items
-        .map((item) => get().menuItemsBusinessMap.get(item.menu_item_id))
+        .map((item) => resolveCartItemBusinessId(item, get().menuItemsBusinessMap))
         .filter((businessId): businessId is string => Boolean(businessId))
     );
+    if (!scope.legacyFallback && itemBusinessIds.size === 0) {
+      pendingOrderCreationKeys.delete(creationFingerprint);
+      return {
+        order: null,
+        error: "No se pudo identificar el negocio de uno de los productos",
+      };
+    }
+    if (!scope.legacyFallback) {
+      const inaccessibleBusiness = [...itemBusinessIds].find(
+        (businessId) => !scope.businessIds.includes(businessId)
+      );
+      if (inaccessibleBusiness) {
+        pendingOrderCreationKeys.delete(creationFingerprint);
+        return {
+          order: null,
+          error: "No tienes permiso para operar uno de los negocios de la comanda",
+        };
+      }
+    }
+    if (itemBusinessIds.size > 1 && orderType !== "comedor") {
+      pendingOrderCreationKeys.delete(creationFingerprint);
+      return {
+        order: null,
+        error: "Las comandas de varios negocios solo están disponibles para comedor",
+      };
+    }
     const useMixedTableOrder =
       !scope.legacyFallback &&
       orderType === "comedor" &&
       Boolean(tableId) &&
       itemBusinessIds.size > 1;
+    const singleBusinessId =
+      itemBusinessIds.size === 1 ? [...itemBusinessIds][0] : scope.businessId;
 
     let order: Order;
     let createdOrders: Order[] = [];
     let creationError: { message?: string } | null = null;
+    let targetBusinessIdForCreate: string | null = null;
 
     if (useMixedTableOrder) {
       const result = await supabase.rpc("create_multibusiness_table_orders", {
@@ -464,9 +501,10 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         };
       }
       order = createdOrders[0];
-    } else if (scope.businessId) {
+    } else if (singleBusinessId) {
+      targetBusinessIdForCreate = singleBusinessId;
       const result = await supabase.rpc("create_business_order_with_items", {
-        p_business_id: scope.businessId,
+        p_business_id: singleBusinessId,
         p_creation_key: creationKey,
         p_items: orderItems,
         p_order_type: orderType,
@@ -552,7 +590,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           updated_at: new Date().toISOString(),
         })
         .eq("id", order.id);
-      if (scope.businessId) updatedQuery = updatedQuery.eq("business_id", scope.businessId);
+      if (targetBusinessIdForCreate) {
+        updatedQuery = updatedQuery.eq("business_id", targetBusinessIdForCreate);
+      }
       const { data: updated, error: deliveryError } = await updatedQuery
         .select("*")
         .single();
@@ -570,7 +610,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const orderItemsForBusiness = useMixedTableOrder
         ? items.filter(
             (item) =>
-              menuItemsBusinessMap.get(item.menu_item_id) === createdOrder.business_id
+              resolveCartItemBusinessId(item, menuItemsBusinessMap) === createdOrder.business_id
           )
         : items;
       return buildLocalOrder(

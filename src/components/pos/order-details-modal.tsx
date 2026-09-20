@@ -16,12 +16,13 @@ import {
   UtensilsCrossed,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CartItem, RestaurantTable, TableMapLabel, TableZone } from "@/types/database";
 import type { ManualDeliveryPlaceSuggestion } from "@/lib/actions/delivery";
 import type { PosCustomerMatch, WhatsappCustomerAddress } from "@/lib/whatsapp/admin-types";
 import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
 import { ORDER_TYPE_VISUALS } from "@/lib/order-visuals";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { TablePicker } from "./table-picker";
 
 type OrderType = "comedor" | "domicilio" | "para_llevar";
@@ -173,6 +174,45 @@ export function OrderDetailsModal({
         item.quantity,
     0
   );
+  const businesses = useBusinessContextStore((state) => state.businesses);
+  const selectedBusinessId = useBusinessContextStore(
+    (state) => state.selectedBusinessId
+  );
+  const businessNames = useMemo(
+    () =>
+      new Map(
+        businesses.map((business) => [
+          business.business_id,
+          business.business_display_name,
+        ])
+      ),
+    [businesses]
+  );
+  const businessGroups = useMemo(() => {
+    const groups = new Map<string, { label: string; items: CartItem[]; subtotal: number }>();
+    for (const item of items) {
+      const businessId = item.business_id ?? selectedBusinessId ?? "unknown";
+      const current = groups.get(businessId) ?? {
+        label: businessNames.get(businessId) ?? "Negocio seleccionado",
+        items: [],
+        subtotal: 0,
+      };
+      current.items.push(item);
+      current.subtotal +=
+        (item.price +
+          item.selected_modifiers.reduce(
+            (modifierTotal, modifier) => modifierTotal + modifier.price,
+            0
+          )) * item.quantity;
+      groups.set(businessId, current);
+    }
+    return [...groups.entries()].map(([businessId, group]) => ({
+      businessId,
+      ...group,
+    }));
+  }, [businessNames, items, selectedBusinessId]);
+  const isMixedBusinessCart = businessGroups.length > 1;
+  const mixedNeedsComedor = isMixedBusinessCart && orderType !== "comedor";
   const total = subtotal + (orderType === "domicilio" ? deliveryFee : 0);
   const requirement = orderType === "comedor"
     ? { ready: Boolean(tableId || tableNumber), label: "Selecciona una mesa" }
@@ -182,9 +222,11 @@ export function OrderDetailsModal({
   const deliveryNeedsLocationWarning = orderType === "domicilio" && !requirement.ready;
   const deliveryNeedsPhoneWarning = orderType === "domicilio" && !deliveryPhoneReady;
   const deliveryNeedsWarning = deliveryNeedsLocationWarning || deliveryNeedsPhoneWarning;
-  const canSubmit = orderType === "domicilio" || requirement.ready;
-  const statusReady = requirement.ready && !deliveryNeedsPhoneWarning;
-  const statusLabel = deliveryNeedsLocationWarning
+  const canSubmit = !mixedNeedsComedor && (orderType === "domicilio" || requirement.ready);
+  const statusReady = !mixedNeedsComedor && requirement.ready && !deliveryNeedsPhoneWarning;
+  const statusLabel = mixedNeedsComedor
+    ? "Para varios negocios, selecciona Comedor"
+    : deliveryNeedsLocationWarning
     ? "Domicilio pendiente. Se pedirá confirmación al enviar"
     : deliveryNeedsPhoneWarning
       ? "Teléfono no registrado. Se pedirá confirmación al enviar"
@@ -193,6 +235,41 @@ export function OrderDetailsModal({
     deliveryLatitude !== null && deliveryLongitude !== null
       ? `https://www.google.com/maps?q=${deliveryLatitude},${deliveryLongitude}&z=16&output=embed`
       : null;
+
+  const renderSummaryItem = (item: CartItem) => {
+    const itemTotal =
+      (item.price +
+        item.selected_modifiers.reduce(
+          (sum, modifier) => sum + modifier.price,
+          0
+        )) * item.quantity;
+    return (
+      <li
+        key={item.id}
+        className="rounded-xl border border-border bg-surface px-2.5 py-2 sm:rounded-2xl sm:p-3"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-heading text-xs font-bold text-foreground sm:text-sm">
+              <span className="mr-1 font-data text-brand">{item.quantity}x</span>
+              {item.name}
+            </p>
+            {item.selected_modifiers.length > 0 ? (
+              <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">
+                {item.selected_modifiers.map((modifier) => modifier.option).join(" · ")}
+              </p>
+            ) : null}
+            {item.notes ? (
+              <p className="mt-1 font-body text-xs text-muted-foreground">Nota: {item.notes}</p>
+            ) : null}
+          </div>
+          <span className="shrink-0 font-data text-sm font-bold text-foreground">
+            ${formatPrice(itemTotal)}
+          </span>
+        </div>
+      </li>
+    );
+  };
 
   function newPlacesSession() {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -356,36 +433,32 @@ export function OrderDetailsModal({
               <h2 className="font-heading text-sm font-bold text-foreground">Comanda</h2>
               <span className="hidden font-data text-xs text-muted-foreground sm:inline">{items.length} líneas</span>
             </div>
-            <ul className="mt-2 space-y-1.5 sm:mt-3 sm:space-y-2">
-              {items.map((item) => {
-                const itemTotal =
-                  (item.price + item.selected_modifiers.reduce((sum, modifier) => sum + modifier.price, 0)) *
-                  item.quantity;
-                return (
-                  <li key={item.id} className="rounded-xl border border-border bg-surface px-2.5 py-2 sm:rounded-2xl sm:p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-heading text-xs font-bold text-foreground sm:text-sm">
-                          <span className="mr-1 font-data text-brand">{item.quantity}x</span>
-                          {item.name}
-                        </p>
-                        {item.selected_modifiers.length > 0 ? (
-                          <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">
-                            {item.selected_modifiers.map((modifier) => modifier.option).join(" · ")}
-                          </p>
-                        ) : null}
-                        {item.notes ? (
-                          <p className="mt-1 font-body text-xs text-muted-foreground">Nota: {item.notes}</p>
-                        ) : null}
-                      </div>
-                      <span className="shrink-0 font-data text-sm font-bold text-foreground">
-                        ${formatPrice(itemTotal)}
+            {isMixedBusinessCart ? (
+              <div className="mt-2 space-y-3 sm:mt-3">
+                <p className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 font-body text-xs leading-5 text-warning">
+                  Se crearán {businessGroups.length} pedidos relacionados, uno por negocio, con su propia cuenta.
+                </p>
+                {businessGroups.map((group) => (
+                  <section key={group.businessId}>
+                    <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+                      <h3 className="font-heading text-[11px] font-bold uppercase tracking-wide text-brand">
+                        {group.label}
+                      </h3>
+                      <span className="font-data text-[11px] text-muted-foreground">
+                        ${formatPrice(group.subtotal)}
                       </span>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    <ul className="space-y-1.5 sm:space-y-2">
+                      {group.items.map(renderSummaryItem)}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <ul className="mt-2 space-y-1.5 sm:mt-3 sm:space-y-2">
+                {items.map(renderSummaryItem)}
+              </ul>
+            )}
 
             <div className="mt-3 space-y-1.5 border-t border-border pt-3 font-body text-xs sm:mt-5 sm:space-y-2 sm:pt-4 sm:text-sm">
               <div className="flex items-center justify-between text-muted-foreground">

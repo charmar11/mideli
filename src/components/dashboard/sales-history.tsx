@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   Banknote,
   Ban,
+  Building2,
   CalendarDays,
   ChevronDown,
   ChevronRight,
@@ -52,6 +53,7 @@ import {
   orderProductsTotal,
 } from "@/lib/order-totals";
 import { useCashShiftStore } from "@/lib/stores";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { PaymentMethodCorrectionDialog } from "@/components/payments/payment-method-correction-dialog";
 import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
 import { DatePeriodPicker } from "@/components/shared/date-period-picker";
@@ -393,6 +395,7 @@ function ProgressStep({
 
 function OrderDetail({
   order,
+  businessName,
   onClose,
   onDelete,
   onPay,
@@ -400,6 +403,7 @@ function OrderDetail({
   onCorrectPayment,
 }: {
   order: SalesHistoryOrder;
+  businessName?: string | null;
   onClose?: () => void;
   onDelete?: () => void;
   onPay?: () => void;
@@ -427,6 +431,12 @@ function OrderDetail({
           <p className="font-body text-xs text-muted-foreground">
             {formatDateTime(order.created_at)}
           </p>
+          {businessName ? (
+            <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-light px-2.5 py-1 font-heading text-[11px] font-bold text-brand">
+              <Building2 size={12} />
+              {businessName}
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-1">
           {onDelete ? (
@@ -744,6 +754,17 @@ export function SalesHistory() {
   const [viewerRole, setViewerRole] = useState<Profile["role"] | null>(null);
   const [expandedPendingAccount, setExpandedPendingAccount] = useState<string | null>(null);
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
+  const businesses = useBusinessContextStore((state) => state.businesses);
+  const businessNames = useMemo(
+    () =>
+      new Map(
+        businesses.map((business) => [
+          business.business_id,
+          business.business_display_name,
+        ])
+      ),
+    [businesses]
+  );
 
   const range = useMemo(
     () => periodTimestamps(period),
@@ -1128,6 +1149,7 @@ export function SalesHistory() {
                     <HistoryOrderRow
                       key={order.id}
                       order={order}
+                      businessName={order.business_id ? businessNames.get(order.business_id) ?? null : null}
                       selected={selectedOrder?.id === order.id}
                       onClick={() => setSelectedOrder(order)}
                     />
@@ -1140,6 +1162,7 @@ export function SalesHistory() {
               {selectedOrder ? (
                 <OrderDetail
                   order={selectedOrder}
+                  businessName={selectedOrder.business_id ? businessNames.get(selectedOrder.business_id) ?? null : null}
                   onDelete={canDeleteHistory ? () => setDeleteTarget(selectedOrder) : undefined}
                   onPay={() => openPaymentModal(selectedOrder)}
                   onReceipt={() => void openTickets(selectedOrder)}
@@ -1167,6 +1190,7 @@ export function SalesHistory() {
           <div className="flex max-h-[calc(100dvh-1rem)] min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-float sm:mx-auto sm:max-w-lg">
             <OrderDetail
               order={selectedOrder}
+              businessName={selectedOrder.business_id ? businessNames.get(selectedOrder.business_id) ?? null : null}
               onClose={() => setSelectedOrder(null)}
               onDelete={canDeleteHistory ? () => setDeleteTarget(selectedOrder) : undefined}
               onPay={() => openPaymentModal(selectedOrder)}
@@ -1340,10 +1364,12 @@ function FilterSelect({
 
 function HistoryOrderRow({
   order,
+  businessName,
   selected,
   onClick,
 }: {
   order: SalesHistoryOrder;
+  businessName?: string | null;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -1376,6 +1402,12 @@ function HistoryOrderRow({
           <span className={`rounded-full px-2 py-0.5 font-heading text-[10px] font-bold ${status.className}`}>
             {status.label}
           </span>
+          {businessName ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-light px-2 py-0.5 font-heading text-[10px] font-bold text-brand">
+              <Building2 size={11} />
+              {businessName}
+            </span>
+          ) : null}
         </span>
         <span className="mt-1 block truncate font-body text-xs text-muted-foreground">
           {formatTime(order.created_at)} · {TYPE_LABELS[order.type]}

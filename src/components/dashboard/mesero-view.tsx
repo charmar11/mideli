@@ -18,7 +18,12 @@ import {
 } from "@/lib/stores";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import type { OrderWithItems } from "@/lib/stores/order-store";
-import { CategoryTabs, ProductGrid, CartPanel } from "@/components/pos";
+import {
+  BusinessMenuSelector,
+  CategoryTabs,
+  ProductGrid,
+  CartPanel,
+} from "@/components/pos";
 import { OrderDetailsModal } from "@/components/pos/order-details-modal";
 import type { MenuItem, SelectedModifier } from "@/types/database";
 import { ReadyOrderNotifier } from "./ready-order-notifier";
@@ -121,6 +126,7 @@ export function MeseroView() {
   const fetchCatalog = useCatalogStore((state) => state.fetchCatalog);
   const subscribeToCatalog = useCatalogStore((state) => state.subscribeToCatalog);
   const menuItems = useCatalogStore((state) => state.menuItems);
+  const catalogBusinessId = useCatalogStore((state) => state.catalogBusinessId);
   const items = useCartStore((state) => state.items);
   const addItem = useCartStore((state) => state.addItem);
   const clear = useCartStore((state) => state.clear);
@@ -141,6 +147,7 @@ export function MeseroView() {
   const selectedBusinessId = useBusinessContextStore(
     (state) => state.selectedBusinessId
   );
+  const activeMenuBusinessId = catalogBusinessId ?? selectedBusinessId;
 
   const cartItemCount = getItemCount();
   const cartTotal = getTotal();
@@ -372,11 +379,11 @@ export function MeseroView() {
       if (item.modifiers && item.modifiers.length > 0) {
         setVariationItem(item);
       } else {
-        addItem(item.id, item.name, item.price, [], "", selectedBusinessId ?? undefined);
+        addItem(item.id, item.name, item.price, [], "", activeMenuBusinessId ?? undefined);
         markProductAdded(item);
       }
     },
-    [addItem, markProductAdded, selectedBusinessId]
+    [activeMenuBusinessId, addItem, markProductAdded]
   );
 
   const handleVariationConfirm = useCallback(
@@ -388,13 +395,13 @@ export function MeseroView() {
           variationItem.price,
           selectedModifiers,
           notes,
-          selectedBusinessId ?? undefined
+          activeMenuBusinessId ?? undefined
         );
         markProductAdded(variationItem);
         setVariationItem(null);
       }
     },
-    [addItem, markProductAdded, selectedBusinessId, variationItem]
+    [activeMenuBusinessId, addItem, markProductAdded, variationItem]
   );
 
   async function handleSubmitOrder(payNow = false, allowUnconfirmedDelivery = false) {
@@ -407,6 +414,17 @@ export function MeseroView() {
     }
     if (orderType === "comedor" && !tableId && !tableNumber) {
       toast.error("Selecciona una mesa en el plano antes de enviar el pedido");
+      return;
+    }
+    const cartBusinessIds = new Set(
+      items
+        .map((item) => item.business_id)
+        .filter((businessId): businessId is string => Boolean(businessId))
+    );
+    if (cartBusinessIds.size > 1 && orderType !== "comedor") {
+      toast.error("Para enviar productos de varios negocios usa Comedor", {
+        description: "Selecciona una mesa para crear una cuenta separada por negocio.",
+      });
       return;
     }
     if (
@@ -597,6 +615,7 @@ export function MeseroView() {
     const cartItems = order.items.map((item) => ({
       id: crypto.randomUUID(),
       menu_item_id: item.menu_item_id,
+      business_id: order.business_id,
       name: item.menu_item_name ?? "Producto",
       price: item.unit_price,
       quantity: item.quantity,
@@ -772,6 +791,7 @@ export function MeseroView() {
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {modeSwitcher}
+            <BusinessMenuSelector />
             <CategoryTabs />
             <ProductGrid
               onProductClick={handleProductClick}

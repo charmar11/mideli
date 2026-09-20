@@ -27,6 +27,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     const existingIndex = get().items.findIndex(
       (item) =>
         item.menu_item_id === menuItemId &&
+        item.business_id === businessId &&
         JSON.stringify(item.selected_modifiers) === JSON.stringify(selectedModifiers)
     );
 
