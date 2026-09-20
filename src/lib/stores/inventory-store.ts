@@ -11,6 +11,7 @@ import type {
   InventoryPurchaseOrderLine,
   InventoryRecipe,
 } from "@/types/database";
+import { buildInventoryLineScope } from "@/lib/inventory-line-scope";
 import { useBusinessContextStore } from "./business-context-store";
 
 export type CountSubmissionLine = {
@@ -224,7 +225,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         .select("*")
         .order("started_at", { ascending: false })
         .limit(30);
-      let countLinesQuery = supabase
+      const countLinesQuery = supabase
         .from("inventory_count_lines")
         .select("*")
         .order("created_at", { ascending: false })
@@ -234,7 +235,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50);
-      let purchaseOrderLinesQuery = supabase
+      const purchaseOrderLinesQuery = supabase
         .from("inventory_purchase_order_lines")
         .select("*")
         .order("created_at", { ascending: true })
@@ -251,22 +252,58 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         recipesQuery = recipesQuery.eq("business_id", scope.businessId);
         movementsQuery = movementsQuery.eq("business_id", scope.businessId);
         countsQuery = countsQuery.eq("business_id", scope.businessId);
-        countLinesQuery = countLinesQuery.eq("business_id", scope.businessId);
         purchaseOrdersQuery = purchaseOrdersQuery.eq("business_id", scope.businessId);
-        purchaseOrderLinesQuery = purchaseOrderLinesQuery.eq("business_id", scope.businessId);
         lotsQuery = lotsQuery.eq("business_id", scope.businessId);
       }
 
-      const results = await Promise.all([
+      const [
+        itemsResult,
+        recipesResult,
+        movementsResult,
+        countsResult,
+        purchaseOrdersResult,
+        lotsResult,
+      ] = await Promise.all([
         itemsQuery,
         recipesQuery,
         movementsQuery,
         countsQuery,
-        countLinesQuery,
         purchaseOrdersQuery,
-        purchaseOrderLinesQuery,
         lotsQuery,
       ]);
+
+      const lineScope = buildInventoryLineScope(
+        scope.businessId,
+        countsResult.data,
+        purchaseOrdersResult.data
+      );
+
+      const [countLinesResult, purchaseOrderLinesResult] = await Promise.all([
+        lineScope.scoped && lineScope.countIds.length === 0
+          ? Promise.resolve({ data: [], error: null })
+          : lineScope.scoped
+            ? countLinesQuery.in("count_id", lineScope.countIds)
+            : countLinesQuery,
+        lineScope.scoped && lineScope.purchaseOrderIds.length === 0
+          ? Promise.resolve({ data: [], error: null })
+          : lineScope.scoped
+            ? purchaseOrderLinesQuery.in(
+                "purchase_order_id",
+                lineScope.purchaseOrderIds
+              )
+            : purchaseOrderLinesQuery,
+      ]);
+
+      const results = [
+        itemsResult,
+        recipesResult,
+        movementsResult,
+        countsResult,
+        countLinesResult,
+        purchaseOrdersResult,
+        purchaseOrderLinesResult,
+        lotsResult,
+      ];
 
       const firstError = results.find((result) => result.error)?.error;
       set({

@@ -152,6 +152,8 @@ La interfaz administrativa vive en `/settings/inventario`. La base ya tiene `inv
 
 Actualización 2026-08: el inventario se endureció con unidades de compra, recepciones (`inventory_receipts`), órdenes de compra, lotes, conteos físicos (`inventory_counts` con líneas), guías de captura vía RPC, borrado seguro de insumos, reemplazo transaccional de recetas y corrección de inventario al editar pedidos. La interfaz se reorganizó en paneles (`src/components/admin/inventory/`) con biblioteca de recetas y un tutorial de 20 pasos que recorre cada pestaña, explica unidades, compras, recetas, conteos, diferencias, mermas y la rutina recomendada.
 
+Actualización 2026-09-20: las líneas de conteos y órdenes de compra no tienen `business_id` propio por diseño; heredan el negocio de `inventory_counts` o `inventory_purchase_orders`. `src/lib/stores/inventory-store.ts` debe consultar primero esos padres y filtrar las líneas por `count_id` y `purchase_order_id`. No agregar una columna redundante a las tablas hijas.
+
 ### Licencia de acceso
 
 Desde 2026-08-01 el sistema se bloquea al vencer la licencia mensual:
