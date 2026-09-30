@@ -2,6 +2,7 @@ import { readWhatsappServerConfig } from "@/lib/whatsapp/config.server";
 import { processMetaWebhook } from "@/lib/whatsapp/meta-runtime.server";
 import { normalizeMetaWebhook } from "@/lib/whatsapp/meta-webhook";
 import { safeEqualSecret, verifyMetaSignature } from "@/lib/whatsapp/meta-signature";
+import { getBusinessLicenseGateBySlug } from "@/lib/business-license-server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,10 +31,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const config = readWhatsappServerConfig();
   console.info("[WhatsApp Meta] Webhook recibido.");
-  if (!config.ordersEnabled || config.provider !== "meta") {
-    console.warn("[WhatsApp Meta] Integración desactivada.");
-    return Response.json({ ok: false, reason: "integration_disabled" }, { status: 503 });
-  }
   if (!config.appSecret) {
     console.warn("[WhatsApp Meta] Falta la configuración privada.");
     return Response.json({ ok: false, reason: "configuration_missing" }, { status: 503 });
@@ -49,6 +46,20 @@ export async function POST(request: Request) {
   ) {
     console.warn("[WhatsApp Meta] Firma rechazada.");
     return Response.json({ ok: false }, { status: 401 });
+  }
+
+  const license = await getBusinessLicenseGateBySlug("mideli");
+  if (!license.verified) {
+    console.warn("[WhatsApp Meta] No se pudo verificar la disponibilidad del negocio.");
+    return Response.json({ ok: false, reason: "availability_unverified" }, { status: 503 });
+  }
+  if (!license.available) {
+    console.info("[WhatsApp Meta] Evento válido ignorado; el negocio no está disponible.");
+    return Response.json({ ok: true, ignored: true }, { status: 200 });
+  }
+  if (!config.ordersEnabled || config.provider !== "meta") {
+    console.warn("[WhatsApp Meta] Integración desactivada.");
+    return Response.json({ ok: false, reason: "integration_disabled" }, { status: 503 });
   }
 
   let payload: unknown;

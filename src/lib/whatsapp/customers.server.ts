@@ -16,6 +16,7 @@ import {
   type WhatsappCustomerOrderSource,
   type WhatsappCustomerSource,
 } from "./customers";
+import { resolveMideliBusinessScope } from "./mideli-business.server";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -60,16 +61,22 @@ function orderMetricSource(row: OrderMetricRow): WhatsappCustomerOrderSource {
   };
 }
 
-async function loadOrderMetrics(admin: AdminClient, customerIds: string[]) {
+async function loadOrderMetrics(
+  admin: AdminClient,
+  customerIds: string[],
+  mideliBusinessId: string | null
+) {
   if (customerIds.length === 0) return [];
   const rows: OrderMetricRow[] = [];
   for (let from = 0; from < MAX_ORDER_ROWS; from += PAGE_SIZE) {
-    const result = await admin
+    let query = admin
       .from("orders")
       .select("customer_id,number,status,paid_amount,payment_status,created_at")
       .in("customer_id", customerIds)
       .order("created_at", { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
+    if (mideliBusinessId) query = query.eq("business_id", mideliBusinessId);
+    const result = await query;
     if (result.error) throw result.error;
     const page = (result.data ?? []) as OrderMetricRow[];
     rows.push(...page);
@@ -102,17 +109,23 @@ async function loadLatestConversations(admin: AdminClient, customerIds: string[]
   })) satisfies WhatsappCustomerConversationSource[];
 }
 
-async function loadCustomersForDirectory(admin: AdminClient, query: string) {
+async function loadCustomersForDirectory(
+  admin: AdminClient,
+  query: string,
+  mideliBusinessId: string | null
+) {
   const columns = "id,phone,display_name,created_at,updated_at";
   if (!query) {
-    const [recentCustomers, recentOrders] = await Promise.all([
-      admin.from("customers").select(columns).order("updated_at", { ascending: false }).limit(50),
-      admin
+    let recentOrdersQuery = admin
         .from("orders")
         .select("customer_id")
         .not("customer_id", "is", null)
         .order("created_at", { ascending: false })
-        .limit(500),
+        .limit(500);
+    if (mideliBusinessId) recentOrdersQuery = recentOrdersQuery.eq("business_id", mideliBusinessId);
+    const [recentCustomers, recentOrders] = await Promise.all([
+      admin.from("customers").select(columns).order("updated_at", { ascending: false }).limit(50),
+      recentOrdersQuery,
     ]);
     if (recentCustomers.error) throw recentCustomers.error;
     if (recentOrders.error) throw recentOrders.error;
@@ -144,13 +157,19 @@ async function loadCustomersForDirectory(admin: AdminClient, query: string) {
 
   const digits = query.replace(/\D/g, "");
   const orderNumber = exactOrderNumberFromSearch(query);
+  let byOrderQuery = orderNumber
+    ? admin.from("orders").select("customer_id").eq("number", orderNumber)
+    : null;
+  if (byOrderQuery && mideliBusinessId) {
+    byOrderQuery = byOrderQuery.eq("business_id", mideliBusinessId);
+  }
   const [byName, byPhone, byOrder] = await Promise.all([
     admin.from("customers").select(columns).ilike("display_name", `%${query}%`).limit(50),
     digits
       ? admin.from("customers").select(columns).ilike("phone", `%${digits}%`).limit(50)
       : Promise.resolve({ data: [], error: null }),
-    orderNumber
-      ? admin.from("orders").select("customer_id").eq("number", orderNumber).maybeSingle()
+    byOrderQuery
+      ? byOrderQuery.maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
   if (byName.error) throw byName.error;
@@ -179,10 +198,11 @@ export async function loadWhatsappCustomerDirectory(
   rawQuery = ""
 ): Promise<WhatsappCustomerDirectory> {
   const query = normalizeWhatsappCustomerSearch(rawQuery);
-  const customerRows = await loadCustomersForDirectory(admin, query);
+  const mideliScope = await resolveMideliBusinessScope(admin);
+  const customerRows = await loadCustomersForDirectory(admin, query, mideliScope.businessId);
   const customerIds = customerRows.map((row) => row.id);
   const [orders, conversations] = await Promise.all([
-    loadOrderMetrics(admin, customerIds),
+    loadOrderMetrics(admin, customerIds, mideliScope.businessId),
     loadLatestConversations(admin, customerIds),
   ]);
   return {
@@ -195,8 +215,12 @@ export async function loadWhatsappCustomerDirectory(
   };
 }
 
-async function loadDetailedOrders(admin: AdminClient, customerId: string) {
-  const result = await admin
+async function loadDetailedOrders(
+  admin: AdminClient,
+  customerId: string,
+  mideliBusinessId: string | null
+) {
+  let query = admin
     .from("orders")
     .select(
       "id,number,status,type,total,paid_amount,payment_status,payment_method,payment_method_requested,source_channel,delivery_status,delivery_address,delivery_colony,delivery_reference,delivery_fee,channel_conversation_id,created_at"
@@ -204,6 +228,8 @@ async function loadDetailedOrders(admin: AdminClient, customerId: string) {
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
     .limit(100);
+  if (mideliBusinessId) query = query.eq("business_id", mideliBusinessId);
+  const result = await query;
   if (result.error) throw result.error;
   const orders = result.data ?? [];
   const orderIds = orders.map((order) => order.id);
@@ -273,6 +299,7 @@ export async function loadWhatsappCustomerDetail(
   admin: AdminClient,
   customerId: string
 ): Promise<WhatsappCustomerDetail> {
+  const mideliScope = await resolveMideliBusinessScope(admin);
   const [customerResult, addressResult, metrics, conversations, orders] = await Promise.all([
     admin
       .from("customers")
@@ -287,9 +314,9 @@ export async function loadWhatsappCustomerDetail(
       .eq("customer_id", customerId)
       .order("is_default", { ascending: false })
       .order("last_used_at", { ascending: false }),
-    loadOrderMetrics(admin, [customerId]),
+    loadOrderMetrics(admin, [customerId], mideliScope.businessId),
     loadLatestConversations(admin, [customerId]),
-    loadDetailedOrders(admin, customerId),
+    loadDetailedOrders(admin, customerId, mideliScope.businessId),
   ]);
   if (customerResult.error) throw customerResult.error;
   if (!customerResult.data) throw new Error("No se encontró el cliente");

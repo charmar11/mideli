@@ -41,6 +41,13 @@ export function normalizeWhatsappPosModifiers(value: unknown): SelectedModifier[
     };
     const description = textValue(record, "description");
     if (description) modifier.description = description;
+    const componentItemId = textValue(record, "combo_component_menu_item_id");
+    if (componentItemId) modifier.combo_component_menu_item_id = componentItemId;
+    const componentQuantity = numberValue(record, "combo_component_quantity");
+    if (componentQuantity > 0) modifier.combo_component_quantity = componentQuantity;
+    if (record.combo_component_is_gift === true) {
+      modifier.combo_component_is_gift = true;
+    }
     return [modifier];
   });
 }

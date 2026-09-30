@@ -40,7 +40,15 @@ import type {
 
 const DENOMINATIONS = [1000, 500, 200, 100, 50, 20, 10, 5, 2, 1, 0.5] as const;
 
-type View = "summary" | "open" | "movement" | "count" | "result";
+type View = "business" | "summary" | "open" | "movement" | "count" | "result";
+
+interface CashBusinessOption {
+  business_id: string;
+  business_display_name: string;
+  canOpenCash: boolean;
+  canCloseCash: boolean;
+  canManageCash: boolean;
+}
 
 function money(value: number | null | undefined) {
   return `$${Number(value ?? 0).toLocaleString("es-MX", {
@@ -190,7 +198,19 @@ function AuthorizationFields({
   );
 }
 
-export function CashShiftControl() {
+export function CashShiftControl({
+  canOpenCash = true,
+  canCloseCash = true,
+  canManageCash = true,
+  cashBusinesses,
+  preferredBusinessId = null,
+}: {
+  canOpenCash?: boolean;
+  canCloseCash?: boolean;
+  canManageCash?: boolean;
+  cashBusinesses?: readonly CashBusinessOption[];
+  preferredBusinessId?: string | null;
+} = {}) {
   const currentShift = useCashShiftStore((state) => state.currentShift);
   const loading = useCashShiftStore((state) => state.loading);
   const fetchCurrentShift = useCashShiftStore((state) => state.fetchCurrentShift);
@@ -224,18 +244,41 @@ export function CashShiftControl() {
   const [closedShift, setClosedShift] = useState<CashShift | null>(null);
   const [closedDetail, setClosedDetail] = useState<CashShiftDetail | null>(null);
   const [resultError, setResultError] = useState<string | null>(null);
+  const [selectedCashBusinessId, setSelectedCashBusinessId] = useState<string | null>(null);
+
+  const cashBusiness = cashBusinesses?.find(
+    (business) => business.business_id === selectedCashBusinessId
+  ) ?? cashBusinesses?.find(
+    (business) => business.business_id === preferredBusinessId
+  ) ?? (cashBusinesses?.length === 1 ? cashBusinesses[0] : null);
+  const cashBusinessId = cashBusiness?.business_id;
+  const cashBusinessName = cashBusiness?.business_display_name;
+  const scopedCashAccess = cashBusinesses !== undefined;
+  const hasCashAccess = scopedCashAccess
+    ? (cashBusinesses?.length ?? 0) > 0
+    : canOpenCash || canCloseCash || canManageCash;
+  const canOpenSelectedCash = scopedCashAccess
+    ? cashBusiness?.canOpenCash ?? false
+    : canOpenCash;
+  const canCloseSelectedCash = scopedCashAccess
+    ? cashBusiness?.canCloseCash ?? false
+    : canCloseCash;
+  const canManageSelectedCash = scopedCashAccess
+    ? cashBusiness?.canManageCash ?? false
+    : canManageCash;
 
   useEffect(() => {
-    void fetchCurrentShift();
-    return subscribe();
-  }, [fetchCurrentShift, subscribe]);
+    if (!hasCashAccess || (scopedCashAccess && !cashBusinessId)) return;
+    void fetchCurrentShift(true, cashBusinessId);
+    return subscribe(cashBusinessId);
+  }, [cashBusinessId, fetchCurrentShift, hasCashAccess, scopedCashAccess, subscribe]);
 
   useEffect(() => {
-    if (!open || !currentShift) return;
-    void listAuthorizers().then((result) => {
+    if (!open || !currentShift || (!canCloseSelectedCash && !canManageSelectedCash)) return;
+    void listAuthorizers(cashBusinessId).then((result) => {
       if (result.data) setAuthorizers(result.data);
     });
-  }, [currentShift, listAuthorizers, open]);
+  }, [canCloseSelectedCash, canManageSelectedCash, cashBusinessId, currentShift, listAuthorizers, open]);
 
   const openingCountTotal = useMemo(() => denominationTotal(openingCounts), [openingCounts]);
   const closingCountTotal = useMemo(() => denominationTotal(closingCounts), [closingCounts]);
@@ -272,13 +315,14 @@ export function CashShiftControl() {
     setWorking(true);
     setError(null);
     const result = await openShift({
+      businessId: cashBusinessId,
       openingFloat: amount,
       denominations: openingCounts,
       note: openingNote,
     });
     setWorking(false);
     if (result.error) return setError(result.error);
-    toast.success(`Caja #${result.data?.number} abierta`, { description: `Fondo inicial ${money(amount)}` });
+    toast.success("Caja abierta", { description: `Fondo inicial ${money(amount)}` });
     setView("summary");
   }
 
@@ -295,6 +339,7 @@ export function CashShiftControl() {
     setWorking(true);
     setError(null);
     const authorization = await authorizeAction({
+      businessId: cashBusinessId,
       authorizerId,
       pin,
       shiftId: currentShift.id,
@@ -307,6 +352,7 @@ export function CashShiftControl() {
       return;
     }
     const result = await recordMovement({
+      businessId: cashBusinessId,
       shiftId: currentShift.id,
       type: movementType,
       direction: movementDirection(movementType),
@@ -330,6 +376,7 @@ export function CashShiftControl() {
     setWorking(true);
     setError(null);
     const result = await previewClose({
+      businessId: cashBusinessId,
       shiftId: currentShift.id,
       countMode,
       denominations: closingCounts,
@@ -349,6 +396,7 @@ export function CashShiftControl() {
         return;
       }
       const approved = await authorizeAction({
+        businessId: cashBusinessId,
         authorizerId,
         pin,
         shiftId: currentShift.id,
@@ -361,6 +409,7 @@ export function CashShiftControl() {
     setWorking(true);
     setError(null);
     const result = await closeShift({
+      businessId: cashBusinessId,
       shiftId: currentShift.id,
       countMode,
       denominations: closingCounts,
@@ -380,7 +429,7 @@ export function CashShiftControl() {
     setPreview(null);
     resetAuthorization();
 
-    const detail = await getDetail(result.data.id);
+    const detail = await getDetail(result.data.id, cashBusinessId);
     setWorking(false);
     if (detail.error || !detail.data) {
       setResultError(
@@ -396,7 +445,7 @@ export function CashShiftControl() {
     const text = buildCashShiftShareText(closedDetail);
     try {
       if (navigator.share) {
-        await navigator.share({ title: `Corte Mideli #${closedDetail.number}`, text });
+        await navigator.share({ title: `Corte #${closedDetail.number}`, text });
         return;
       }
       await navigator.clipboard.writeText(text);
@@ -407,22 +456,39 @@ export function CashShiftControl() {
     }
   }
 
-  function openDialog() {
+  async function openDialog() {
     setError(null);
     setResultError(null);
     setClosedShift(null);
     setClosedDetail(null);
-    setView(currentShift ? "summary" : "open");
     setOpen(true);
+    if (scopedCashAccess && !cashBusiness) {
+      setView("business");
+      return;
+    }
+
+    setWorking(true);
+    const shift = await fetchCurrentShift(true, cashBusinessId);
+    setWorking(false);
+    setView(shift ? "summary" : canOpenSelectedCash ? "open" : "summary");
+  }
+
+  async function chooseCashBusiness(business: CashBusinessOption) {
+    setSelectedCashBusinessId(business.business_id);
+    setError(null);
+    setWorking(true);
+    const shift = await fetchCurrentShift(true, business.business_id);
+    setWorking(false);
+    setView(shift ? "summary" : business.canOpenCash ? "open" : "summary");
   }
 
   return (
     <>
-      <button
+      {hasCashAccess ? <button
         type="button"
-        onClick={openDialog}
-        title={currentShift ? `Caja #${currentShift.number} abierta` : "Abrir caja"}
-        aria-label={currentShift ? `Caja #${currentShift.number} abierta` : "Abrir caja"}
+        onClick={() => void openDialog()}
+        title={currentShift ? (currentShift.status_only ? `Caja abierta · ${cashBusinessName ?? "local"}` : `Caja #${currentShift.number} · ${cashBusinessName ?? "local"}`) : canOpenSelectedCash ? `Abrir caja · ${cashBusinessName ?? "seleccionar negocio"}` : `Ver caja · ${cashBusinessName ?? "seleccionar negocio"}`}
+        aria-label={currentShift ? (currentShift.status_only ? `Caja abierta · ${cashBusinessName ?? "local"}` : `Caja #${currentShift.number} · ${cashBusinessName ?? "local"}`) : canOpenSelectedCash ? `Abrir caja · ${cashBusinessName ?? "seleccionar negocio"}` : `Ver caja · ${cashBusinessName ?? "seleccionar negocio"}`}
         className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 font-heading text-xs font-bold transition-colors ${
           currentShift
             ? "border-success/35 bg-success/10 text-success hover:bg-success/15"
@@ -431,10 +497,10 @@ export function CashShiftControl() {
       >
         {loading ? <Loader2 size={16} className="animate-spin" /> : <Landmark size={16} />}
         <span className="hidden sm:inline">
-          {currentShift ? `Caja #${currentShift.number}` : "Abrir caja"}
+          {currentShift ? (currentShift.status_only ? "Caja abierta" : `Caja #${currentShift.number}`) : cashBusinessName ? `Caja · ${cashBusinessName}` : "Caja"}
         </span>
         <span className={`h-2 w-2 rounded-full ${currentShift ? "bg-success" : "bg-warning"}`} />
-      </button>
+      </button> : null}
 
       {open ? (
         <div
@@ -451,10 +517,10 @@ export function CashShiftControl() {
                 </span>
                 <div>
                   <h2 className="font-heading text-lg font-black">
-                    {view === "open" ? "Abrir caja" : view === "movement" ? "Movimiento de efectivo" : view === "count" ? "Cerrar y contar" : view === "result" ? `Corte #${closedDetail?.number ?? closedShift?.number ?? ""} guardado` : `Caja #${currentShift?.number ?? ""}`}
+                    {view === "business" ? "Seleccionar negocio" : view === "open" ? "Abrir caja" : view === "movement" ? "Movimiento de efectivo" : view === "count" ? "Cerrar y contar" : view === "result" ? `Corte #${closedDetail?.number ?? closedShift?.number ?? ""} guardado` : currentShift?.status_only ? "Caja abierta" : `Caja #${currentShift?.number ?? ""}`}
                   </h2>
                   <p className="font-body text-xs text-muted-foreground">
-                    {currentShift ? `Abierta por ${currentShift.opened_by_name} · ${shiftDuration(currentShift.opened_at)}` : closedShift ? "Turno cerrado e inmutable" : "Una sola caja compartida para el local"}
+                    {view === "business" ? "Elige el negocio cuya caja vas a administrar." : currentShift?.status_only ? `La caja de ${cashBusinessName ?? "este negocio"} ya está abierta.` : currentShift ? `Abierta por ${currentShift.opened_by_name} · ${shiftDuration(currentShift.opened_at)}` : closedShift ? "Turno cerrado e inmutable" : cashBusinessName ? `Caja de ${cashBusinessName}` : "Una sola caja compartida para el local"}
                   </p>
                 </div>
               </div>
@@ -464,6 +530,32 @@ export function CashShiftControl() {
             </header>
 
             <div className="pos-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+              {view === "business" ? (
+                <div className="space-y-3">
+                  {cashBusinesses?.map((business) => (
+                    <button
+                      key={business.business_id}
+                      type="button"
+                      disabled={working}
+                      onClick={() => void chooseCashBusiness(business)}
+                      className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 text-left transition-colors hover:border-brand/50 hover:bg-surface-raised disabled:opacity-50"
+                    >
+                      <span>
+                        <span className="block font-heading text-sm font-bold text-foreground">
+                          {business.business_display_name}
+                        </span>
+                        <span className="mt-1 block font-body text-xs text-muted-foreground">
+                          {business.canOpenCash ? "Abrir" : "Consultar"}
+                          {business.canCloseCash ? " · Cerrar" : ""}
+                          {business.canManageCash ? " · Administrar" : ""}
+                        </span>
+                      </span>
+                      {working ? <Loader2 size={17} className="animate-spin text-brand" /> : <Landmark size={18} className="text-brand" />}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
               {view === "open" ? (
                 <div className="space-y-5">
                   <div className="rounded-2xl bg-warning/10 p-4">
@@ -491,7 +583,38 @@ export function CashShiftControl() {
                 </div>
               ) : null}
 
-              {view === "summary" && currentShift ? (
+              {view === "summary" && !currentShift ? (
+                <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-warning/20 bg-warning/5 p-5 text-center">
+                  <Landmark size={28} className="text-warning" />
+                  <h3 className="mt-3 font-heading text-base font-bold">No hay una caja abierta</h3>
+                  <p className="mt-1 max-w-sm font-body text-sm text-muted-foreground">
+                    {canOpenSelectedCash || canManageSelectedCash
+                      ? `Abre la caja de ${cashBusinessName ?? "este local"} antes de registrar pedidos o cobros.`
+                      : "No tienes permiso para abrir la caja de este local. Pide al Coordinador que revise tu puesto."}
+                  </p>
+                  {canOpenSelectedCash || canManageSelectedCash ? (
+                    <button
+                      type="button"
+                      onClick={() => setView("open")}
+                      className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-success px-4 font-heading text-sm font-bold text-ink"
+                    >
+                      <CheckCircle2 size={16} /> Abrir caja
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {view === "summary" && currentShift?.status_only ? (
+                <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-success/20 bg-success/5 p-5 text-center">
+                  <CheckCircle2 size={28} className="text-success" />
+                  <h3 className="mt-3 font-heading text-base font-bold">La caja ya está abierta</h3>
+                  <p className="mt-1 max-w-sm font-body text-sm text-muted-foreground">
+                    El turno de este negocio está en curso. Tu puesto actual no incluye acceso a las cifras del corte.
+                  </p>
+                </div>
+              ) : null}
+
+              {view === "summary" && currentShift && !currentShift.status_only ? (
                 <div className="space-y-5">
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <div className="rounded-xl bg-background/70 p-3"><p className="font-body text-xs text-muted-foreground">Cobros</p><p className="mt-1 font-data text-lg font-bold">{totals?.payment_count ?? 0}</p></div>
@@ -502,10 +625,16 @@ export function CashShiftControl() {
                   <div className="rounded-2xl border border-border bg-background/50 p-4">
                     <div className="flex items-center gap-3"><WalletCards className="text-brand" size={20} /><div><p className="font-heading text-sm font-bold">Efectivo protegido</p><p className="font-body text-xs text-muted-foreground">El efectivo esperado se revela únicamente después del conteo ciego.</p></div></div>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <button type="button" onClick={() => { setError(null); setView("movement"); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-surface-raised font-heading text-sm font-bold hover:bg-border"><CircleDollarSign size={17} />Registrar movimiento</button>
-                    <button type="button" onClick={() => { setError(null); setPreview(null); setView("count"); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-brand font-heading text-sm font-bold text-white hover:bg-brand-hover"><Calculator size={17} />Cerrar y hacer corte</button>
-                  </div>
+                  {canManageSelectedCash || canCloseSelectedCash ? (
+                    <div className={`grid gap-2 ${canManageSelectedCash && canCloseSelectedCash ? "sm:grid-cols-2" : ""}`}>
+                      {canManageSelectedCash ? (
+                        <button type="button" onClick={() => { setError(null); setView("movement"); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-surface-raised font-heading text-sm font-bold hover:bg-border"><CircleDollarSign size={17} />Registrar movimiento</button>
+                      ) : null}
+                      {canCloseSelectedCash ? (
+                        <button type="button" onClick={() => { setError(null); setPreview(null); setView("count"); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-brand font-heading text-sm font-bold text-white hover:bg-brand-hover"><Calculator size={17} />Cerrar y hacer corte</button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -606,9 +735,11 @@ export function CashShiftControl() {
                     </div>
                   )}
 
-                  <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-3 print:hidden">
+                  <div className={`grid gap-2 border-t border-border pt-4 print:hidden ${canManageSelectedCash ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
                     <button type="button" disabled={!closedDetail} onClick={() => void shareClosedReport()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-surface-raised px-4 font-heading text-sm font-bold disabled:opacity-40"><Share2 size={17} />Compartir resumen</button>
-                    <Link href="/settings/caja" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border px-4 font-heading text-sm font-bold"><History size={17} />Abrir historial</Link>
+                    {canManageSelectedCash ? (
+                      <Link href="/settings/caja" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border px-4 font-heading text-sm font-bold"><History size={17} />Abrir historial</Link>
+                    ) : null}
                     <button type="button" onClick={() => setOpen(false)} className="action-success min-h-12 rounded-xl px-5 font-heading text-sm font-bold">Listo</button>
                   </div>
                 </div>

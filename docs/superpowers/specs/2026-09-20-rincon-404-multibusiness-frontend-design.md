@@ -1,7 +1,7 @@
 # Diseño frontend multinegocio para Rincón 404 Food Park
 
 **Fecha:** 2026-09-20  
-**Estado:** Diseño aprobado; primera rebanada de POS implementada localmente, pendiente de prueba con más de un negocio real
+**Estado:** Diseño aprobado; POS, Estado/Historial y registro inicial de negocios implementados localmente, pendiente de migración remota y prueba con más de un negocio real
 **Alcance:** Entrada al sistema, contexto de negocio, Nuevo pedido, comanda mixta, cobro, Estado, Historial y administración visual de negocios
 
 ## 1. Decisiones de producto
@@ -13,7 +13,7 @@
 - Supabase puede conservar un identificador interno de tipo correo, pero nunca se mostrará al trabajador.
 - Una persona tendrá una cuenta y podrá tener una o varias membresías.
 - El negocio se determina por la sesión y sus permisos. El selector visual nunca será una autorización.
-- Mideli es el único negocio real activo en esta etapa. `Just Dipping` no se creará hasta contar con autorización, dueño, menú e inventario reales.
+- Mideli es el único negocio activo. `Just Dipping` está registrado como borrador con acceso de configuración; no debe operar hasta que su dueño capture y revise sus datos reales.
 - WhatsApp seguirá siendo exclusivo de Mideli.
 
 ## 2. Objetivo de la experiencia
@@ -247,16 +247,31 @@ El administrador de plataforma tendrá:
 Administrar → Negocios
 ```
 
-La lista mostrará estado y responsable, con acciones de pausar, archivar y restaurar. No habrá borrado físico como operación normal.
+La lista mostrará estado y responsable, con acciones de editar datos básicos,
+permisos del dueño, pausar, archivar y restaurar. La edición permitirá corregir
+nombre, identificador, zona horaria y capacidades sin cambiar las relaciones
+históricas del negocio. No habrá borrado físico como operación normal.
 
-El alta usará cuatro pasos:
+Una cuenta con capacidad `platform.manage_businesses` llegará a esta vista
+automáticamente después de iniciar sesión. La URL seguirá siendo una ruta
+protegida, no un mecanismo de acceso.
+
+El primer administrador puede transferir esta capacidad a una cuenta separada
+desde la misma vista. La operación crea el usuario y su membresía de plataforma
+con auditoría, y deja al dueño de Mideli únicamente con sus permisos de negocio.
+
+El alta usará estos bloques:
 
 1. Datos del negocio: nombre, identificador y zona horaria.
 2. Dueño: nombre, usuario y contraseña temporal.
-3. Configuración: Cocina, domicilios y capacidades iniciales.
+3. Permisos iniciales del dueño: catálogo, inventario, pedidos, cocina, cobros,
+   caja y personal. Catálogo es obligatorio; WhatsApp no se asigna desde aquí.
 4. Revisión y activación.
 
-La creación será transaccional: negocio, dueño, membresía, capacidades y configuración inicial se crean juntos o no se activa nada.
+La creación será transaccional: negocio, dueño, membresía, capacidades y
+configuración inicial se crean juntos o no se activa nada. Las capacidades
+desmarcadas se registran como revocadas para evitar que el cambio de ciclo de
+vida las reactive automáticamente.
 
 ## 9. Personal y permisos
 
@@ -307,7 +322,7 @@ La firma será el contexto visible de la operación: una comanda única que mues
 - Un dueño no puede leer ni modificar otro negocio manipulando `business_id`.
 - El negocio de una línea de carrito se valida contra el producto y la orden.
 - WhatsApp no se vuelve multinegocio en esta fase.
-- No se usarán datos inventados para crear `Just Dipping`.
+- No inventar el menú, inventario, recetas, personal ni saldos de `Just Dipping`.
 - Un negocio se pausa o archiva lógicamente y conserva historial.
 - Las credenciales actuales de Mideli se mantienen compatibles.
 
@@ -319,7 +334,15 @@ La firma será el contexto visible de la operación: una comanda única que mues
 - Domicilio y para llevar mixtos quedan bloqueados de forma explícita hasta contar con un RPC atómico equivalente. Se conserva el flujo actual de un solo negocio.
 - El resumen previo al envío explica cuántos pedidos relacionados se crearán y exige Comedor cuando la comanda contiene más de un negocio.
 - Historial acepta el alcance de varios negocios para cuentas con capacidad organizacional, mantiene la restricción por negocio local y muestra el nombre del negocio en cada pedido.
-- La primera rebanada no crea ni registra `Just Dipping`, no cambia WhatsApp y no se considera lista para producción hasta probarla con un segundo negocio autorizado.
+- Estado e Historial filtran por negocio sin mezclar cuentas de la misma mesa, y los flujos de cobro y corrección de método resuelven la caja del pedido objetivo.
+- `/settings/negocios` registra el negocio y la cuenta de su dueño como borrador. El dueño puede preparar catálogo, inventario y personal antes de activar; las operaciones de pedido, preparación, caja y cobro permanecen bloqueadas hasta la activación.
+- La misma vista muestra los módulos habilitados leyendo las capacidades activas del dueño desde Supabase. Así se puede comprobar qué tiene cada negocio sin confundir permisos con configuraciones inventadas; WhatsApp permanece exclusivo de Mideli en esta fase.
+- La migración `20260920103000_platform_manager_and_active_business_guards.sql` está aplicada en remoto; el dry-run confirma que la base está al día. `Just Dipping` está registrado como borrador, con un producto de menú, cero insumos y cero pedidos; no se copiarán datos de Mideli.
+- `/dashboard` es el centro de configuración para un dueño con permisos de borrador. El dueño entra a Menú, Inventario y Personal desde ahí; el estado de borrador explica que pedidos y caja no están habilitados todavía.
+- Para un negocio activo sin pantalla de Cocina, Estado permite a su dueño cambiar Pendiente, Preparando y Listo con `business.operate_orders`. El permiso no se extiende a meseras globales.
+- Las comandas mixtas de comedor crean pedidos y cuentas separados por negocio. Domicilio y para llevar mixtos permanecen bloqueados hasta incorporar creación atómica; domicilio requiere además representar una sola tarifa externa sin duplicar reportes ni cobros.
+- WhatsApp continúa exclusivo de Mideli. En Vercel no hubo errores de runtime para el webhook ni llamadas a `/api/integraciones/whatsapp/meta` en las 24 horas revisadas, aunque el cron sí se ejecutó. El dueño de la integración debe comparar en Meta la URL del webhook y la suscripción `messages`; el panel de diagnóstico ahora muestra URL y última entrada visible.
+- La base y la interfaz están preparadas para configuración aislada, pero el ciclo de operación de Just Dipping aún no puede considerarse aceptado: primero requiere menú e inventario reales, activación y una prueba controlada con su dueño.
 
 ## 12. Criterios de aceptación frontend
 
@@ -334,7 +357,7 @@ La firma será el contexto visible de la operación: una comanda única que mues
 9. Historial separa cuentas relacionadas de una misma mesa.
 10. El flujo funciona en escritorio, tablet y celular sin scroll anidado problemático.
 11. Un dueño local no ve menús, cajas, inventario ni reportes de otro negocio.
-12. El alta, pausa y archivo de negocio no se habilitan en producción hasta contar con la pantalla y la operación transaccional completas.
+12. El alta, pausa y archivo de negocio no se habilitan en producción hasta aplicar la migración de plataforma, verificar el ciclo de vida y probarlo con un segundo negocio autorizado.
 
 ## 13. Orden de implementación posterior
 
@@ -345,6 +368,6 @@ La firma será el contexto visible de la operación: una comanda única que mues
 5. Cobro por negocio y actualización de Historial.
 6. Administración de negocios y onboarding del dueño.
 7. Personal local y meseras globales.
-8. Pruebas con `Negocio Prueba` antes de registrar Just Dipping.
+8. Cargar y revisar datos reales de Just Dipping, y probar el flujo con su dueño antes de activarlo.
 
 La implementación no debe comenzar hasta revisar esta especificación y confirmar que el flujo de comanda mixta, cobro independiente y administración de negocios refleja la operación real.

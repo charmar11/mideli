@@ -2,7 +2,7 @@
 
 BEGIN;
 
-SELECT plan(23);
+SELECT plan(24);
 
 SELECT ok(
   to_regprocedure('public.get_my_multibusiness_context()') IS NOT NULL,
@@ -82,6 +82,23 @@ SELECT ok(
         LIKE '%organization.manage_global_waiters%'
   ),
   'business visibility distinguishes local memberships from explicit organization capabilities'
+);
+SELECT ok(
+  (
+    SELECT pg_get_functiondef('private.multibusiness_can_view_business(uuid)'::regprocedure)
+      LIKE '%membership_capability.business_id = business.id%'
+      AND pg_get_functiondef('private.multibusiness_can_view_business(uuid)'::regprocedure)
+        LIKE '%capability.scope_type = ''business''%'
+      AND pg_get_functiondef('private.multibusiness_can_view_business(uuid)'::regprocedure)
+        LIKE '%business.operate_orders%'
+      AND pg_get_functiondef('private.multibusiness_can_view_business(uuid)'::regprocedure)
+        LIKE '%business.charge_orders%'
+      AND pg_get_functiondef('private.multibusiness_can_view_business(uuid)'::regprocedure)
+        NOT LIKE '%organization.operate_orders%'
+      AND pg_get_functiondef('private.multibusiness_can_view_business(uuid)'::regprocedure)
+        NOT LIKE '%organization.charge_orders%'
+  ),
+  'organization memberships read a business catalog only through scoped order or charge grants'
 );
 SELECT ok(
   (

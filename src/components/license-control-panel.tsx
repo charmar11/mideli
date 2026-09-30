@@ -214,7 +214,7 @@ export function LicenseControlPanel({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="font-heading text-xs font-bold uppercase tracking-[0.18em] text-brand">Suscripción mensual</p>
-              <h2 className="mt-2 font-heading text-2xl font-bold text-foreground">Licencia Mideli</h2>
+              <h2 className="mt-2 font-heading text-2xl font-bold text-foreground">Licencia del sistema</h2>
               <p className="mt-1 font-body text-sm text-muted-foreground">Vigente hasta {formatDate(license.validUntil)}</p>
             </div>
             <span className={`inline-flex h-9 items-center gap-2 rounded-full px-3 font-heading text-xs font-bold ${status.className}`}>

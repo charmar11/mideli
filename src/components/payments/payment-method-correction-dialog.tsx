@@ -46,12 +46,12 @@ function methodLabel(method: PaymentMethod) {
   return METHODS.find((entry) => entry.method === method)?.label ?? method;
 }
 
-async function getPaymentCorrectionBusinessContext() {
+async function getPaymentCorrectionBusinessContext(targetBusinessId?: string | null) {
   const context = useBusinessContextStore.getState();
   await context.ensureLoaded();
   const current = useBusinessContextStore.getState();
   return {
-    businessId: current.selectedBusinessId,
+    businessId: targetBusinessId ?? current.selectedBusinessId,
     legacyFallback: current.legacyFallback,
   };
 }
@@ -59,6 +59,7 @@ async function getPaymentCorrectionBusinessContext() {
 export function PaymentMethodCorrectionDialog({
   transactionId,
   folio,
+  businessId,
   viewerRole,
   closedShift,
   onClose,
@@ -66,6 +67,7 @@ export function PaymentMethodCorrectionDialog({
 }: {
   transactionId: string;
   folio: number;
+  businessId?: string | null;
   viewerRole: Profile["role"];
   closedShift: boolean;
   onClose: () => void;
@@ -94,7 +96,7 @@ export function PaymentMethodCorrectionDialog({
     let active = true;
 
     async function loadCorrectionContext() {
-      const scope = await getPaymentCorrectionBusinessContext();
+      const scope = await getPaymentCorrectionBusinessContext(businessId);
       if (!active) return;
 
       if (!scope.legacyFallback && !scope.businessId) {
@@ -145,7 +147,7 @@ export function PaymentMethodCorrectionDialog({
     return () => {
       active = false;
     };
-  }, [requiresAuthorization, transactionId]);
+  }, [businessId, requiresAuthorization, transactionId]);
 
   function resetAuthorization() {
     setAuthorizationToken(null);
@@ -170,7 +172,7 @@ export function PaymentMethodCorrectionDialog({
     }
 
     setAuthorizing(true);
-    const scope = await getPaymentCorrectionBusinessContext();
+    const scope = await getPaymentCorrectionBusinessContext(businessId);
     if (!scope.legacyFallback && !scope.businessId) {
       setAuthorizing(false);
       setPin("");
@@ -227,7 +229,7 @@ export function PaymentMethodCorrectionDialog({
     }
 
     setSaving(true);
-    const scope = await getPaymentCorrectionBusinessContext();
+    const scope = await getPaymentCorrectionBusinessContext(businessId);
     if (!scope.legacyFallback && !scope.businessId) {
       setSaving(false);
       toast.error("No hay un negocio disponible para corregir el pago");

@@ -2,7 +2,7 @@
 
 BEGIN;
 
-SELECT plan(9);
+SELECT plan(10);
 
 SELECT ok(
   to_regprocedure('private.multibusiness_can_update_order_status(uuid,public.order_status)') IS NOT NULL,
@@ -59,6 +59,20 @@ SELECT ok(
      WHERE oid = 'private.multibusiness_can_update_order_status(uuid,public.order_status)'::regprocedure
   ),
   'status guard distinguishes preparation, operation and charging capabilities'
+);
+SELECT ok(
+  (
+    SELECT regexp_replace(preparation_clause, '[[:space:]]', '', 'g') =
+      'RETURNprivate.multibusiness_has_capability(''business.update_preparation'',v_organization_id,p_business_id);'
+      FROM (
+        SELECT substring(
+          prosrc FROM $pattern$(?s)IF p_status IN \('in_kitchen', 'ready'\) THEN(.*?)END IF;$pattern$
+        ) AS preparation_clause
+          FROM pg_proc
+         WHERE oid = 'private.multibusiness_can_update_order_status(uuid,public.order_status)'::regprocedure
+      ) AS guard
+  ),
+  'preparation states require the explicit business.update_preparation capability'
 );
 SELECT ok(
   (

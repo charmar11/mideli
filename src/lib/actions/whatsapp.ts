@@ -35,6 +35,7 @@ import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 import { deduplicateWhatsappCustomerAddresses } from "@/lib/whatsapp/customers";
 import { normalizeAddressForComparison } from "@/lib/whatsapp/normalize";
 import { whatsappActionErrorMessage } from "@/lib/whatsapp/action-errors";
+import { assertMideliWhatsappAvailable } from "@/lib/business-license-server";
 import {
   isMissingMultibusinessSchemaError,
   resolveMideliBusinessScope,
@@ -87,6 +88,7 @@ async function loadWhatsappCatalogAdminRows(
 }
 
 async function requireChannelUser(adminOnly = false) {
+  await assertMideliWhatsappAvailable();
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("Inicia sesión para continuar");

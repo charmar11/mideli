@@ -4,14 +4,23 @@ Este archivo resume decisiones que no deben revertirse por accidente al modifica
 
 ## Alcance
 
-Producción actualmente opera un solo negocio, Mideli, dentro de un local de
-comida Burger & Sushi. Se aprobó diseñar una evolución multinegocio para
-Rincón 404 Food Park, con Mideli como primer negocio migrado y Just Dipping como
-incorporación posterior. Esta evolución aún no está implementada en producción.
+La lectura remota del 2026-09-27 confirmó Mideli y Just Dipping registrados
+como negocios activos en Rincón 404 Food Park. El catálogo de Just Dipping y
+la estructura de su archivo histórico son independientes de Mideli; la carga
+de tickets anteriores sigue pendiente según la última revisión documentada.
+Esos tickets no se convertirán en órdenes, pagos ni caja activa. El estado
+`active` del negocio no sustituye la verificación operativa de su menú,
+inventario, permisos y flujo de cobro antes del piloto.
 
-La fundación debe probarse en staging antes de habilitar selección de negocio,
-pedidos mixtos o datos reales de un segundo negocio. No se agregará una
-abstracción de marketplace o multisucursal distinta de este alcance aprobado.
+No se agregarán abstracciones de marketplace o multisucursal distintas del
+alcance aprobado.
+
+La migración prevista desde el Firebase histórico de Just Dipping se acotó a
+catálogo y tickets. El catálogo ya se importó; los tickets todavía no figuran
+importados en la última verificación documentada. No incluye `web_orders`,
+cajas, inventario ni datos personales de clientes. Cuando se importen, los
+tickets vivirán en un archivo de consulta separado, nunca en ventas, caja o
+analíticas operativas.
 
 ## Multinegocio en transición
 
@@ -21,12 +30,38 @@ abstracción de marketplace o multisucursal distinta de este alcance aprobado.
 - El dueño administra su propio personal; el Coordinador administra meseras
   globales y recursos compartidos, no las finanzas o personal interno de cada
   negocio.
+- El Coordinador puede asignar a una mesera global permisos independientes de
+  apertura y cierre de caja para cada negocio. Esto no concede `business.manage_cash`:
+  movimientos, ajustes, historial completo y administración de cortes siguen
+  reservados al personal administrador de ese negocio. El permiso de cierre
+  solo permite consultar el corte que esa persona acaba de cerrar.
+- Quien solo opera pedidos o abre caja recibe el estado de la caja, no cifras
+  financieras ni datos del personal del turno.
 - Una mesera global puede capturar, entregar y cobrar pedidos de negocios
   habilitados, pero no marca `Listo` de otro negocio por defecto.
+- Las comandas mixtas de varios negocios se crean como pedidos y cuentas
+  independientes por negocio cuando son de comedor. Domicilio y para llevar
+  mixtos permanecen bloqueados hasta tener una operación atómica y reglas
+  claras para la tarifa externa de reparto.
+- Los negocios sin pantalla de Cocina pueden avanzar `Pendiente → Preparando →
+  Listo` desde Estado con el permiso explícito de preparación del negocio;
+  operar pedidos no concede ese permiso.
 - Las credenciales actuales de Mideli se conservan.
 - WhatsApp permanece exclusivo de Mideli durante la primera etapa.
-- Just Dipping no se crea ni se migra hasta contar con autorización y datos
-  reales de su dueño.
+- Just Dipping conserva catálogo, inventario, pedidos, caja y permisos
+  separados de Mideli. La estructura del archivo histórico ya existe; la
+  importación de tickets anteriores sigue pendiente según la última revisión.
+- Los combos básicos son un producto vendible con precio de paquete,
+  componentes fijos y grupos de opciones. El servidor valida la selección
+  contra el menú del mismo negocio y guarda snapshots para cocina e inventario.
+  No se permiten combos anidados.
+- Los folios de pedidos, aperturas de caja y pagos se cuentan por negocio; los
+  documentos existentes conservan su número y cada contador inicia desde el
+  máximo ya emitido en su negocio.
+- Las migraciones de combos, folios, identidad, catálogo y estructura del
+  archivo histórico constan aplicadas al corte verificado del 2026-09-27.
+  No renumerar pedidos ni duplicar el catálogo. La carga de tickets anteriores
+  es una tarea separada que requiere conciliación antes de declararse hecha.
 
 ## Orden de servicio
 
@@ -62,7 +97,10 @@ El pago no reemplaza el estado de preparación. Una orden puede estar en cocina 
 
 ## Notificaciones
 
-Las notificaciones Push se configuran por dispositivo y por tema. El aviso debe ser idempotente. Si Cocina o Mesero ya están visibles, puede preferirse sonido o señal local para no duplicar banners.
+Las notificaciones Push se configuran por dispositivo y por tema. El aviso debe
+ser idempotente y respetar el negocio y permiso del destinatario. El service
+worker puede mostrar Push aunque Cocina o Mesero estén visibles; sonido y
+señales locales son complementarios.
 
 Los avisos de WhatsApp al cliente se mantienen desactivados por defecto en pedidos manuales y solo se envían con consentimiento aplicable.
 
@@ -70,6 +108,9 @@ Los avisos de WhatsApp al cliente se mantienen desactivados por defecto en pedid
 
 - El service role de Supabase, claves de Meta, Gemini, Maps, licencia y Sentry nunca llegan a Client Components.
 - Las migraciones son la única vía para cambios de esquema.
+- Las licencias comerciales se controlan por negocio desde `/settings/licencias`, exclusivamente con la capacidad de plataforma `platform.manage_business_licenses` asignada a la cuenta Rincón 404. La vigencia antigua sólo se usa para migrar la fecha inicial; `app_license.status` queda como suspensión técnica global, sin fecha comercial.
+- El bloqueo de un negocio no revela deuda calculada ni afecta a los demás. Las meseras globales conservan los menús autorizados de negocios vigentes; un local no disponible aparece deshabilitado y sin detalles de licencia. Errores de verificación se muestran como problemas técnicos, no como falta de pago.
+- Al vencer Mideli, WhatsApp no responde ni procesa pedidos, relevo humano o tareas programadas. Los pedidos programados que queden atrasados al reactivar requieren revisión humana, nunca envío retroactivo automático.
 - Los datos conversacionales pueden limpiarse mediante la operación autorizada sin borrar órdenes, folios ni auditoría.
 - El número de teléfono se normaliza internamente para búsquedas y proveedores, pero la interfaz muestra el formato local cómodo cuando es posible.
 

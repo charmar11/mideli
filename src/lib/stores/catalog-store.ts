@@ -11,6 +11,7 @@ interface CatalogState {
   catalogBusinessId: string | null;
   loading: boolean;
   lastError: string | null;
+  clearCatalog: () => void;
   fetchCatalog: (force?: boolean) => Promise<void>;
   fetchCatalogForBusiness: (businessId: string, force?: boolean) => Promise<boolean>;
   fetchCategories: () => Promise<void>;
@@ -38,6 +39,64 @@ let scopedCatalogRequest: Promise<boolean> | null = null;
 let catalogFetchedAt = 0;
 let catalogScopeKey = "";
 const CATALOG_CACHE_MS = 30_000;
+const MENU_ITEM_SELECT =
+  "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,is_combo,combo_definition,sale_mode,image_url,created_at,updated_at";
+const MENU_ITEM_COMBO_SELECT =
+  "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,is_combo,combo_definition,image_url,created_at,updated_at";
+const MENU_ITEM_LEGACY_SELECT =
+  "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at";
+
+function isMissingComboColumns(error: { code?: string; message?: string } | null) {
+  const message = error?.message?.toLowerCase() ?? "";
+  return (
+    (error?.code === "42703" || error?.code === "PGRST204") &&
+    (message.includes("is_combo") || message.includes("combo_definition"))
+  );
+}
+
+function isMissingSaleModeColumn(error: { code?: string; message?: string } | null) {
+  const message = error?.message?.toLowerCase() ?? "";
+  return (
+    (error?.code === "42703" || error?.code === "PGRST204") &&
+    message.includes("sale_mode")
+  );
+}
+
+async function loadMenuItems(
+  supabase: ReturnType<typeof createClient>,
+  businessId?: string
+) {
+  const load = async (selection: string) => {
+    let query = supabase
+      .from("menu_items")
+      .select(selection)
+      .order("sort_order", { ascending: true });
+    if (businessId) query = query.eq("business_id", businessId);
+    return query;
+  };
+
+  let result = await load(MENU_ITEM_SELECT);
+  if (result.error && isMissingSaleModeColumn(result.error)) {
+    result = await load(MENU_ITEM_COMBO_SELECT);
+  }
+  if (result.error && isMissingComboColumns(result.error)) {
+    result = await load(MENU_ITEM_LEGACY_SELECT);
+  }
+  if (result.error) return result;
+
+  return {
+    ...result,
+    data: (result.data ?? []).map((item: MenuItem) => ({
+      ...item,
+      is_combo: Boolean(item.is_combo),
+      sale_mode: item.sale_mode ?? "both",
+      combo_definition: item.combo_definition ?? {
+        fixed_components: [],
+        choice_groups: [],
+      },
+    })),
+  };
+}
 
 async function getCatalogScope() {
   const context = useBusinessContextStore.getState();
@@ -56,12 +115,36 @@ function hasModernScope(scope: Awaited<ReturnType<typeof getCatalogScope>>) {
   return !scope.legacyFallback;
 }
 
+function canLoadBusinessCatalog(business: {
+  business_license_available?: boolean;
+  business_lifecycle_status: string;
+  capability_codes: string[];
+}) {
+  return (
+    business.business_license_available === true ||
+    (business.business_lifecycle_status === "draft" &&
+      business.capability_codes.includes("business.manage_catalog"))
+  );
+}
+
 export const useCatalogStore = create<CatalogState>((set, get) => ({
   categories: [],
   menuItems: [],
   catalogBusinessId: null,
   loading: false,
   lastError: null,
+
+  clearCatalog: () => {
+    catalogFetchedAt = 0;
+    catalogScopeKey = "";
+    set({
+      categories: [],
+      menuItems: [],
+      catalogBusinessId: null,
+      loading: false,
+      lastError: null,
+    });
+  },
 
   fetchCatalogForBusiness: async (businessId: string, force = false) => {
     const context = useBusinessContextStore.getState();
@@ -74,10 +157,11 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     if (
       currentContext.legacyFallback ||
       !business ||
-      business.business_lifecycle_status !== "active"
+      !canLoadBusinessCatalog(business)
     ) {
+      get().clearCatalog();
       set({
-        lastError: "Este negocio no está disponible para recibir pedidos.",
+        lastError: "Este negocio no está disponible para mostrar su menú.",
       });
       return false;
     }
@@ -115,13 +199,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
             .select("id,business_id,name,sort_order,is_active,created_at,updated_at")
             .eq("business_id", businessId)
             .order("sort_order", { ascending: true }),
-          supabase
-            .from("menu_items")
-            .select(
-              "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
-            )
-            .eq("business_id", businessId)
-            .order("sort_order", { ascending: true }),
+          loadMenuItems(supabase, businessId),
         ]);
 
         const catalogError = categoriesResult.error ?? menuItemsResult.error;
@@ -163,6 +241,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     const initialScope = await getCatalogScope();
     if (hasModernScope(initialScope)) {
       if (!initialScope.businessId) {
+        get().clearCatalog();
         set({
           lastError: "No hay un negocio disponible para esta cuenta.",
         });
@@ -201,20 +280,13 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
             .from("categories")
             .select("id,business_id,name,sort_order,is_active,created_at,updated_at")
             .order("sort_order", { ascending: true });
-        let menuItemsQuery = supabase
-            .from("menu_items")
-            .select(
-              "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
-            )
-            .order("sort_order", { ascending: true });
         if (scope.businessId) {
           categoriesQuery = categoriesQuery.eq("business_id", scope.businessId);
-          menuItemsQuery = menuItemsQuery.eq("business_id", scope.businessId);
         }
 
         const [categoriesResult, menuItemsResult] = await Promise.all([
           categoriesQuery,
-          menuItemsQuery,
+          loadMenuItems(supabase, scope.businessId ?? undefined),
         ]);
 
         const catalogError = categoriesResult.error ?? menuItemsResult.error;
@@ -255,6 +327,15 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       set({ loading: false, lastError: "No hay un negocio disponible para esta cuenta." });
       return;
     }
+    if (scope.businessId && !scope.legacyFallback) {
+      const business = useBusinessContextStore.getState().businesses.find(
+        (candidate) => candidate.business_id === scope.businessId,
+      );
+      if (!business || !canLoadBusinessCatalog(business)) {
+        set({ categories: [], loading: false, lastError: "Este negocio no está disponible para mostrar su menú." });
+        return;
+      }
+    }
     const supabase = createClient();
     let query = supabase
       .from("categories")
@@ -276,15 +357,20 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       set({ loading: false, lastError: "No hay un negocio disponible para esta cuenta." });
       return;
     }
+    if (scope.businessId && !scope.legacyFallback) {
+      const business = useBusinessContextStore.getState().businesses.find(
+        (candidate) => candidate.business_id === scope.businessId,
+      );
+      if (!business || !canLoadBusinessCatalog(business)) {
+        set({ menuItems: [], loading: false, lastError: "Este negocio no está disponible para mostrar su menú." });
+        return;
+      }
+    }
     const supabase = createClient();
-    let query = supabase
-      .from("menu_items")
-      .select(
-        "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,image_url,created_at,updated_at"
-      )
-      .order("sort_order", { ascending: true });
-    if (scope.businessId) query = query.eq("business_id", scope.businessId);
-    const { data, error } = await query;
+    const { data, error } = await loadMenuItems(
+      supabase,
+      scope.businessId ?? undefined
+    );
 
     if (!error && data) {
       set({ menuItems: data });

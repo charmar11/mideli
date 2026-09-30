@@ -256,7 +256,13 @@ export function OrderDetailsModal({
             </p>
             {item.selected_modifiers.length > 0 ? (
               <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">
-                {item.selected_modifiers.map((modifier) => modifier.option).join(" · ")}
+                {item.selected_modifiers
+                  .map((modifier) =>
+                    modifier.group && modifier.group !== "Incluye"
+                      ? `${modifier.group}: ${modifier.option}`
+                      : modifier.option
+                  )
+                  .join(" · ")}
               </p>
             ) : null}
             {item.notes ? (

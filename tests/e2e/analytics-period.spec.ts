@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { ANALYTICS_ORDER_SELECT } from "@/lib/analytics/query-select";
+import { fetchAllRows } from "@/lib/analytics/fetch-all-rows";
 import {
   getTodayKey,
   normalizePeriod,
@@ -12,6 +13,31 @@ import {
 test("analíticas inicia en el día actual cuando no hay periodo en la URL", () => {
   const today = getTodayKey();
   expect(normalizePeriod()).toEqual({ view: "dia", from: today, to: today });
+});
+
+test("analíticas consulta todas las páginas sin perder filas en el límite", async () => {
+  const source = Array.from({ length: 1_025 }, (_, id) => ({ id }));
+  const requested: Array<[number, number]> = [];
+  const result = await fetchAllRows((from, to) => {
+    requested.push([from, to]);
+    return Promise.resolve({ data: source.slice(from, to + 1), error: null });
+  });
+
+  expect(result.error).toBeNull();
+  expect(result.data).toEqual(source);
+  expect(requested).toEqual([[0, 499], [500, 999], [1000, 1499]]);
+});
+
+test("analíticas no muestra un reporte parcial si falla una página", async () => {
+  const result = await fetchAllRows((from) =>
+    Promise.resolve(
+      from === 0
+        ? { data: Array.from({ length: 500 }, (_, id) => id), error: null }
+        : { data: null, error: { message: "timeout" } }
+    )
+  );
+
+  expect(result).toEqual({ data: [], error: { message: "timeout" } });
 });
 
 test("semana y mes parten del ancla actual sin desplazarse por la zona horaria", () => {

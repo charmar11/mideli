@@ -8,9 +8,10 @@ Este documento sirve para agentes y personas que necesiten levantar, verificar o
 - Producción: [https://mideli.vercel.app](https://mideli.vercel.app).
 - Salud: [https://mideli.vercel.app/api/health](https://mideli.vercel.app/api/health).
 - Base de datos: proyecto Supabase `qgnjennimvbrfxvcmowb`.
-- Producción ya contiene la primera rebanada multinegocio con Mideli como único
-  negocio activo. No usar producción como staging para crear o probar otros
-  negocios; la validación aislada continúa en GitHub Actions.
+- La última comprobación documentada encontró Mideli y Just Dipping activos.
+  Verifica estado y licencia actuales antes de operar o diagnosticar un negocio.
+  No usar producción como staging para crear o probar otros negocios; la
+  validación aislada continúa en GitHub Actions.
 
 `.env.example` documenta los nombres de variables. `.env.local` nunca se lee para imprimirlo, nunca se commitea y nunca se comparte.
 
@@ -47,7 +48,9 @@ npx supabase db push --linked --dry-run
 
 Después de revisar el dry-run, aplicar solo la migración aprobada. Nunca ejecutar `supabase db reset --linked`, borrar tablas remotas ni eliminar datos sin autorización explícita para esa operación concreta.
 
-La copia local incluye migraciones hasta `20260919203953_multibusiness_context_metadata_scope.sql`. La alineación remota debe comprobarse, no inferirse de esta documentación.
+La lista de migraciones cambia con el proyecto. Consultar
+`npx supabase migration list --linked` antes de afirmar que una versión local
+coincide con la base remota; no inferirlo de una fecha escrita aquí.
 
 La resolución de negocios distingue una membresía local de una membresía de
 organización. Un usuario local solo recibe el negocio de su membresía; una
@@ -130,7 +133,11 @@ Antes de usar Meta en producción, comprobar proveedor, firma del webhook, plant
 
 ## Notificaciones PWA
 
-Cada dispositivo configura por separado avisos de pedidos nuevos y pedidos listos. Para depurarlos, revisar permiso del navegador, instalación PWA, suscripción del dispositivo, visibilidad de Cocina/Mesero, service worker activo y entrega de la Edge Function correspondiente. Cuando la vista ya está visible, puede usarse señal local o sonido en lugar de banner Push.
+Cada dispositivo configura por separado avisos de pedidos nuevos y pedidos
+listos. Para depurarlos, revisar permiso del navegador, instalación PWA,
+suscripción, negocio, capacidades del destinatario, service worker activo y
+entrega de la Edge Function. Push puede mostrarse incluso con Cocina o Mesero
+visibles; la señal local y el sonido son complementarios.
 
 ## Diagnóstico de un pedido
 

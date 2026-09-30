@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Pacifico, Sora, Karla, JetBrains_Mono } from "next/font/google";
 import { PWAProvider } from "@/components/pwa-provider";
+import { BusinessBrandingBoundary } from "@/components/auth/business-branding-boundary";
 import { LicenseHeartbeat } from "@/components/license-heartbeat";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -27,20 +28,20 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Mideli, Burger & Sushi",
-  description: "Pedidos, cocina, cobro e inventario conectados para Mideli.",
+  title: "Rincón 404 Food Park",
+  description: "Operación de restaurantes para el equipo de Rincón 404 Food Park.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Mideli",
+    title: "Rincón 404",
   },
   icons: {
     icon: [
-      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/rincon-404-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/rincon-404-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/icons/apple-touch-icon.png",
+    apple: "/icons/rincon-404-180.png",
   },
 };
 
@@ -67,7 +68,7 @@ export default function RootLayout({
       <body className="flex min-h-full flex-col">
         <PWAProvider>
           <LicenseHeartbeat />
-          {children}
+          <BusinessBrandingBoundary>{children}</BusinessBrandingBoundary>
         </PWAProvider>
         <Toaster
           theme="dark"

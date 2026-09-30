@@ -48,6 +48,8 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /blob-report/
+/.playwright-cli/
+/output/playwright/
 /.impeccable/
 
 # audio sources live in public/sounds

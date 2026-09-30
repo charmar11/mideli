@@ -39,7 +39,12 @@ function isAlcoholicProduct(name: string, categoryName: string) {
 
 export function buildConversationCatalog(menuItems: MenuItemWithCategory[]): ConversationCatalog {
   const items = menuItems
-    .filter((item) => item.is_active && item.whatsapp_enabled !== false)
+    .filter(
+      (item) =>
+        item.is_active &&
+        item.sale_mode !== "combo_only" &&
+        item.whatsapp_enabled !== false
+    )
     .map((item) => {
       const category = categoryFor(item);
       return {

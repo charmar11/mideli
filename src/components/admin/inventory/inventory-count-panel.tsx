@@ -198,7 +198,7 @@ export function InventoryCountPanel({
     const pendingReviews = counts.filter((count) => count.status === "submitted");
     return (
       <div className="space-y-4">
-        <InventoryPanel title="Conteo físico" description="Cuenta primero, compara después. Mideli registra cada diferencia.">
+        <InventoryPanel title="Conteo físico" description="Cuenta primero, compara después. El sistema registra cada diferencia.">
           <ol className="grid border-b border-border/70 sm:grid-cols-3 sm:divide-x sm:divide-border/70">
             <li className="px-4 py-3.5 sm:px-5">
               <p className="font-heading text-xs font-bold text-foreground">1. Elige qué contar</p>
@@ -206,7 +206,7 @@ export function InventoryCountPanel({
             </li>
             <li className="border-t border-border/70 px-4 py-3.5 sm:border-t-0 sm:px-5">
               <p className="font-heading text-xs font-bold text-foreground">2. Captura lo que ves</p>
-              <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">Escribe la cantidad física real. Mideli hará la comparación después.</p>
+              <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">Escribe la cantidad física real. El sistema hará la comparación después.</p>
             </li>
             <li className="border-t border-border/70 px-4 py-3.5 sm:border-t-0 sm:px-5">
               <p className="font-heading text-xs font-bold text-foreground">3. Explica diferencias</p>
@@ -310,7 +310,7 @@ export function InventoryCountPanel({
 
         <div className="p-4 sm:p-6">
           <div className="mb-5 rounded-xl bg-brand-light px-3.5 py-3">
-            <p className="font-body text-xs leading-5 text-brand">Escribe lo que ves físicamente. Mideli mostrará la cantidad del sistema después de capturar.</p>
+            <p className="font-body text-xs leading-5 text-brand">Escribe lo que ves físicamente. El sistema mostrará su cantidad después de capturar.</p>
           </div>
           <div className="mb-5">
             <div className="flex items-start justify-between gap-3"><div><h3 className="font-heading text-xl font-bold text-foreground">{currentItem.name}</h3><p className="mt-1 font-body text-sm text-muted-foreground">{currentItem.storage_location || "Ubicación sin definir"} · Unidad: {currentItem.unit}</p></div>{currentItem.current_stock <= currentItem.minimum_stock ? <span className="rounded-full bg-warning-light px-2 py-1 font-heading text-[10px] font-bold text-warning">Crítico</span> : null}</div>

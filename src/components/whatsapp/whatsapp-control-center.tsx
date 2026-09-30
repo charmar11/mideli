@@ -6,6 +6,7 @@ import {
   Check,
   ChevronRight,
   CircleAlert,
+  Copy,
   Clock3,
   ExternalLink,
   HandHelping,
@@ -131,9 +132,9 @@ export function WhatsAppControlCenter({ data }: Props) {
   }
 
   return (
-    <div className={`h-full min-w-0 w-full max-w-full bg-background ${ownsVerticalScroll ? "flex min-h-0 flex-col overflow-hidden overscroll-none" : "pos-scroll overflow-x-hidden overflow-y-auto"}`}>
-      <div className={`mx-auto w-full min-w-0 max-w-[1500px] px-3 py-3 sm:px-5 sm:py-5 ${mobileInboxChatOpen ? "max-w-none px-0 py-0" : ""} ${ownsVerticalScroll ? "flex min-h-0 flex-1 flex-col" : "min-h-full"}`}>
-        <header className={`mb-4 flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${mobileInboxChatOpen ? "hidden" : ""}`}>
+    <div className={`mideli-whatsapp-control-center h-full min-w-0 w-full max-w-full bg-background ${ownsVerticalScroll ? "flex min-h-0 flex-col overflow-hidden overscroll-none" : "pos-scroll overflow-x-hidden overflow-y-auto"}`}>
+      <div className={`mideli-whatsapp-content mx-auto w-full min-w-0 max-w-[1500px] px-3 py-3 sm:px-5 sm:py-5 ${mobileInboxChatOpen ? "max-w-none px-0 py-0" : ""} ${ownsVerticalScroll ? "flex min-h-0 flex-1 flex-col" : "min-h-full"}`}>
+        <header className={`mideli-whatsapp-page-header mb-4 flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${mobileInboxChatOpen ? "hidden" : ""}`}>
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-success/15 text-success">
               <MessageCircleMore aria-hidden size={21} />
@@ -175,7 +176,7 @@ export function WhatsAppControlCenter({ data }: Props) {
           </div>
         ) : null}
 
-        <nav className={`mb-4 flex min-w-0 shrink-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5 ${mobileInboxChatOpen ? "hidden" : ""}`} aria-label="Secciones de WhatsApp">
+        <nav className={`mideli-whatsapp-tabs mb-4 flex min-w-0 shrink-0 items-center gap-1 overflow-visible rounded-2xl border border-border bg-surface p-1.5 ${mobileInboxChatOpen ? "hidden" : ""}`} aria-label="Secciones de WhatsApp" role="tablist">
           <div className="pos-scroll flex min-w-0 flex-1 touch-pan-x gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain">
             {PRIMARY_TABS.filter((item) => !item.adminOnly || admin).map((item) => {
               const Icon = item.icon;
@@ -184,6 +185,8 @@ export function WhatsAppControlCenter({ data }: Props) {
                   key={item.id}
                   type="button"
                   onClick={() => selectTab(item.id)}
+                  role="tab"
+                  aria-selected={tab === item.id}
                   className={`flex h-12 min-w-[4.75rem] shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-xl px-2 font-heading text-[10px] font-bold transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset sm:h-11 sm:min-w-0 sm:flex-none sm:flex-row sm:gap-2 sm:px-3 sm:text-xs ${tab === item.id ? "bg-brand text-white shadow-md shadow-brand/20" : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}
                 >
                   <Icon aria-hidden size={16} />
@@ -248,6 +251,13 @@ function Diagnostics({ data, admin }: { data: WhatsappControlData; admin: boolea
   const [storeAddress, setStoreAddress] = useState(data.settings.store_address);
   const [testAddress, setTestAddress] = useState("");
   const [deliveryResult, setDeliveryResult] = useState("");
+  const latestInbound = data.conversations
+    .map((conversation) => conversation.lastInboundAt)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value))
+    .filter((value) => Number.isFinite(value.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+  const webhookUrl = "https://mideli.vercel.app/api/integraciones/whatsapp/meta";
   const checks = [
     {
       label: "Canal habilitado en el servidor",
@@ -328,6 +338,42 @@ function Diagnostics({ data, admin }: { data: WhatsappControlData; admin: boolea
           <WhatsappPilotEvaluator />
         </div>
       ) : null}
+      <Panel className="p-4 sm:p-5 xl:col-span-2">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-light text-brand"
+              >
+                <MessageCircleMore size={16} />
+              </span>
+              <h2 className="font-heading text-sm font-bold">Recepción desde WhatsApp</h2>
+            </div>
+            <p className="mt-2 font-body text-xs leading-5 text-muted-foreground">
+              {latestInbound
+                  ? `Último mensaje entrante guardado: ${new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(latestInbound)}.`
+                  : "No hay mensajes entrantes guardados en las 50 conversaciones más recientes."}
+              {" "}Si acabas de enviar uno y no coincide con esta hora, revisa que Meta llame esta URL y tenga suscrito el evento messages.
+            </p>
+            <code className="mt-3 block break-all rounded-lg bg-background px-3 py-2 font-data text-[11px] text-foreground">
+              {webhookUrl}
+            </code>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 w-full touch-manipulation gap-2 sm:w-auto"
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(webhookUrl)
+                .then(() => toast.success("URL del webhook copiada"))
+                .catch(() => toast.error("No se pudo copiar la URL"));
+            }}
+          >
+            <Copy size={15} /> Copiar URL para Meta
+          </Button>
+        </div>
+      </Panel>
       <Panel>
         <div className="border-b border-border p-4">
           <h2 className="font-heading text-lg font-bold">Estado técnico del canal</h2>

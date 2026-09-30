@@ -89,8 +89,8 @@ self.addEventListener("push", (event: PushEvent) => {
             : topic === "whatsapp_attention"
               ? "Un cliente está esperando respuesta."
               : "Cocina terminó un pedido."),
-        icon: payload.icon ?? "/icons/icon-192x192.png",
-        badge: payload.badge ?? "/icons/icon-192x192.png",
+        icon: payload.icon ?? "/icons/rincon-404-192.png",
+        badge: payload.badge ?? "/icons/rincon-404-192.png",
         tag:
           payload.tag ??
           (topic === "kitchen"

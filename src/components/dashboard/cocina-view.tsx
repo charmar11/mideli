@@ -453,7 +453,7 @@ export function CocinaView() {
   }).format(now);
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col bg-background">
+    <div className="mideli-kitchen-screen flex h-full min-h-0 min-w-0 flex-col bg-background">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2 shadow-sm sm:px-5">
         <div className="flex items-center gap-3">
           <Link
@@ -838,7 +838,7 @@ function OrderCard({
                 <p className="ml-8 break-words font-body text-sm text-muted-foreground">
                   {item.selected_modifiers
                     .map((m) =>
-                      m.description ? `${m.option} (${m.description})` : m.option
+                      `${m.group && m.group !== "Incluye" ? `${m.group}: ` : ""}${m.option}${m.description ? ` (${m.description})` : ""}`
                     )
                     .join(", ")}
                 </p>

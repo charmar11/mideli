@@ -9,6 +9,10 @@ import { loadWhatsappCatalog } from "./catalog.server";
 import { addressConfirmationReply, deliveryQuoteReply } from "./customer-messages";
 import { safeErrorDetail } from "./error-detail";
 import {
+  assertMideliWhatsappAvailable,
+  isMideliWhatsappAvailable,
+} from "@/lib/business-license-server";
+import {
   createConversation,
   canResumeBotAfterHandoff,
   conversationSummaryReply,
@@ -583,6 +587,11 @@ async function processQueuedMessage(
   summary: MetaProcessingSummary
 ) {
   try {
+    if (!(await isMideliWhatsappAvailable())) {
+      await markInboundMessage(message.id, "ignored", "Mideli WhatsApp is unavailable");
+      return;
+    }
+
     const restartMessage = message.interactiveId ?? message.text;
     const canResumeBot = canResumeBotAfterHandoff(state, assignedTo, restartMessage);
     if (state.stage === "handoff" && operations.settings.human_handoff_enabled && !canResumeBot) {
@@ -686,6 +695,10 @@ async function processQueuedMessage(
           reply: "✅ Recibimos tu pedido. Una persona del equipo lo revisará contigo antes de enviarlo a cocina.",
         };
       } else try {
+        if (!(await isMideliWhatsappAvailable())) {
+          await markInboundMessage(message.id, "ignored", "Mideli WhatsApp is unavailable");
+          return;
+        }
         createdOrder = await createExternalOrder({
           externalOrderId: message.id,
           conversationId,
@@ -702,6 +715,10 @@ async function processQueuedMessage(
         };
         summary.ordersCreated += 1;
       } catch (error) {
+        if (!(await isMideliWhatsappAvailable())) {
+          await markInboundMessage(message.id, "ignored", "Mideli WhatsApp is unavailable");
+          return;
+        }
         const detail = safeErrorDetail(error);
         console.warn(`[WhatsApp Meta] No se pudo registrar el pedido automático: ${detail}`);
         result = {
@@ -713,6 +730,10 @@ async function processQueuedMessage(
       }
     }
 
+    if (!(await isMideliWhatsappAvailable())) {
+      await markInboundMessage(message.id, "ignored", "Mideli WhatsApp is unavailable");
+      return;
+    }
     await commitConversationMessage(conversationId, owner, message.id, result);
     if (customerReceived) await markConversationCustomerReceived(conversationId);
     summary.processed += 1;
@@ -876,6 +897,7 @@ export async function processMetaWebhook(
   webhook: NormalizedMetaWebhook,
   config: WhatsappConfig
 ): Promise<MetaProcessingSummary> {
+  await assertMideliWhatsappAvailable();
   const summary: MetaProcessingSummary = {
     processed: 0,
     duplicates: 0,

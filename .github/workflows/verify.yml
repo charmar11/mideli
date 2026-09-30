@@ -39,6 +39,17 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Operational regressions
+        run: |
+          npx playwright test --project=desktop \
+            tests/e2e/analytics-period.spec.ts \
+            tests/e2e/business-context-selection.spec.ts \
+            tests/e2e/cash-shift-report.spec.ts \
+            tests/e2e/combo-selection.spec.ts \
+            tests/e2e/operational-policies.spec.ts \
+            tests/e2e/order-totals.spec.ts \
+            tests/e2e/pos-cart-draft.spec.ts
+
   database:
     name: Supabase staging gate and pgTAP
     runs-on: ubuntu-latest
@@ -103,7 +114,12 @@ jobs:
           # The *_smoke.sql files are operational checks that require a
           # production-like profile and are not pgTAP plans. Run the
           # deterministic pgTAP suite explicitly in the empty CI database.
-          supabase test db --local supabase/tests/multibusiness_*_test.sql > supabase-db-test.log 2>&1
+          supabase test db --local \
+            supabase/tests/multibusiness_*_test.sql \
+            supabase/tests/order_deletion_security_test.sql \
+            supabase/tests/just_dipping_combo_sale_policy_test.sql \
+            supabase/tests/just_dipping_combo_archive_test.sql \
+            > supabase-db-test.log 2>&1
           exit_code=$?
           diagnostic=$(tail -c 5000 supabase-db-test.log | tr '\n' ' ' | tr '\r' ' ')
           echo "::error title=Supabase database tests (exit ${exit_code})::${diagnostic}"

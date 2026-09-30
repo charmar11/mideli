@@ -1,5 +1,10 @@
 # Iniciativa multinegocio
 
+> Plan histórico de la primera etapa. Las afirmaciones siguientes de que Just
+> Dipping no existe o de que las migraciones no se aplicaron ya no describen
+> el proyecto actual. Empezar por `docs/README.md` y el código antes de usar
+> este material como referencia.
+
 ## Estado actual
 
 La iniciativa está en preparación técnica. El sistema productivo sigue siendo

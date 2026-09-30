@@ -140,7 +140,7 @@ export function CashShiftReport({ shift }: { shift: CashShiftDetail }) {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {isClosed ? (
           <>
-            <Metric label="Venta Mideli" value={money(shift.net_sales)} tone="gold" />
+            <Metric label="Venta neta" value={money(shift.net_sales)} tone="gold" />
             <Metric label="Cobrado" value={money(shift.collected_total)} tone="success" />
             <Metric label="Cobros" value={String(shift.payment_count)} />
             <Metric label="Diferencia" value={money(shift.difference)} tone={differenceTone} />

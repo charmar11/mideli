@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { APP_LICENSE_ID, resolveLicense, type AppLicenseRecord } from "@/lib/license";
+import { canSelectBusinessContext } from "@/lib/multibusiness/business-context-selection";
 import { createClient } from "@/lib/supabase/client";
+import type { BusinessContextRow } from "@/types/multibusiness";
 
 const PROTECTED_PREFIXES = ["/dashboard", "/menu", "/settings"];
 
@@ -12,53 +13,84 @@ export function LicenseHeartbeat() {
   const isBlockedPage = pathname === "/sistema-bloqueado";
   const shouldCheck = isBlockedPage || PROTECTED_PREFIXES.some((route) => pathname.startsWith(route));
 
-  const checkLicense = useCallback(async () => {
+  const checkAccess = useCallback(async () => {
     if (!shouldCheck) return;
 
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from("app_license")
-      .select("id, status, valid_until, updated_at")
-      .eq("id", APP_LICENSE_ID)
-      .maybeSingle();
+    const [contextResult, licenseResult] = await Promise.all([
+      supabase.rpc("get_my_multibusiness_context"),
+      supabase.rpc("get_my_business_license_availability"),
+    ]);
+    if (contextResult.error) return;
 
-    if (error || !data) return;
-    const license = resolveLicense(data as AppLicenseRecord);
+    const contexts = (contextResult.data ?? []) as BusinessContextRow[];
+    const availabilityByBusiness = new Map(
+      ((licenseResult.data ?? []) as Array<{
+        business_id: string;
+        is_available: boolean;
+      }>).map((row) => [row.business_id, row.is_available]),
+    );
+    const licenseVerified = !licenseResult.error;
+    const scopedContexts = contexts.map((context) => ({
+      ...context,
+      business_license_available:
+        licenseVerified && availabilityByBusiness.get(context.business_id) === true,
+    }));
+    const hasPlatformAccess = scopedContexts.some((context) =>
+      context.capability_codes.some((code) => code.startsWith("platform.")),
+    );
+    const hasGlobalWaiterAccess = scopedContexts.some((context) =>
+      context.capability_codes.includes("organization.manage_global_waiters"),
+    );
+    const hasAvailableBusiness = scopedContexts.some(
+      (context) =>
+        context.business_lifecycle_status === "active" &&
+        context.business_license_available === true &&
+        canSelectBusinessContext(context),
+    );
+    const hasDraftSetup = scopedContexts.some(
+      (context) =>
+        context.business_lifecycle_status === "draft" &&
+        context.capability_codes.some((code) =>
+          [
+            "business.manage_catalog",
+            "business.manage_inventory",
+            "business.manage_staff",
+          ].includes(code),
+        ),
+    );
+    const shouldLock =
+      contexts.length > 0 &&
+      !hasPlatformAccess &&
+      !hasGlobalWaiterAccess &&
+      !hasAvailableBusiness &&
+      !hasDraftSetup;
 
-    if (!license.isActive && !isBlockedPage) {
+    if (shouldLock && !isBlockedPage) {
       window.location.replace("/sistema-bloqueado");
-    } else if (license.isActive && isBlockedPage) {
-      window.location.replace("/dashboard");
+    } else if (!shouldLock && isBlockedPage) {
+      window.location.replace(
+        hasPlatformAccess ? "/settings/licencias" : "/dashboard",
+      );
     }
   }, [isBlockedPage, shouldCheck]);
 
   useEffect(() => {
     if (!shouldCheck) return;
 
-    const supabase = createClient();
-    void checkLicense();
-    const interval = window.setInterval(() => void checkLicense(), 60_000);
-    const channel = supabase
-      .channel("app-license-heartbeat")
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "app_license", filter: `id=eq.${APP_LICENSE_ID}` },
-        () => void checkLicense()
-      )
-      .subscribe();
+    void checkAccess();
+    const interval = window.setInterval(() => void checkAccess(), 60_000);
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void checkLicense();
+      if (document.visibilityState === "visible") void checkAccess();
     };
-
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("focus", checkLicense);
+    window.addEventListener("focus", onVisibility);
     return () => {
       window.clearInterval(interval);
-      void supabase.removeChannel(channel);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("focus", checkLicense);
+      window.removeEventListener("focus", onVisibility);
     };
-  }, [checkLicense, shouldCheck]);
+  }, [checkAccess, shouldCheck]);
 
   return null;
 }

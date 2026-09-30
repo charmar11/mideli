@@ -160,7 +160,7 @@ export function CashHistoryManager() {
     const text = buildCashShiftShareText(selected);
     try {
       if (navigator.share) {
-        await navigator.share({ title: `Corte Mideli #${selected.number}`, text });
+        await navigator.share({ title: `Corte #${selected.number}`, text });
         return;
       }
       await navigator.clipboard.writeText(text);
@@ -446,7 +446,7 @@ export function CashHistoryManager() {
   );
 
   return (
-    <div className="min-h-dvh min-w-0 max-w-full overflow-x-hidden bg-background text-foreground">
+    <div className="mideli-cash-screen min-h-dvh min-w-0 max-w-full overflow-x-hidden bg-background text-foreground">
       <header className="flex min-h-16 items-center gap-3 border-b border-border bg-surface px-3 py-2 sm:px-6 print:hidden">
         <Link href="/dashboard/mesero" aria-label="Volver al punto de venta" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl bg-surface-raised text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"><ArrowLeft size={19} /></Link>
         <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-light text-brand"><Landmark size={20} /></span>
@@ -459,7 +459,7 @@ export function CashHistoryManager() {
         <button type="button" onClick={() => setActiveTab("movements")} aria-pressed={activeTab === "movements"} className={`min-h-11 shrink-0 touch-manipulation rounded-xl px-4 py-3 font-heading text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${activeTab === "movements" ? "bg-brand text-white" : "bg-surface text-muted-foreground hover:bg-surface-raised hover:text-foreground"}`}>Gastos y movimientos</button>
       </nav>
 
-      {activeTab === "movements" ? <CashMovementsManager /> : <main className="mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-6">
+      {activeTab === "movements" ? <CashMovementsManager /> : <main className="mideli-page-scroll mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-6">
         <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4 print:hidden">
           <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Cortes visibles</p><p className="mt-2 font-data text-2xl font-black">{summary.count}</p></div>
           <div className="rounded-2xl bg-surface p-4"><p className="font-body text-xs text-muted-foreground">Venta neta</p><p className="mt-2 font-data text-2xl font-black text-gold">{money(summary.net)}</p></div>

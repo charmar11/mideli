@@ -22,7 +22,38 @@ export interface SalesHistoryOrder extends Order {
 
 export interface SalesHistoryResult {
   orders: SalesHistoryOrder[];
+  legacyTickets: LegacySalesTicket[];
+  legacyArchiveAvailable: boolean;
   error: string | null;
+}
+
+export interface LegacySalesTicketItem {
+  product_name: string;
+  quantity: number;
+  base_price: number;
+  line_total: number;
+  selected_modifiers: Array<{
+    group?: string;
+    option?: string;
+    price?: number;
+    description?: string;
+  }>;
+  extras: string[];
+  combo_source_name?: string;
+}
+
+export interface LegacySalesTicket {
+  id: string;
+  business_id: string;
+  source_document_id: string;
+  source_folio: string | null;
+  occurred_at: string;
+  subtotal_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  payment_method: string;
+  source_status: string | null;
+  items: LegacySalesTicketItem[];
 }
 
 export interface DeleteSalesHistoryResult {
@@ -40,16 +71,16 @@ export async function fetchSalesHistory({
 }: SalesHistoryParams): Promise<SalesHistoryResult> {
   try {
     if (!isValidDate(desde) || !isValidDate(hasta)) {
-      return { orders: [], error: "El rango de fechas no es válido" };
+      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "El rango de fechas no es válido" };
     }
 
     const from = new Date(desde);
     const to = new Date(hasta);
     if (from > to) {
-      return { orders: [], error: "La fecha inicial debe ser anterior a la final" };
+      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "La fecha inicial debe ser anterior a la final" };
     }
     if (from > new Date()) {
-      return { orders: [], error: "No puedes consultar una fecha futura" };
+      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "No puedes consultar una fecha futura" };
     }
 
     const supabase = await createClient();
@@ -58,7 +89,7 @@ export async function fetchSalesHistory({
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return { orders: [], error: "Tu sesión expiró. Inicia sesión nuevamente" };
+      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "Tu sesión expiró. Inicia sesión nuevamente" };
     }
 
     const { data: profile } = await supabase
@@ -68,12 +99,46 @@ export async function fetchSalesHistory({
       .maybeSingle();
 
     if (!profile?.is_active) {
-      return { orders: [], error: "Tu cuenta está desactivada" };
+      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "Tu cuenta está desactivada" };
     }
 
     const businessContext = await getSelectedBusinessContext(supabase);
     if (businessContext.multibusinessAvailable && !businessContext.businessId) {
-      return { orders: [], error: "No hay un negocio disponible para esta cuenta" };
+      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "No hay un negocio disponible para esta cuenta" };
+    }
+    if (
+      businessContext.multibusinessAvailable &&
+      businessContext.readableBusinessIds.length === 0
+    ) {
+      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: null };
+    }
+    let readableBusinessIds = businessContext.readableBusinessIds;
+    if (businessContext.multibusinessAvailable) {
+      const licenseResult = await supabase.rpc(
+        "get_my_business_license_availability"
+      );
+      if (licenseResult.error) {
+        return {
+          orders: [],
+          legacyTickets: [],
+          legacyArchiveAvailable: false,
+          error: "No se pudo verificar qué negocios están habilitados",
+        };
+      }
+      const licensedBusinessIds = new Set(
+        ((licenseResult.data ?? []) as Array<{
+          business_id: string;
+          is_available: boolean;
+        }>)
+          .filter((business) => business.is_available === true)
+          .map((business) => business.business_id)
+      );
+      readableBusinessIds = readableBusinessIds.filter((businessId) =>
+        licensedBusinessIds.has(businessId)
+      );
+      if (readableBusinessIds.length === 0) {
+        return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: null };
+      }
     }
 
     let ordersQuery = supabase
@@ -85,19 +150,61 @@ export async function fetchSalesHistory({
       .lte("created_at", to.toISOString())
       .order("created_at", { ascending: false })
       .limit(500);
-    if (businessContext.businessIds.length > 1) {
-      ordersQuery = ordersQuery.in("business_id", businessContext.businessIds);
+    if (businessContext.multibusinessAvailable) {
+      ordersQuery = ordersQuery.in("business_id", readableBusinessIds);
     } else if (businessContext.businessId) {
       ordersQuery = ordersQuery.eq("business_id", businessContext.businessId);
     }
-    const { data: ordersData, error: ordersError } = await ordersQuery;
+
+    const loadLegacyArchive = async () => {
+      if (!businessContext.multibusinessAvailable || readableBusinessIds.length === 0) {
+        return {
+          tickets: [] as LegacySalesTicket[],
+          available: false,
+        };
+      }
+
+      let archiveQuery = supabase
+        .from("legacy_sales_tickets")
+        .select("id,business_id,source_document_id,source_folio,occurred_at,subtotal_amount,discount_amount,total_amount,payment_method,source_status,items")
+        .gte("occurred_at", from.toISOString())
+        .lte("occurred_at", to.toISOString())
+        .eq("source_system", "just-dipping-firestore")
+        .order("occurred_at", { ascending: false })
+        .limit(1000);
+      if (businessContext.multibusinessAvailable) {
+        archiveQuery = archiveQuery.in("business_id", readableBusinessIds);
+      } else {
+        archiveQuery = archiveQuery.eq("business_id", businessContext.businessId);
+      }
+      const { data, error } = await archiveQuery;
+      return error
+        ? { tickets: [] as LegacySalesTicket[], available: false }
+        : {
+            tickets: (data ?? []) as unknown as LegacySalesTicket[],
+            available: true,
+          };
+    };
+
+    const [ordersResult, legacyArchive] = await Promise.all([
+      ordersQuery,
+      loadLegacyArchive(),
+    ]);
+    const { data: ordersData, error: ordersError } = ordersResult;
 
     if (ordersError) {
-      return { orders: [], error: "No se pudo cargar el historial de ventas" };
+      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "No se pudo cargar el historial de ventas" };
     }
 
     const orders = (ordersData ?? []) as Order[];
-    if (orders.length === 0) return { orders: [], error: null };
+    // Authenticated RLS remains the authorization boundary for the archive;
+    // older deployments can run before its additive migration exists.
+    const legacyTickets = legacyArchive.tickets;
+    const legacyArchiveAvailable = legacyArchive.available;
+
+    if (orders.length === 0) {
+      return { orders: [], legacyTickets, legacyArchiveAvailable, error: null };
+    }
 
     const orderIds = orders.map((order) => order.id);
     const creatorIds = Array.from(
@@ -121,7 +228,7 @@ export async function fetchSalesHistory({
     ]);
 
     if (itemsResult.error) {
-      return { orders: [], error: "No se pudieron cargar los artículos del historial" };
+      return { orders: [], legacyTickets, legacyArchiveAvailable, error: "No se pudieron cargar los artículos del historial" };
     }
 
     const creatorNames = new Map<string, string>();
@@ -164,10 +271,12 @@ export async function fetchSalesHistory({
           ? creatorNames.get(order.created_by) ?? null
           : null,
       })),
+      legacyTickets,
+      legacyArchiveAvailable,
       error: null,
     };
   } catch {
-    return { orders: [], error: "No se pudo cargar el historial de ventas" };
+    return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "No se pudo cargar el historial de ventas" };
   }
 }
 
@@ -194,10 +303,7 @@ export async function deleteSalesHistoryOrder(
       .eq("id", user.id)
       .maybeSingle();
 
-    if (
-      !viewer?.is_active ||
-      !["owner", "admin", "supervisor", "waiter"].includes(viewer.role)
-    ) {
+    if (!viewer?.is_active) {
       return {
         success: false,
         error: "Tu cuenta no puede eliminar pedidos del historial",
@@ -212,16 +318,39 @@ export async function deleteSalesHistoryOrder(
       };
     }
 
+    let allowedBusinessIds = businessContext.deletableBusinessIds;
+    if (businessContext.multibusinessAvailable && allowedBusinessIds.length === 0) {
+      return {
+        success: false,
+        error: "Sólo el dueño del negocio puede eliminar pedidos del historial",
+      };
+    }
+    if (!businessContext.multibusinessAvailable) {
+      if (viewer.role !== "owner" && viewer.role !== "admin") {
+        return {
+          success: false,
+          error: "Tu cuenta no puede eliminar pedidos del historial",
+        };
+      }
+      // In legacy single-business mode, resolve the order through the
+      // authenticated RLS client before using the service client below.
+      const { data: visibleOrder } = await supabase
+        .from("orders")
+        .select("business_id")
+        .eq("id", orderId)
+        .maybeSingle();
+      if (!visibleOrder?.business_id) {
+        return { success: false, error: "El pedido ya no existe o no es visible" };
+      }
+      allowedBusinessIds = [visibleOrder.business_id];
+    }
+
     const admin = createAdminClient();
     let orderQuery = admin
       .from("orders")
       .select("id,number,business_id")
       .eq("id", orderId)
-    if (businessContext.businessIds.length > 1) {
-      orderQuery = orderQuery.in("business_id", businessContext.businessIds);
-    } else if (businessContext.businessId) {
-      orderQuery = orderQuery.eq("business_id", businessContext.businessId);
-    }
+    orderQuery = orderQuery.in("business_id", allowedBusinessIds);
     const { data: order, error: orderError } = await orderQuery.maybeSingle();
 
     if (orderError) {
@@ -232,89 +361,45 @@ export async function deleteSalesHistoryOrder(
       return { success: false, error: "El pedido ya no existe" };
     }
 
-    const { data: allocations, error: allocationsError } = await admin
-      .from("payment_order_allocations")
-      .select("transaction_id")
-      .eq("order_id", orderId);
-
-    if (allocationsError) {
-      return { success: false, error: "No se pudieron consultar los cobros del pedido" };
-    }
-
-    const transactionIds = Array.from(
-      new Set(
-        (allocations ?? [])
-          .map((allocation) => allocation.transaction_id)
-          .filter((id): id is string => Boolean(id))
-      )
+    const { data: deleted, error: deleteError } = await admin.rpc(
+      "delete_sales_order_atomic",
+      {
+        p_order_id: orderId,
+        p_business_id: order.business_id,
+      }
     );
 
-    if (transactionIds.length > 0) {
-      const { data: closedShiftPayments, error: closedShiftError } = await admin
-        .from("payment_transactions")
-        .select("cash_shift_id,cash_shifts!inner(status)")
-        .in("id", transactionIds)
-        .eq("cash_shifts.status", "closed")
-        .limit(1);
-
-      if (closedShiftError) {
-        return { success: false, error: "No se pudo validar el corte de caja" };
-      }
-
-      if ((closedShiftPayments ?? []).length > 0) {
+    if (deleteError) {
+      console.error("No se pudo eliminar un pedido del historial", {
+        code: deleteError.code ?? "unknown",
+        message: deleteError.message,
+      });
+      if (deleteError.message === "ORDER_DELETE_CLOSED_SHIFT") {
         return {
           success: false,
           error: "Este pedido pertenece a un corte cerrado y ya no se puede eliminar. Registra una corrección desde Caja.",
         };
       }
-
-      const { data: sharedAllocations, error: sharedAllocationsError } = await admin
-        .from("payment_order_allocations")
-        .select("transaction_id,order_id")
-        .in("transaction_id", transactionIds);
-
-      if (sharedAllocationsError) {
-        return { success: false, error: "No se pudo validar la cuenta dividida" };
-      }
-
-      const isSharedPayment = (sharedAllocations ?? []).some(
-        (allocation) => allocation.order_id !== orderId
-      );
-
-      if (isSharedPayment) {
+      if (deleteError.message === "ORDER_DELETE_SHARED_PAYMENT") {
         return {
           success: false,
-          error:
-            "Este pedido pertenece a una cuenta dividida. Anula primero el ticket compartido para poder eliminarlo.",
+          error: "Este pedido pertenece a una cuenta dividida. Anula primero el ticket compartido para poder eliminarlo.",
         };
       }
-
-      const { error: transactionDeleteError } = await admin
-        .from("payment_transactions")
-        .delete()
-        .in("id", transactionIds);
-
-      if (transactionDeleteError) {
+      if (deleteError.code === "55P03") {
         return {
           success: false,
-          error: "No se pudieron eliminar los tickets asociados al pedido",
+          error: "Hay un cobro o cierre de caja en curso. Espera unos segundos e inténtalo de nuevo.",
         };
       }
-    }
-
-    let deleteQuery = admin.from("orders").delete().eq("id", orderId);
-    if (businessContext.businessIds.length > 1) {
-      deleteQuery = deleteQuery.in("business_id", businessContext.businessIds);
-    } else if (businessContext.businessId) {
-      deleteQuery = deleteQuery.eq("business_id", businessContext.businessId);
-    }
-    const { error: deleteError } = await deleteQuery;
-
-    if (deleteError) {
       return {
         success: false,
         error: "No se pudo eliminar el pedido y sus artículos",
       };
+    }
+
+    if (deleted !== true) {
+      return { success: false, error: "El pedido ya no existe o no pertenece a este negocio" };
     }
 
     return { success: true, error: null };

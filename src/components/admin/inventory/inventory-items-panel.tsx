@@ -101,7 +101,7 @@ export function InventoryItemsPanel({
         {filteredItems.length === 0 ? (
           <InventoryEmpty
             title={items.length === 0 ? "Crea tu primer insumo" : search ? "No encontramos coincidencias" : statusFilter === "active" ? "No hay insumos activos" : statusFilter === "archived" ? "No hay insumos archivados" : "No hay insumos"}
-            description={items.length === 0 ? "Registra cómo lo compras y Mideli calculará automáticamente su costo por unidad." : search ? "Prueba con otro nombre." : statusFilter === "active" && statusCounts.archived > 0 ? "Tus insumos están archivados. Puedes consultarlos o reactivarlos." : "Cuando existan registros con este estado aparecerán aquí."}
+            description={items.length === 0 ? "Registra cómo lo compras y el sistema calculará automáticamente su costo por unidad." : search ? "Prueba con otro nombre." : statusFilter === "active" && statusCounts.archived > 0 ? "Tus insumos están archivados. Puedes consultarlos o reactivarlos." : "Cuando existan registros con este estado aparecerán aquí."}
             action={items.length === 0 && isAdmin ? <button type="button" onClick={() => setEditingItem("new")} className="h-11 rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white">Crear primer insumo</button> : statusFilter === "active" && statusCounts.archived > 0 ? <button type="button" onClick={() => setStatusFilter("archived")} className="h-11 rounded-xl border border-brand/35 px-4 font-heading text-xs font-bold text-brand">Ver archivados</button> : undefined}
           />
         ) : (

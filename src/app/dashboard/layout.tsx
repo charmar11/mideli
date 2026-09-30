@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { hasPlatformConsoleAccess } from "@/lib/multibusiness/business-context-selection";
 import type { Profile } from "@/types/database";
 
 const staffRoles: Profile["role"][] = [
@@ -49,13 +50,20 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  const capabilities = decodeCapabilities(
+    requestHeaders.get("x-mideli-capabilities")
+  );
+
+  if (hasPlatformConsoleAccess(capabilities)) {
+    redirect("/settings/negocios");
+  }
+
   return (
     <DashboardShell
       userName={decodeUserName(requestHeaders.get("x-mideli-user-name"))}
+      userId={requestHeaders.get("x-mideli-user-id") ?? ""}
       userRole={userRole}
-      capabilities={decodeCapabilities(
-        requestHeaders.get("x-mideli-capabilities")
-      )}
+      capabilities={capabilities}
       multibusinessContextAvailable={hasScopedMultibusinessContext(
         requestHeaders.get("x-mideli-multibusiness-context")
       )}

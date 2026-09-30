@@ -1,50 +1,62 @@
-# Mideli
+# Rincón 404 Food Park
 
-Sistema operativo para un restaurante de un solo local: punto de venta, cocina, caja, inventario, menú, analíticas y atención de pedidos por WhatsApp.
+Sistema interno para operar negocios independientes en una sola aplicación.
+Mideli y Just Dipping comparten acceso, pero conservan catálogo, pedidos, caja,
+cobros, personal y licencia por negocio. WhatsApp continúa exclusivo de Mideli.
 
-La implementación productiva actual sigue siendo de un solo negocio. Existe una
-evolución aprobada para convertir el núcleo en multinegocio dentro de Rincón 404
-Food Park; todavía no está aplicada. Su índice y gates viven en
-`docs_dev/food-garden-multi-business/README.md`.
+Si eres el dueño, puedes pedir cambios en palabras normales. Para investigar un
+problema ayuda indicar la cuenta y el negocio, qué hiciste, qué esperabas y qué
+apareció. Una captura, folio u hora ayudan; no necesitas conocer el código.
+Consulta el [proceso de trabajo](docs/WORKFLOW.md) para saber cómo avanzaremos.
 
 ## Cómo orientarse rápidamente
 
 Si eres una persona o un agente de IA que entra por primera vez:
 
-1. Lee `AGENTS.md` para reglas obligatorias de trabajo.
-2. Lee `.opencode/plans/mideli-context.md` para decisiones de producto y estado conocido.
-3. Lee `PRODUCT.md` para el alcance funcional.
-4. Lee `DESIGN.md` para la identidad visual y reglas de interfaz.
-5. Consulta `docs/ARCHITECTURE.md` para seguir los módulos y flujos técnicos.
-6. Consulta `docs/OPERATIONS.md` antes de cambiar Supabase, variables de entorno o despliegues.
-7. Consulta `docs/DECISIONS.md` antes de modificar un flujo que ya tenga una decisión aprobada.
+1. Lee [AGENTS.md](AGENTS.md) para reglas obligatorias de trabajo.
+2. Lee el [índice del proyecto](docs/README.md) para encontrar cada módulo y
+   distinguir guías vigentes de planes históricos.
+3. Antes de modificar, lee completo
+   [el contexto acumulado](.opencode/plans/mideli-context.md).
+4. Revisa `git status`, el código afectado y, cuando corresponda, el estado
+   remoto. Conserva los cambios existentes.
+5. Sigue el [proceso de trabajo](docs/WORKFLOW.md) y consulta
+   [Operación](docs/OPERATIONS.md) antes de publicar o tocar Supabase.
 
-La documentación anterior describe el sistema; el código actual y el estado remoto verificable tienen prioridad si existe una contradicción.
+El código actual y el estado remoto verificable tienen prioridad si existe una
+contradicción. Un deploy desde esta carpeta puede incluir cambios sin commit;
+GitHub no representa necesariamente la versión publicada.
 
 ## Producto actual
 
-Mideli es una herramienta interna para el personal durante un turno real en Ciudad Obregón, Sonora. No es un marketplace, no es multi-sucursal y no tiene una superficie de pedido para el comensal.
+La aplicación es una herramienta interna para el personal de Rincón 404 durante
+un turno real en Ciudad Obregón, Sonora. En la última comprobación documentada,
+Mideli y Just Dipping figuraban activos. El estado operativo y las licencias
+deben volver a consultarse cuando una tarea dependa de ellos.
 
 Flujos principales:
 
 - Mesero arma pedidos de comedor, domicilio o para llevar.
 - Cocina recibe pedidos en un KDS y actualiza sus estados.
 - El personal cobra con efectivo, tarjeta o transferencia mediante un libro mayor transaccional.
-- Owner y admin administran menú, categorías, mesas, usuarios, inventario, caja, impresión y analíticas.
-- WhatsApp recibe pedidos, conserva el contexto del cliente y permite relevo humano cuando el bot no puede continuar.
+- Cada dueño administra las funciones autorizadas de su negocio; la cuenta de
+  plataforma configura negocios, personal global y licencias.
+- Meseras globales pueden operar los negocios para los que tienen permisos.
+- WhatsApp recibe pedidos para Mideli y permite relevo humano.
+- Just Dipping tiene catálogo y combos. Sus tickets anteriores de Firebase aún
+  no figuran importados en el archivo histórico, según la última verificación
+  documentada; no son ventas operativas.
 
-## Evolución aprobada, aún no implementada
+## Límites actuales
 
-La siguiente etapa convertirá el sistema en una aplicación única con una
-organización de Rincón 404 Food Park, negocios independientes, membresías y
-permisos por alcance. Mideli será el primer negocio migrado sin cambiar sus
-credenciales ni su funcionamiento visible. WhatsApp permanecerá exclusivo de
-Mideli al inicio; Just Dipping se incorporará después de superar el piloto y
-contar con autorización y datos reales.
+La estructura multinegocio y las comandas mixtas de comedor ya están en el
+código. Las comandas mixtas de domicilio y para llevar siguen pendientes. La
+prueba completa en dispositivos, impresora y cuentas reales del local también
+sigue pendiente; las pruebas automáticas no sustituyen ese piloto.
 
 ## Stack actual
 
-- Next.js 16.2.12 con App Router.
+- Next.js 16 con App Router.
 - React 19 y TypeScript estricto.
 - Tailwind CSS v4 y shadcn/ui sobre Base UI.
 - Supabase para PostgreSQL, Auth, RLS, Realtime y Storage.
@@ -65,13 +77,13 @@ contar con autorización y datos reales.
 git clone https://github.com/charmar11/mideli.git
 cd mideli
 npm install
-cp .env.example .env.local
 npm run dev
 ```
 
 Abre `http://localhost:3000`.
 
-No se debe imprimir, copiar ni compartir `.env.local`. Usa `.env.example` como referencia de nombres, no como almacén de credenciales.
+La configuración local requiere variables cuyos nombres se documentan en
+`.env.example`. No leer, imprimir, copiar ni compartir valores de `.env.local`.
 
 ## Scripts
 
@@ -100,7 +112,9 @@ Playwright tiene proyectos para escritorio, tablet táctil y móvil táctil. La 
 | `/settings/caja` | Turnos, movimientos, cortes e historial |
 | `/settings/impresion` | Estación de impresión de cocina |
 | `/settings/diagnostico` | Diagnósticos operativos |
-| `/control/licencia` | Control privado de licencia del vendedor |
+| `/settings/negocios` | Administración de plataforma y negocios |
+| `/settings/licencias` | Licencias independientes por negocio |
+| `/control/licencia` | Control técnico legado; no administra vigencias comerciales |
 
 ## Estructura técnica
 
@@ -118,6 +132,7 @@ supabase/migrations/     Evolución versionada del esquema
 supabase/functions/      Edge Functions de notificaciones y atención
 tests/e2e/               Regresiones de flujos de producto
 docs/                    Arquitectura, operación y decisiones
+docs_dev/                Bitácoras y planes fechados, no estado actual
 ```
 
 ## Verificación mínima antes de terminar
@@ -132,7 +147,9 @@ Si se modifica Supabase, también revisar la lista de migraciones y ejecutar el 
 
 ## Estado y despliegue
 
-La aplicación está publicada en [mideli.vercel.app](https://mideli.vercel.app). El procedimiento de publicación y la comprobación de salud están en `docs/OPERATIONS.md`.
+La aplicación está publicada en [mideli.vercel.app](https://mideli.vercel.app).
+El procedimiento de publicación está en [Operación](docs/OPERATIONS.md) y la
+aceptación en dispositivos reales en [Piloto](docs/releases/v0.9-piloto.md).
 
 Los cambios sin commit pertenecen al trabajo en curso. Antes de que otra IA trabaje desde un clon de GitHub, hay que consolidar en Git la versión que se desea considerar fuente de verdad.
 

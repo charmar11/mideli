@@ -139,7 +139,7 @@ function customerLabel(conversation: WhatsappAdminConversation) {
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`min-h-0 w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-border bg-surface ${className}`}>
+    <section className={`mideli-whatsapp-panel min-h-0 w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-border bg-surface ${className}`}>
       {children}
     </section>
   );
@@ -241,7 +241,7 @@ function ConversationList({
         </div>
       </div>
 
-      <div className="whatsapp-scroll-y min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2 pb-3 [content-visibility:auto]">
+      <div className="mideli-whatsapp-conversation-list whatsapp-scroll-y min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2 pb-3 [content-visibility:auto]">
         {conversations.length === 0 ? (
           <div className="flex min-h-64 items-center justify-center p-6 text-center">
             <div>
@@ -289,7 +289,7 @@ function ConversationList({
                         </span>
                       ) : null}
                     </div>
-                    <span className={`shrink-0 rounded-full px-2 py-1 font-heading text-[9px] font-bold uppercase tracking-wide ${statusTone(status.tone)}`}>
+                    <span className={`shrink-0 rounded-full px-2 py-1 font-heading text-[10px] font-bold uppercase tracking-wide ${statusTone(status.tone)}`}>
                       {status.label}
                     </span>
                   </div>
@@ -612,7 +612,7 @@ function ChatPanel({
 
   return (
     <>
-      <header className="flex min-h-[60px] shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 py-1.5 pt-[calc(0.375rem+env(safe-area-inset-top))] sm:min-h-[68px] sm:gap-2 sm:px-3 sm:py-2 sm:pt-2">
+      <header className="mideli-whatsapp-chat-header flex min-h-[60px] shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 py-1.5 pt-[calc(0.375rem+env(safe-area-inset-top))] sm:min-h-[68px] sm:gap-2 sm:px-3 sm:py-2 sm:pt-2">
         <Button
           type="button"
           variant="ghost"
@@ -631,7 +631,7 @@ function ChatPanel({
             {customerLabel(conversation)}
           </h2>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className={`hidden rounded-full px-2 py-0.5 font-heading text-[9px] font-bold uppercase tracking-wide sm:inline-flex ${statusTone(status.tone)}`}>
+            <span className={`hidden rounded-full px-2 py-0.5 font-heading text-[10px] font-bold uppercase tracking-wide sm:inline-flex ${statusTone(status.tone)}`}>
               {status.label}
             </span>
             <span className={`inline-flex size-2 shrink-0 rounded-full sm:hidden ${statusDotTone(status.tone)}`}>
@@ -805,7 +805,7 @@ function ChatPanel({
         <div
           ref={viewportRef}
           onScroll={onViewportScroll}
-          className="whatsapp-scroll-y absolute inset-0 space-y-3 overflow-y-auto overscroll-contain bg-[#111014] px-3 py-4 touch-pan-y sm:px-5"
+          className="mideli-whatsapp-message-list whatsapp-scroll-y absolute inset-0 space-y-3 overflow-y-auto overscroll-contain bg-[#111014] px-3 py-4 touch-pan-y sm:px-5"
           aria-live="polite"
         >
           {loading ? (
@@ -842,7 +842,7 @@ function ChatPanel({
                       "Contenido eliminado por privacidad"
                     )}
                   </p>
-                  <div className={`mt-1.5 flex items-center justify-end gap-1.5 font-data text-[9px] ${
+                  <div className={`mt-1.5 flex items-center justify-end gap-1.5 font-data text-[10px] ${
                     outbound && !failed ? "text-white/65" : failed ? "text-danger" : "text-muted-foreground"
                   }`}>
                     {outbound ? <CheckCheck aria-hidden size={11} /> : null}
@@ -867,7 +867,7 @@ function ChatPanel({
         ) : null}
       </div>
 
-      <div className="shrink-0 border-t border-border bg-surface/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur sm:p-3">
+      <div className="mideli-whatsapp-composer shrink-0 border-t border-border bg-surface/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur sm:p-3">
         {closed ? (
           <div className="flex min-h-12 items-center justify-center rounded-xl bg-background px-4 text-center font-body text-xs text-muted-foreground">
             Esta conversación está cerrada. Un mensaje nuevo del cliente abrirá otra.
@@ -1144,7 +1144,7 @@ export function WhatsappInbox({ data, focusConversationId = null, onMobileChatMo
   }
 
   return (
-    <div className="grid h-full min-h-0 w-full min-w-0 max-w-full flex-1 gap-3 overflow-hidden lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[21rem_minmax(0,1fr)_19rem]">
+    <div className="mideli-whatsapp-inbox grid h-full min-h-0 w-full min-w-0 max-w-full flex-1 gap-3 overflow-hidden lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[21rem_minmax(0,1fr)_19rem]">
       <Panel className={`${mobileChatOpen ? "hidden lg:flex" : "flex"} flex-col rounded-none border-0 lg:rounded-2xl lg:border`}>
         <ConversationList
           conversations={filteredConversations}
@@ -1160,7 +1160,7 @@ export function WhatsappInbox({ data, focusConversationId = null, onMobileChatMo
         />
       </Panel>
 
-      <Panel className={`${mobileChatOpen ? "flex" : "hidden lg:flex"} flex-col rounded-none border-0 lg:rounded-2xl lg:border`}>
+      <Panel className={`${mobileChatOpen ? "flex" : "hidden lg:flex"} mideli-whatsapp-chat-panel flex-col rounded-none border-0 lg:rounded-2xl lg:border`}>
         <ChatPanel
           key={selected?.id ?? "empty"}
           conversation={selected}

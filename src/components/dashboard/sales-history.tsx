@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import {
   deleteSalesHistoryOrder,
   fetchSalesHistory,
+  type LegacySalesTicket,
   type SalesHistoryOrder,
 } from "@/lib/actions/sales";
 import { getCurrentUserRole } from "@/lib/actions/users";
@@ -57,6 +58,14 @@ import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { PaymentMethodCorrectionDialog } from "@/components/payments/payment-method-correction-dialog";
 import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
 import { DatePeriodPicker } from "@/components/shared/date-period-picker";
+import {
+  ALL_BUSINESSES_FILTER,
+  BusinessScopeFilter,
+} from "@/components/shared/business-scope-filter";
+import {
+  canDeleteBusinessOrderHistory,
+  getOrderReadableBusinessContexts,
+} from "@/lib/multibusiness/business-context-selection";
 import {
   getTodayKey,
   parseDateKey,
@@ -138,6 +147,15 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatLegacyPaymentMethod(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "cash" || normalized === "efectivo") return "Efectivo";
+  if (normalized === "card" || normalized === "tarjeta") return "Tarjeta";
+  if (normalized === "transfer" || normalized === "transferencia") return "Transferencia";
+  if (normalized === "pending" || normalized === "pendiente") return "Pendiente";
+  return "Pago no registrado";
+}
+
 function formatDistance(meters: number | null | undefined) {
   if (meters === null || meters === undefined || !Number.isFinite(Number(meters))) return null;
   const distance = Number(meters);
@@ -199,6 +217,7 @@ function isPendingPayment(order: SalesHistoryOrder) {
 
 interface PendingTableAccount {
   key: string;
+  businessId: string | null;
   tableNumber: string;
   zoneName: string | null;
   orders: SalesHistoryOrder[];
@@ -210,9 +229,11 @@ function getPendingTableAccounts(orders: SalesHistoryOrder[]) {
   const accounts = new Map<string, PendingTableAccount>();
   for (const order of orders) {
     if (!isPendingPayment(order) || order.type !== "comedor" || !order.table_number) continue;
-    const key = order.table_id ?? order.table_number;
+    const businessId = order.business_id ?? null;
+    const key = `${businessId ?? "legacy"}:${order.table_id ?? order.table_number}`;
     const account = accounts.get(key) ?? {
       key,
+      businessId,
       tableNumber: order.table_number,
       zoneName: order.table_zone_name ?? null,
       orders: [],
@@ -239,11 +260,13 @@ function getPendingItemDetail(item: SalesHistoryOrder["items"][number]) {
 
 function PendingAccountCard({
   account,
+  businessName,
   expanded,
   onToggle,
   onPay,
 }: {
   account: PendingTableAccount;
+  businessName?: string | null;
   expanded: boolean;
   onToggle: () => void;
   onPay: () => void;
@@ -281,6 +304,11 @@ function PendingAccountCard({
               customer_name: null,
             })}
           </h3>
+          {businessName ? (
+            <span className="mt-1 inline-flex rounded-full bg-brand-light px-2 py-0.5 font-heading text-[10px] font-bold text-brand">
+              {businessName}
+            </span>
+          ) : null}
           <p className="mt-0.5 font-body text-xs text-muted-foreground">
             {account.orders.length} pedido{account.orders.length !== 1 ? "s" : ""} · {account.itemCount} producto{account.itemCount !== 1 ? "s" : ""}
           </p>
@@ -511,7 +539,7 @@ function OrderDetail({
                           {item.selected_modifiers
                             .map(
                               (modifier) =>
-                                `${modifier.option}${modifier.price > 0 ? ` +${formatMoney(modifier.price)}` : ""}`
+                                `${modifier.group && modifier.group !== "Incluye" ? `${modifier.group}: ` : ""}${modifier.option}${modifier.price > 0 ? ` +${formatMoney(modifier.price)}` : ""}`
                             )
                             .join(" · ")}
                         </p>
@@ -634,7 +662,7 @@ function OrderDetail({
 
         <div className="space-y-3 pt-5">
           <div className="flex items-center justify-between font-body text-sm text-muted-foreground">
-            <span>Productos para Mideli</span>
+            <span>Productos{businessName ? ` para ${businessName}` : ""}</span>
             <span>{formatMoney(orderProductsTotal(order))}</span>
           </div>
           {order.type === "domicilio" ? (
@@ -650,7 +678,7 @@ function OrderDetail({
             </>
           ) : null}
           <div className="flex items-center justify-between gap-3">
-            <span className="font-heading text-base font-bold">Cobro a Mideli</span>
+            <span className="font-heading text-base font-bold">Cobro del negocio</span>
             <span className="font-data text-2xl font-bold text-brand">{formatMoney(orderProductsTotal(order))}</span>
           </div>
           <div className="flex items-center gap-2 font-body text-xs text-muted-foreground">
@@ -731,12 +759,15 @@ export function SalesHistory() {
     periodFromAnchor("dia", parseDateKey(getTodayKey()))
   );
   const [orders, setOrders] = useState<SalesHistoryOrder[]>([]);
+  const [legacyTickets, setLegacyTickets] = useState<LegacySalesTicket[]>([]);
+  const [legacyArchiveAvailable, setLegacyArchiveAvailable] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<SalesHistoryOrder | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>("all");
+  const [businessFilter, setBusinessFilter] = useState(ALL_BUSINESSES_FILTER);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<SalesHistoryOrder | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -750,11 +781,30 @@ export function SalesHistory() {
     id: string;
     folio: number;
     cashShiftId: string | null;
+    businessId: string | null;
   } | null>(null);
   const [viewerRole, setViewerRole] = useState<Profile["role"] | null>(null);
   const [expandedPendingAccount, setExpandedPendingAccount] = useState<string | null>(null);
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
+  const fetchCurrentShiftForBusiness = useCashShiftStore(
+    (state) => state.fetchCurrentShiftForBusiness
+  );
   const businesses = useBusinessContextStore((state) => state.businesses);
+  const selectedOrganizationId = useBusinessContextStore(
+    (state) => state.selectedOrganizationId
+  );
+  const legacyBusinessContext = useBusinessContextStore(
+    (state) => state.legacyFallback
+  );
+  const readableBusinesses = useMemo(
+    () =>
+      getOrderReadableBusinessContexts(
+        businesses.filter(
+          (business) => business.organization_id === selectedOrganizationId
+        )
+      ),
+    [businesses, selectedOrganizationId]
+  );
   const businessNames = useMemo(
     () =>
       new Map(
@@ -777,8 +827,12 @@ export function SalesHistory() {
     if (result.error) {
       toast.error(result.error);
       setOrders([]);
+      setLegacyTickets([]);
+      setLegacyArchiveAvailable(false);
     } else {
       setOrders(result.orders);
+      setLegacyTickets(result.legacyTickets);
+      setLegacyArchiveAvailable(result.legacyArchiveAvailable);
       setSelectedOrder((current) =>
         current ? result.orders.find((order) => order.id === current.id) ?? null : null
       );
@@ -795,9 +849,23 @@ export function SalesHistory() {
     void getCurrentUserRole().then(setViewerRole);
   }, []);
 
+  const effectiveBusinessFilter =
+    businessFilter === ALL_BUSINESSES_FILTER ||
+    readableBusinesses.some((business) => business.business_id === businessFilter)
+      ? businessFilter
+      : ALL_BUSINESSES_FILTER;
+
+  const scopedOrders = useMemo(
+    () =>
+      effectiveBusinessFilter === ALL_BUSINESSES_FILTER
+        ? orders
+        : orders.filter((order) => order.business_id === effectiveBusinessFilter),
+    [effectiveBusinessFilter, orders]
+  );
+
   const filteredOrders = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
-    return orders.filter((order) => {
+    return scopedOrders.filter((order) => {
       const itemText = order.items.map((item) => item.menu_item_name).join(" ");
       const searchable = [
         String(order.number),
@@ -826,11 +894,31 @@ export function SalesHistory() {
             : order.payment_method === paymentFilter))
       );
     });
-  }, [deliveryFilter, orders, paymentFilter, search, statusFilter, typeFilter]);
+  }, [deliveryFilter, paymentFilter, scopedOrders, search, statusFilter, typeFilter]);
+
+  const filteredLegacyTickets = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return legacyTickets.filter((ticket) => {
+      if (
+        effectiveBusinessFilter !== ALL_BUSINESSES_FILTER &&
+        ticket.business_id !== effectiveBusinessFilter
+      ) {
+        return false;
+      }
+      if (!normalizedSearch) return true;
+      const itemText = ticket.items
+        .map((item) => `${item.product_name} ${item.combo_source_name ?? ""}`)
+        .join(" ");
+      return [ticket.source_folio ?? "", ticket.source_document_id, itemText]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedSearch);
+    });
+  }, [effectiveBusinessFilter, legacyTickets, search]);
 
   const pendingPaymentOrders = useMemo(
-    () => orders.filter(isPendingPayment),
-    [orders]
+    () => scopedOrders.filter(isPendingPayment),
+    [scopedOrders]
   );
   const pendingPaymentTotal = useMemo(
     () =>
@@ -844,23 +932,27 @@ export function SalesHistory() {
     () => getPendingTableAccounts(pendingPaymentOrders),
     [pendingPaymentOrders]
   );
-  const canDeleteHistory = ["owner", "admin", "supervisor", "waiter"].includes(
-    viewerRole ?? ""
-  );
+  const canDeleteHistory = (businessId: string | null | undefined) =>
+    canDeleteBusinessOrderHistory(
+      readableBusinesses.find((business) => business.business_id === businessId),
+      legacyBusinessContext ? viewerRole : null
+    );
   const canCorrectPayment = ["owner", "admin", "waiter"].includes(
     viewerRole ?? ""
   );
 
-  function openPaymentModal(order: SalesHistoryOrder) {
-    if (!currentCashShift) {
+  async function openPaymentModal(order: SalesHistoryOrder) {
+    const shift = await fetchCurrentShiftForBusiness(order.business_id);
+    if (!shift) {
       toast.error("Abre la caja antes de cobrar");
       return;
     }
     setPaymentOrders([order]);
   }
 
-  function openAccountPayment(account: PendingTableAccount) {
-    if (!currentCashShift) {
+  async function openAccountPayment(account: PendingTableAccount) {
+    const shift = await fetchCurrentShiftForBusiness(account.orders[0]?.business_id);
+    if (!shift) {
       toast.error("Abre la caja antes de cobrar");
       return;
     }
@@ -910,6 +1002,7 @@ export function SalesHistory() {
           id: ticket.id,
           folio: ticket.folio,
           cashShiftId: ticket.cash_shift_id,
+          businessId: order.business_id ?? null,
         });
         return;
       }
@@ -1029,13 +1122,18 @@ export function SalesHistory() {
                   <PendingAccountCard
                     key={account.key}
                     account={account}
+                    businessName={
+                      account.businessId
+                        ? businessNames.get(account.businessId) ?? null
+                        : null
+                    }
                     expanded={expandedPendingAccount === account.key}
                     onToggle={() =>
                       setExpandedPendingAccount((current) =>
                         current === account.key ? null : account.key
                       )
                     }
-                    onPay={() => openAccountPayment(account)}
+                    onPay={() => void openAccountPayment(account)}
                   />
                 ))}
               </div>
@@ -1046,6 +1144,11 @@ export function SalesHistory() {
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <DatePeriodPicker period={period} onChange={setPeriod} />
+                <BusinessScopeFilter
+                  businesses={readableBusinesses}
+                  value={effectiveBusinessFilter}
+                  onChange={setBusinessFilter}
+                />
               </div>
 
               <div className="relative min-w-0 xl:w-72">
@@ -1111,7 +1214,7 @@ export function SalesHistory() {
                 ]}
               />
               <span className="ml-auto self-center font-body text-xs text-muted-foreground">
-                {filteredOrders.length} de {orders.length} pedidos
+                {filteredOrders.length} de {scopedOrders.length} pedidos
               </span>
             </div>
           </section>
@@ -1163,8 +1266,8 @@ export function SalesHistory() {
                 <OrderDetail
                   order={selectedOrder}
                   businessName={selectedOrder.business_id ? businessNames.get(selectedOrder.business_id) ?? null : null}
-                  onDelete={canDeleteHistory ? () => setDeleteTarget(selectedOrder) : undefined}
-                  onPay={() => openPaymentModal(selectedOrder)}
+                  onDelete={canDeleteHistory(selectedOrder.business_id) ? () => setDeleteTarget(selectedOrder) : undefined}
+                  onPay={() => void openPaymentModal(selectedOrder)}
                   onReceipt={() => void openTickets(selectedOrder)}
                   onCorrectPayment={
                     canCorrectPayment
@@ -1177,6 +1280,68 @@ export function SalesHistory() {
               )}
             </aside>
           </div>
+
+          {legacyArchiveAvailable && filteredLegacyTickets.length > 0 ? (
+            <section className="rounded-2xl border border-warning/25 bg-surface p-3 shadow-card sm:p-4">
+              <div className="mb-3 flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-warning/10 text-warning">
+                  <ReceiptText size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-heading text-base font-bold">Archivo histórico · solo consulta</h2>
+                  <p className="font-body text-xs leading-relaxed text-muted-foreground">
+                    Tickets migrados del sistema anterior. No se pueden cobrar ni editar y no afectan la caja, ventas ni analíticas actuales.
+                  </p>
+                </div>
+                <span className="rounded-full bg-warning/10 px-2.5 py-1 font-data text-xs text-warning">
+                  {filteredLegacyTickets.length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {filteredLegacyTickets.map((ticket) => (
+                  <article key={ticket.id} className="rounded-xl border border-border bg-background/60 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-heading text-sm font-bold">
+                          Ticket histórico {ticket.source_folio ? `#${ticket.source_folio}` : ""}
+                        </p>
+                        <p className="font-body text-xs text-muted-foreground">
+                          {formatDateTime(ticket.occurred_at)} · {formatLegacyPaymentMethod(ticket.payment_method)}
+                          {ticket.business_id ? ` · ${businessNames.get(ticket.business_id) ?? "Negocio"}` : ""}
+                        </p>
+                      </div>
+                      <span className="font-data text-sm font-bold text-foreground">
+                        {formatMoney(Number(ticket.total_amount) || 0)}
+                      </span>
+                    </div>
+                    <details className="mt-2 border-t border-border/70 pt-2">
+                      <summary className="min-h-9 cursor-pointer py-2 font-heading text-xs font-semibold text-muted-foreground">
+                        Ver {ticket.items.length} artículo{ticket.items.length === 1 ? "" : "s"}
+                      </summary>
+                      <ul className="space-y-1.5 pb-1 font-body text-xs text-foreground">
+                        {ticket.items.map((item, index) => (
+                          <li key={`${ticket.id}-${index}`} className="flex justify-between gap-3">
+                            <span className="min-w-0">
+                              {item.quantity} × {item.product_name}
+                              {item.combo_source_name ? ` · ${item.combo_source_name}` : ""}
+                              {item.selected_modifiers.length > 0 ? (
+                                <span className="block pl-3 text-muted-foreground">
+                                  {item.selected_modifiers.map((modifier) => modifier.option).filter(Boolean).join(", ")}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="shrink-0 font-data">
+                              {formatMoney(Number(item.line_total) || 0)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </div>
       </div>
 
@@ -1192,8 +1357,8 @@ export function SalesHistory() {
               order={selectedOrder}
               businessName={selectedOrder.business_id ? businessNames.get(selectedOrder.business_id) ?? null : null}
               onClose={() => setSelectedOrder(null)}
-              onDelete={canDeleteHistory ? () => setDeleteTarget(selectedOrder) : undefined}
-              onPay={() => openPaymentModal(selectedOrder)}
+              onDelete={canDeleteHistory(selectedOrder.business_id) ? () => setDeleteTarget(selectedOrder) : undefined}
+              onPay={() => void openPaymentModal(selectedOrder)}
               onReceipt={() => void openTickets(selectedOrder)}
               onCorrectPayment={
                 canCorrectPayment
@@ -1245,6 +1410,7 @@ export function SalesHistory() {
                             id: ticket.id,
                             folio: ticket.folio,
                             cashShiftId: ticket.cash_shift_id,
+                            businessId: ticketOrder.business_id ?? null,
                           });
                           setTicketOrder(null);
                           setTicketChoices([]);
@@ -1271,6 +1437,7 @@ export function SalesHistory() {
         <PaymentMethodCorrectionDialog
           transactionId={correctionTicket.id}
           folio={correctionTicket.folio}
+          businessId={correctionTicket.businessId}
           viewerRole={viewerRole}
           closedShift={Boolean(
             correctionTicket.cashShiftId &&

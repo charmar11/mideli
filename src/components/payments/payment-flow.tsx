@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { listPaymentAuthorizersAction } from "@/lib/actions/users";
 import { useBusinessContextStore, useOrderStore } from "@/lib/stores";
+import { getBusinessLogoUrl } from "@/lib/business-branding";
 import { formatOrderLocation } from "@/lib/order-location";
 import type { Order, OrderItem } from "@/types/database";
 import type {
@@ -953,7 +954,7 @@ const PAYMENT_GUIDE_STEPS = [
   },
   {
     title: "Efectivo, tarjeta o transferencia",
-    body: "En efectivo captura lo recibido para calcular el cambio. Tarjeta y transferencia registran la operación realizada fuera de Mideli.",
+    body: "En efectivo captura lo recibido para calcular el cambio. Tarjeta y transferencia registran la operación realizada fuera del sistema.",
   },
   {
     title: "Pago combinado",
@@ -1089,6 +1090,14 @@ export function ReceiptDialog({ receipt, onClose, reprint = true }: { receipt: P
 
 function ReceiptPaper({ receipt, reprint = false }: { receipt: PaymentReceipt; reprint?: boolean }) {
   const transaction = receipt.transaction;
+  const businessContexts = useBusinessContextStore((state) => state.businesses);
+  const selectedBusinessId = useBusinessContextStore((state) => state.selectedBusinessId);
+  const receiptBusinessId = transaction.business_id ?? selectedBusinessId;
+  const business = businessContexts.find((context) => context.business_id === receiptBusinessId) ?? null;
+  const businessName = business?.business_display_name ?? "Rincón 404";
+  const organizationName = business?.organization_name ?? "";
+  const businessLogoUrl = getBusinessLogoUrl(business?.business_brand_logo_path);
+  const isMideli = business?.business_slug === "mideli";
   const date = new Intl.DateTimeFormat("es-MX", {
     timeZone: "America/Hermosillo",
     dateStyle: "medium",
@@ -1101,9 +1110,20 @@ function ReceiptPaper({ receipt, reprint = false }: { receipt: PaymentReceipt; r
       style={{ maxWidth: "181px", ["--ticket-width" as string]: "48mm" }}
     >
       <div className="text-center">
-        <p className="font-brand text-3xl text-[#111]">Mideli</p>
-        <p className="mt-1 font-heading text-[11px] font-bold uppercase tracking-[0.14em]">Burger & Sushi</p>
-        <p className="mt-2 font-body text-[10px] leading-4">C. Yaqui 404 Oriente<br />Cd. Obregón, Sonora</p>
+        {businessLogoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={businessLogoUrl} alt="" className="mx-auto mb-2 max-h-10 max-w-24 object-contain" />
+        ) : null}
+        <p className="font-heading text-base font-extrabold leading-tight text-[#111]">{businessName}</p>
+        {organizationName && organizationName !== businessName ? (
+          <p className="mt-1 font-body text-[9px] leading-3">{organizationName}</p>
+        ) : null}
+        {isMideli ? (
+          <>
+            <p className="mt-1 font-heading text-[10px] font-bold uppercase tracking-[0.1em]">Burger &amp; Sushi</p>
+            <p className="mt-2 font-body text-[10px] leading-4">C. Yaqui 404 Oriente<br />Cd. Obregón, Sonora</p>
+          </>
+        ) : null}
         {reprint ? <p className="mt-2 font-data text-[10px] font-bold tracking-[0.18em]">REIMPRESIÓN</p> : null}
       </div>
       <div className="my-4 border-t border-dashed border-[#777]" />
@@ -1113,7 +1133,7 @@ function ReceiptPaper({ receipt, reprint = false }: { receipt: PaymentReceipt; r
         <p className="flex justify-between gap-3"><span>Fecha</span><strong className="text-right">{date}</strong></p>
         {transaction.table_number ? <p className="flex justify-between gap-3"><span>Mesa</span><strong>{transaction.table_number}</strong></p> : null}
         {transaction.customer_name ? <p className="flex justify-between gap-3"><span>Cliente</span><strong className="text-right">{transaction.customer_name}</strong></p> : null}
-        <p className="flex justify-between gap-3"><span>Atendió</span><strong className="text-right">{transaction.charged_by_name ?? "Personal Mideli"}</strong></p>
+        <p className="flex justify-between gap-3"><span>Atendió</span><strong className="text-right">{transaction.charged_by_name ?? "Personal del negocio"}</strong></p>
       </div>
       <div className="my-4 border-t border-dashed border-[#777]" />
       <div className="space-y-3">

@@ -9,6 +9,7 @@ import {
 } from "@/lib/whatsapp/meta-provider";
 import { recordOutboundMessage } from "@/lib/whatsapp/repository.server";
 import { isMissingWhatsappSchema } from "@/lib/whatsapp/schema-compat";
+import { assertMideliWhatsappAvailable } from "@/lib/business-license-server";
 import {
   finalOrderStatusForPayment,
   validDeliveryTransition,
@@ -50,6 +51,7 @@ export type WhatsappDeliveryOperationDetails = {
 const STAFF_ROLES = new Set(["owner", "admin", "waiter", "kitchen", "supervisor"]);
 
 async function requireStaff() {
+  await assertMideliWhatsappAvailable();
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("No autenticado");

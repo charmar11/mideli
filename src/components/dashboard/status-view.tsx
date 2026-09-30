@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Bike,
   Banknote,
+  Ban,
   ExternalLink,
   Loader2,
   MessageCircle,
@@ -45,6 +46,15 @@ import {
   orderProductsTotal,
 } from "@/lib/order-totals";
 import { ORDER_TYPE_VISUALS } from "@/lib/order-visuals";
+import {
+  ALL_BUSINESSES_FILTER,
+  BusinessScopeFilter,
+} from "@/components/shared/business-scope-filter";
+import {
+  canManageOrderPreparation,
+  filterOperationalOrdersByMembershipScope,
+  getOrderReadableBusinessContexts,
+} from "@/lib/multibusiness/business-context-selection";
 
 function formatTimeElapsed(dateString: string): string {
   const minutes = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
@@ -99,7 +109,9 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   const activeOrders = useOrderStore((state) => state.activeOrders);
   const lastError = useOrderStore((state) => state.lastError);
   const fetchActiveOrders = useOrderStore((state) => state.fetchActiveOrders);
+  const updateOrderStatus = useOrderStore((state) => state.updateOrderStatus);
   const markAsServed = useOrderStore((state) => state.markAsServed);
+  const cancelOrder = useOrderStore((state) => state.cancelOrder);
   const [, setTick] = useState(0);
   const [paymentOrders, setPaymentOrders] = useState<OrderWithItems[] | null>(null);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
@@ -112,26 +124,63 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   const selectedBusinessId = useBusinessContextStore(
     (state) => state.selectedBusinessId
   );
+  const businesses = useBusinessContextStore((state) => state.businesses);
+  const selectedOrganizationId = useBusinessContextStore(
+    (state) => state.selectedOrganizationId
+  );
+  const legacyBusinessContext = useBusinessContextStore(
+    (state) => state.legacyFallback
+  );
+  const readableBusinesses = useMemo(
+    () =>
+      getOrderReadableBusinessContexts(
+        businesses.filter(
+          (business) => business.organization_id === selectedOrganizationId
+        )
+      ),
+    [businesses, selectedOrganizationId]
+  );
+  const [businessFilter, setBusinessFilter] = useState(ALL_BUSINESSES_FILTER);
+
+  const effectiveBusinessFilter =
+    businessFilter === ALL_BUSINESSES_FILTER ||
+    readableBusinesses.some((business) => business.business_id === businessFilter)
+      ? businessFilter
+      : ALL_BUSINESSES_FILTER;
+
+  const operationalOrders = useMemo(
+    () =>
+      filterOperationalOrdersByMembershipScope(activeOrders, readableBusinesses),
+    [activeOrders, readableBusinesses]
+  );
+
+  const visibleOrders = useMemo(
+    () =>
+      effectiveBusinessFilter === ALL_BUSINESSES_FILTER
+        ? operationalOrders
+        : operationalOrders.filter((order) => order.business_id === effectiveBusinessFilter),
+    [operationalOrders, effectiveBusinessFilter]
+  );
 
   useEffect(() => {
     const interval = setInterval(() => setTick((current) => current + 1), 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const ready = activeOrders.filter((order) => deliveryLaneForOrder(order) === "ready");
-  const searchingDriver = activeOrders.filter(
+  const ready = visibleOrders.filter((order) => deliveryLaneForOrder(order) === "ready");
+  const searchingDriver = visibleOrders.filter(
     (order) => deliveryLaneForOrder(order) === "searching_driver"
   );
-  const driverOnWay = activeOrders.filter(
+  const driverOnWay = visibleOrders.filter(
     (order) => deliveryLaneForOrder(order) === "driver_on_way"
   );
-  const preparing = activeOrders.filter(
+  const preparing = visibleOrders.filter(
     (order) => order.status === "pending" || order.status === "in_kitchen"
   );
 
   const deliveryOrderKey = useMemo(
     () =>
-      activeOrders
+      visibleOrders
         .filter(
           (order) =>
             order.status === "ready" &&
@@ -140,7 +189,7 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
         .map((order) => `${order.id}:${order.delivery_status ?? "pending"}`)
         .sort()
         .join(","),
-    [activeOrders]
+    [visibleOrders]
   );
 
   const loadDeliveryDetails = useCallback(async () => {
@@ -182,7 +231,7 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
         setPaymentOrders([order]);
         return;
       }
-      const account = activeOrders.filter((candidate) => {
+      const account = visibleOrders.filter((candidate) => {
         const sameTable = order.table_id
           ? candidate.table_id === order.table_id
           : candidate.table_number === order.table_number;
@@ -197,6 +246,33 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
     }
   }
 
+  async function handleCancelOrder(order: OrderWithItems) {
+    const paidAmount = Number(order.paid_amount ?? 0);
+    if (paidAmount > 0 || order.payment_status === "partial" || order.payment_status === "paid") {
+      toast.error("Primero debe corregirse o anularse el cobro de este pedido");
+      return;
+    }
+    if (
+      !window.confirm(
+        `¿Cancelar el pedido #${order.number}? Se conservará en Historial como cancelado.`
+      )
+    ) {
+      return;
+    }
+
+    setBusyOrderId(order.id);
+    try {
+      const result = await cancelOrder(order.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Pedido #${order.number} cancelado y conservado en Historial`);
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
   async function handlePaymentCompleted(receipt: PaymentReceipt) {
     if (!paymentOrders || paymentOrders.length !== 1) return;
     const order = paymentOrders[0];
@@ -204,6 +280,24 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
     if (!shouldCompleteOrderAfterPayment(order)) return;
     if (receipt.transaction.subtotal_amount + 0.001 < outstanding(order)) return;
     await handleDeliver(order.id, order.number);
+  }
+
+  async function handlePreparationStatusChange(
+    orderId: string,
+    status: "in_kitchen" | "ready",
+  ) {
+    setBusyOrderId(orderId);
+    try {
+      const result = await updateOrderStatus(orderId, status);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(status === "in_kitchen" ? "Pedido en preparación" : "Pedido listo");
+      await fetchActiveOrders();
+    } finally {
+      setBusyOrderId(null);
+    }
   }
 
   async function handleDriverOnWay(order: OrderWithItems) {
@@ -286,8 +380,21 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   }
 
   return (
-    <div className="pos-scroll h-full min-w-0 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto p-3 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-8">
+    <div className="mideli-page-scroll pos-scroll h-full min-w-0 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto p-3 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-8">
       <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-8 pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="font-heading text-sm font-bold">Pedidos activos</p>
+            <p className="font-body text-xs text-muted-foreground">
+              Cada negocio conserva su propio estado y cobro.
+            </p>
+          </div>
+          <BusinessScopeFilter
+            businesses={readableBusinesses}
+            value={effectiveBusinessFilter}
+            onChange={setBusinessFilter}
+          />
+        </div>
         {lastError ? (
           <div className="flex items-center gap-3 rounded-2xl bg-destructive/10 p-4">
             <AlertCircle size={20} className="shrink-0 text-destructive" />
@@ -311,6 +418,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyText="No hay pedidos listos para entregar"
           orders={ready}
           onEditOrder={onEditOrder}
+          onCancelOrder={handleCancelOrder}
+          legacyBusinessContext={legacyBusinessContext}
           onDeliver={handleDeliver}
           onPay={openPayment}
           onDriverOnWay={handleDriverOnWay}
@@ -331,6 +440,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyText="No hay domicilios buscando repartidor"
           orders={searchingDriver}
           onEditOrder={onEditOrder}
+          onCancelOrder={handleCancelOrder}
+          legacyBusinessContext={legacyBusinessContext}
           onPay={openPayment}
           onDriverOnWay={handleDriverOnWay}
           onStartDriverSearch={handleStartDriverSearch}
@@ -350,6 +461,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyText="No hay pedidos en camino"
           orders={driverOnWay}
           onEditOrder={onEditOrder}
+          onCancelOrder={handleCancelOrder}
+          legacyBusinessContext={legacyBusinessContext}
           onPay={openPayment}
           onDriverOnWay={handleDriverOnWay}
           onStartDriverSearch={handleStartDriverSearch}
@@ -369,8 +482,16 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyText="Sin pedidos en preparación"
           orders={preparing}
           onEditOrder={onEditOrder}
+          onCancelOrder={handleCancelOrder}
+          legacyBusinessContext={legacyBusinessContext}
           deliveryDetails={deliveryDetails}
           busyOrderId={busyOrderId}
+          onStartPreparation={(orderId) =>
+            void handlePreparationStatusChange(orderId, "in_kitchen")
+          }
+          onMarkReady={(orderId) =>
+            void handlePreparationStatusChange(orderId, "ready")
+          }
         />
       </div>
 
@@ -395,12 +516,16 @@ function StatusSection({
   emptyText,
   orders,
   onEditOrder,
+  onCancelOrder,
+  legacyBusinessContext,
   onDeliver,
   onPay,
   onDriverOnWay,
   onStartDriverSearch,
   onFinalizeDelivery,
   onRetryNotification,
+  onStartPreparation,
+  onMarkReady,
   deliveryDetails,
   busyOrderId,
   ready = false,
@@ -413,12 +538,16 @@ function StatusSection({
   emptyText: string;
   orders: OrderWithItems[];
   onEditOrder?: (order: OrderWithItems) => void;
+  onCancelOrder?: (order: OrderWithItems) => void;
+  legacyBusinessContext: boolean;
   onDeliver?: (orderId: string, number: number) => void;
   onPay?: (order: OrderWithItems) => void;
   onDriverOnWay?: (order: OrderWithItems) => void;
   onStartDriverSearch?: (order: OrderWithItems) => void;
   onFinalizeDelivery?: (order: OrderWithItems) => void;
   onRetryNotification?: (order: OrderWithItems, eventId: string) => void;
+  onStartPreparation?: (orderId: string) => void;
+  onMarkReady?: (orderId: string) => void;
   deliveryDetails: Record<string, WhatsappDeliveryOperationDetails>;
   busyOrderId: string | null;
   ready?: boolean;
@@ -480,7 +609,7 @@ function StatusSection({
             const driverMessage = [
               "*🛵 SALE PEDIDO DE MIDELI*",
               "",
-              `📍 *De:* ${compactDriverAddress(details?.storeAddress || "Mideli")}`,
+              `📍 *De:* ${compactDriverAddress(details?.storeAddress || "el local")}`,
               originMapHref ? `🗺️ ${originMapHref}` : null,
               "",
               `🏠 *Para:* ${compactDriverAddress(address)}`,
@@ -501,13 +630,34 @@ function StatusSection({
             const failedNotification = details?.notification?.status === "failed"
               ? details.notification
               : null;
+            const business = businesses.find(
+              (candidate) => candidate.business_id === order.business_id,
+            );
+            const canOperateOrderHere = legacyBusinessContext || Boolean(
+              business?.capability_codes.includes("business.operate_orders") ||
+              business?.capability_codes.includes("organization.operate_orders")
+            );
+            const canCancelOrder =
+              canOperateOrderHere &&
+              Number(order.paid_amount ?? 0) <= 0 &&
+              order.payment_status !== "partial" &&
+              order.payment_status !== "paid";
+            const canManagePreparationHere = canManageOrderPreparation(business);
+            const preparationStatusLabel =
+              order.status === "pending"
+                ? "Pendiente"
+                : order.status === "in_kitchen"
+                  ? "Preparando"
+                  : "Listo";
             return (
               <article key={order.id} className={`rounded-2xl border-l-4 bg-surface p-4 shadow-card ring-1 ${typeAccent} ${ready ? "ring-success/35" : order.status === "in_kitchen" ? "ring-warning/40" : "ring-border"}`}>
                 <div className="mb-3 flex items-start justify-between gap-2">
                   <div>
                     <p className="font-data text-2xl font-bold">#{order.number}</p>
                     <p className={`font-body text-xs ${ready ? "font-semibold text-success" : "text-muted-foreground"}`}>
-                      {ready ? "Listo" : formatTimeElapsed(order.created_at)}
+                      {ready
+                        ? "Listo"
+                        : `${preparationStatusLabel} · ${formatTimeElapsed(order.created_at)}`}
                       {ready ? ` · ${formatTimeElapsed(order.created_at)}` : ""}
                       {order.type === "comedor" ? ` · ${formatOrderLocation(order)}` : ""}
                       {order.customer_name ? ` · ${order.customer_name}` : ""}
@@ -526,13 +676,50 @@ function StatusSection({
                         🕒 {new Intl.DateTimeFormat("es-MX", { hour: "numeric", minute: "2-digit" }).format(new Date(order.scheduled_for))}
                       </span>
                     ) : null}
-                    <button type="button" onClick={() => onEditOrder?.(order)} aria-label={`Editar pedido ${order.number}`} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-brand-light hover:text-brand"><Pencil size={15} /></button>
+                    {canOperateOrderHere ? (
+                      <button type="button" onClick={() => void onEditOrder?.(order)} aria-label={`Editar pedido ${order.number}`} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-brand-light hover:text-brand"><Pencil size={15} /></button>
+                    ) : null}
+                    {canCancelOrder ? (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => onCancelOrder?.(order)}
+                        aria-label={`Cancelar pedido ${order.number}`}
+                        title="Cancelar pedido y conservarlo en Historial"
+                        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-danger/10 hover:text-danger disabled:opacity-60"
+                      >
+                        <Ban size={16} />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
                 <ul className={`space-y-1 ${ready ? "mb-3" : ""}`}>
                   {order.items.map((item, index) => <li key={item.id || index} className="flex items-baseline gap-2"><span className="font-data text-xs font-bold text-brand">{item.quantity}x</span><span className="font-body text-sm">{item.menu_item_name}</span></li>)}
                 </ul>
+
+                {canManagePreparationHere && order.status === "pending" && onStartPreparation ? (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onStartPreparation(order.id)}
+                    className="mt-3 inline-flex h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-warning/15 font-heading text-xs font-bold text-warning transition-colors hover:bg-warning/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning disabled:opacity-60"
+                  >
+                    {isBusy ? <Loader2 size={15} className="animate-spin" /> : <Flame size={15} />}
+                    Iniciar preparación
+                  </button>
+                ) : null}
+                {canManagePreparationHere && order.status === "in_kitchen" && onMarkReady ? (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onMarkReady(order.id)}
+                    className="mt-3 inline-flex h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-success/15 font-heading text-xs font-bold text-success transition-colors hover:bg-success/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success disabled:opacity-60"
+                  >
+                    {isBusy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                    Marcar listo
+                  </button>
+                ) : null}
 
                 {ready && isDelivery ? (
                   <div className="mt-3 space-y-3 rounded-xl border border-border bg-ink/45 p-3">

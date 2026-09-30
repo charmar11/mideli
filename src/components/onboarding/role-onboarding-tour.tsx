@@ -38,7 +38,7 @@ const ROLE_STEPS: Record<Profile["role"], TourStep[]> = {
 
 function adminSteps(): TourStep[] {
   return [
-    { title: "Bienvenido a Mideli", body: "Esta guía te mostrará dónde controlar el negocio. Puedes repetirla cuando quieras desde el botón de ayuda." },
+    { title: "Bienvenido a tu espacio de trabajo", body: "Esta guía te mostrará dónde controlar el negocio. Puedes repetirla cuando quieras desde el botón de ayuda." },
     { title: "Personal", body: "Crea usuarios, define contraseñas y asigna permisos por rol.", selector: "a[href='/settings']" },
     { title: "Menú", body: "Edita productos, precios, variaciones, descripciones y disponibilidad.", selector: "a[href='/menu']" },
     { title: "Mesas", body: "Dibuja las zonas del local, ordena mesas y personaliza referencias visuales.", selector: "a[href='/settings/mesas']" },

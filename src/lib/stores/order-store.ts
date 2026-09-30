@@ -9,6 +9,10 @@ import {
 } from "@/lib/realtime-resilience";
 import { notifyWhatsappOrderStatusAction } from "@/lib/actions/whatsapp-order-status";
 import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
+import {
+  getOrderableBusinessContexts,
+  getOrderReadableBusinessContexts,
+} from "@/lib/multibusiness/business-context-selection";
 import { useBusinessContextStore } from "./business-context-store";
 
 export interface OrderItemWithName extends OrderItem {
@@ -133,6 +137,52 @@ function orderLoadError(error: unknown, fallback: string) {
   return fallback;
 }
 
+function orderCreateError(error: { message?: string } | null, fallback: string) {
+  const message = error?.message ?? "";
+  if (
+    message.includes("BUSINESS_LICENSE_INACTIVE") ||
+    message.includes("PLATFORM_EMERGENCY_SUSPENDED")
+  ) {
+    return "Uno de los negocios de la comanda ya no está disponible. Revisa el menú antes de enviar.";
+  }
+  return message || fallback;
+}
+
+const OPTIONAL_ORDER_SELECT_COLUMNS = [
+  "source_channel",
+  "channel_conversation_id",
+  "customer_id",
+  "customer_phone",
+  "whatsapp_status_opt_in",
+  "delivery_address",
+  "delivery_colony",
+  "delivery_reference",
+  "delivery_fee",
+  "delivery_distance_meters",
+  "delivery_latitude",
+  "delivery_longitude",
+  "delivery_status",
+  "payment_method_requested",
+  "requested_cash_tendered",
+  "scheduled_for",
+  "kitchen_release_at",
+  "kitchen_released_at",
+  "schedule_status",
+] as const;
+
+function shouldRetryLegacyOrderSelect(
+  error: { code?: string; message?: string } | null
+) {
+  if (!error || (error.code !== "42703" && error.code !== "PGRST204")) {
+    return false;
+  }
+
+  const message = error.message?.toLowerCase() ?? "";
+  return OPTIONAL_ORDER_SELECT_COLUMNS.some((column) =>
+    message.includes(column)
+  );
+}
+
 function resolveCartItemBusinessId(
   item: CartItem,
   menuItemsBusinessMap: Map<string, string>
@@ -179,28 +229,36 @@ async function getOrderScope() {
   const context = useBusinessContextStore.getState();
   await context.ensureLoaded();
   const scope = useBusinessContextStore.getState();
-  const selected = scope.businesses.find(
-    (business) => business.business_id === scope.selectedBusinessId
+  const sameOrganizationBusinesses = scope.businesses.filter(
+    (business) =>
+      business.organization_id === scope.selectedOrganizationId &&
+      business.business_lifecycle_status === "active"
   );
-  const canOperateOrganization = Boolean(
-    selected?.capability_codes.includes("organization.operate_orders")
-  );
-  const businessIds = canOperateOrganization
-    ? scope.businesses
-        .filter(
-          (business) =>
-            business.organization_id === scope.selectedOrganizationId &&
-            business.business_lifecycle_status === "active"
-        )
-        .map((business) => business.business_id)
-    : scope.selectedBusinessId
-      ? [scope.selectedBusinessId]
-      : [];
+  const businessIds = getOrderableBusinessContexts(
+    sameOrganizationBusinesses
+  ).map((business) => business.business_id);
+  const readableBusinessIds = getOrderReadableBusinessContexts(
+    sameOrganizationBusinesses
+  ).map((business) => business.business_id);
   return {
     businessId: scope.selectedBusinessId,
     businessIds,
+    readableBusinessIds,
     legacyFallback: scope.legacyFallback,
+    error: scope.error,
   };
+}
+
+function relatedMenuItemName(item: OrderItem) {
+  const relatedMenuItem = (
+    item as OrderItem & {
+      menu_items?: { name?: string } | { name?: string }[] | null;
+    }
+  ).menu_items;
+  const relatedName = Array.isArray(relatedMenuItem)
+    ? relatedMenuItem[0]?.name
+    : relatedMenuItem?.name;
+  return relatedName?.trim() || null;
 }
 
 function knownOrderBusinessId(
@@ -261,6 +319,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       set({ loading: true });
       try {
         const scope = await getOrderScope();
+        if (!scope.legacyFallback && scope.readableBusinessIds.length === 0) {
+          set({
+            activeOrders: [],
+            todayOrders: [],
+            lastError: scope.error,
+          });
+          return;
+        }
         if (!scope.legacyFallback && !scope.businessId) {
           set({ activeOrders: [], todayOrders: [], lastError: "No hay un negocio disponible para esta cuenta." });
           return;
@@ -276,8 +342,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           let activeQuery = supabase
             .from("orders")
             .select(orderSelect);
-          if (scope.businessIds.length > 1) {
-            activeQuery = activeQuery.in("business_id", scope.businessIds);
+          if (scope.readableBusinessIds.length > 0) {
+            activeQuery = activeQuery.in("business_id", scope.readableBusinessIds);
           } else if (scope.businessId) {
             activeQuery = activeQuery.eq("business_id", scope.businessId);
           }
@@ -292,14 +358,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
         // El despliegue de la interfaz puede ocurrir antes que la migración del canal.
         // En ese caso preservamos el POS actual y omitimos únicamente los metadatos nuevos.
-        if (activeResult.error) {
+        if (shouldRetryLegacyOrderSelect(activeResult.error)) {
           const fallbackDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
           try {
             let fallbackQuery = supabase
               .from("orders")
               .select(legacyOrderSelect);
-            if (scope.businessIds.length > 1) {
-              fallbackQuery = fallbackQuery.in("business_id", scope.businessIds);
+            if (scope.readableBusinessIds.length > 0) {
+              fallbackQuery = fallbackQuery.in("business_id", scope.readableBusinessIds);
             } else if (scope.businessId) {
               fallbackQuery = fallbackQuery.eq("business_id", scope.businessId);
             }
@@ -332,7 +398,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         try {
           orderItemsResult = await supabase
             .from("order_items")
-            .select("id,order_id,menu_item_id,quantity,unit_price,notes,selected_modifiers,created_at")
+            .select("id,order_id,menu_item_id,quantity,unit_price,notes,selected_modifiers,created_at,menu_items(name)")
             .in(
               "order_id",
               orders.map((order) => order.id)
@@ -361,10 +427,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         const ordersWithItems = orders.map((order) => ({
           ...order,
           items: (orderItemsByOrder.get(order.id) ?? []).map((item) => ({
-              ...item,
-              selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
-              menu_item_name: map.get(item.menu_item_id) ?? "Producto",
-            })),
+            ...item,
+            selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
+            menu_item_name:
+              relatedMenuItemName(item) ??
+              map.get(item.menu_item_id) ??
+              "Producto eliminado",
+          })),
         }));
         set({
           activeOrders: ordersWithItems,
@@ -481,7 +550,6 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     let order: Order;
     let createdOrders: Order[] = [];
     let creationError: { message?: string } | null = null;
-    let targetBusinessIdForCreate: string | null = null;
 
     if (useMixedTableOrder) {
       const result = await supabase.rpc("create_multibusiness_table_orders", {
@@ -497,13 +565,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       if (creationError || createdOrders.length === 0) {
         return {
           order: null,
-          error: creationError?.message || "No se pudo crear la comanda compartida",
+          error: orderCreateError(creationError, "No se pudo crear la comanda compartida"),
         };
       }
       order = createdOrders[0];
     } else if (singleBusinessId) {
-      targetBusinessIdForCreate = singleBusinessId;
-      const result = await supabase.rpc("create_business_order_with_items", {
+      const result = await supabase.rpc("create_business_order_with_details", {
         p_business_id: singleBusinessId,
         p_creation_key: creationKey,
         p_items: orderItems,
@@ -512,12 +579,44 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         p_table_number: tableNumber || null,
         p_table_id: tableId || null,
         p_customer_name: customerName || null,
+        p_details: {
+          ...(customerId ? { customer_id: customerId } : {}),
+          ...(customerPhone ? { customer_phone: customerPhone } : {}),
+          ...(channelConversationId
+            ? { channel_conversation_id: channelConversationId }
+            : {}),
+          ...(orderType === "domicilio" && delivery
+            ? {
+                delivery: {
+                  phone: delivery.phone || null,
+                  whatsapp_status_opt_in: delivery.whatsappStatusOptIn ?? false,
+                  address: delivery.address.trim(),
+                  colony: delivery.colony?.trim() || null,
+                  reference: delivery.reference.trim() || null,
+                  fee: Math.max(0, Math.round(delivery.fee)),
+                  distance_meters: delivery.distanceMeters ?? null,
+                  latitude: delivery.latitude ?? null,
+                  longitude: delivery.longitude ?? null,
+                  payment_method: delivery.paymentMethod ?? null,
+                  cash_tendered: delivery.cashTendered ?? null,
+                },
+              }
+            : {}),
+          ...(schedule
+            ? {
+                schedule: {
+                  scheduled_for: schedule.scheduledFor,
+                  kitchen_release_at: schedule.kitchenReleaseAt,
+                },
+              }
+            : {}),
+        },
       });
       creationError = result.error;
       if (creationError || !result.data) {
         return {
           order: null,
-          error: creationError?.message || "No se pudo crear el pedido",
+          error: orderCreateError(creationError, "No se pudo crear el pedido"),
         };
       }
       order = result.data as Order;
@@ -537,15 +636,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       if (creationError || !result.data) {
         return {
           order: null,
-          error: creationError?.message || "No se pudo crear el pedido",
+          error: orderCreateError(creationError, "No se pudo crear el pedido"),
         };
       }
       order = result.data as Order;
       createdOrders = [order];
     }
 
-    if (!useMixedTableOrder && (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery) || schedule)) {
-      let updatedQuery = supabase
+    if (!useMixedTableOrder && !singleBusinessId && (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery) || schedule)) {
+      const updatedQuery = supabase
         .from("orders")
         .update({
           ...(customerId ? { customer_id: customerId } : {}),
@@ -590,9 +689,6 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           updated_at: new Date().toISOString(),
         })
         .eq("id", order.id);
-      if (targetBusinessIdForCreate) {
-        updatedQuery = updatedQuery.eq("business_id", targetBusinessIdForCreate);
-      }
       const { data: updated, error: deliveryError } = await updatedQuery
         .select("*")
         .single();
@@ -927,37 +1023,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     return { error: null };
   },
 
-  cancelOrder: async (orderId) => {
-    const scope = await getOrderScope();
-    if (!scope.legacyFallback && !scope.businessId) {
-      return { error: "No hay un negocio disponible para cancelar el pedido" };
-    }
-
-    const supabase = createClient();
-    const targetBusinessId = scope.legacyFallback
-      ? scope.businessId
-      : knownOrderBusinessId(get(), orderId) ?? scope.businessId;
-    let cancelQuery = supabase
-      .from("orders")
-      .update({
-        status: "cancelled",
-        cancelled_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", orderId);
-    if (targetBusinessId) cancelQuery = cancelQuery.eq("business_id", targetBusinessId);
-    const { error } = await cancelQuery;
-
-    if (error) {
-      return { error: "No se pudo cancelar el pedido" };
-    }
-
-    set((state) => ({
-      activeOrders: state.activeOrders.filter((o) => o.id !== orderId),
-      todayOrders: state.todayOrders.filter((o) => o.id !== orderId),
-    }));
-    return { error: null };
-  },
+  cancelOrder: async (orderId) => get().updateOrderStatus(orderId, "cancelled"),
 
   subscribeToOrders: () => {
     const supabase = createClient();

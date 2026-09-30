@@ -50,7 +50,7 @@ function dateTime(value: string | null | undefined) {
 export function buildCashShiftShareText(shift: CashShiftDetail) {
   const counts = cashShiftServiceCounts(shift.payments);
   const lines = [
-    `Corte Mideli #${shift.number}`,
+    `Corte #${shift.number}`,
     `${dateTime(shift.opened_at)} a ${dateTime(shift.closed_at)}`,
     `Responsable: ${shift.closed_by_name ?? shift.opened_by_name}`,
     "",

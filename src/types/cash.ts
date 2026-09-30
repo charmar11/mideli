@@ -34,6 +34,8 @@ export interface CashShiftTotals {
 
 export interface CashShift {
   id: string;
+  /** Status-only response returned to order operators and opening-only cashiers. */
+  status_only?: boolean;
   /** Optional while older clients roll forward to business-scoped cash. */
   business_id?: string;
   number: number;

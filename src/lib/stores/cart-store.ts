@@ -28,6 +28,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       (item) =>
         item.menu_item_id === menuItemId &&
         item.business_id === businessId &&
+        item.notes === notes &&
         JSON.stringify(item.selected_modifiers) === JSON.stringify(selectedModifiers)
     );
 

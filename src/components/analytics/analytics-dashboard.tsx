@@ -253,7 +253,7 @@ function csvCell(value: string | number): string {
 
 function downloadCsv(data: AnalyticsData) {
   const rows: Array<Array<string | number>> = [
-    ["Analíticas Mideli"],
+    ["Analíticas del negocio"],
     ["Periodo", `${data.period.from} a ${data.period.to}`],
     ["Filtro", SERVICE_FILTERS.find((filter) => filter.id === data.service)?.label ?? data.service],
     [],
@@ -290,7 +290,7 @@ function downloadCsv(data: AnalyticsData) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `mideli-analiticas-${data.period.from}-${data.period.to}.csv`;
+  anchor.download = `rincon404-analiticas-${data.period.from}-${data.period.to}.csv`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -319,7 +319,7 @@ export function AnalyticsDashboard({
   }
 
   return (
-    <div className="h-full min-w-0 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto">
+    <div className="mideli-page-scroll h-full min-w-0 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto">
       <div className="mx-auto min-w-0 max-w-[1480px] space-y-5 p-3 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-5 sm:pb-8 lg:p-6">
         <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-xl">
@@ -327,7 +327,7 @@ export function AnalyticsDashboard({
               Pulso del negocio
             </h1>
             <p className="mt-1 text-pretty font-body text-sm text-muted-foreground">
-              Ventas cobradas, cuentas abiertas y lo que está moviendo a Mideli.
+              Ventas cobradas, cuentas abiertas y el movimiento del periodo.
             </p>
           </div>
           <div className="analytics-header-controls">

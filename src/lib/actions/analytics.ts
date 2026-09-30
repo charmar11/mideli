@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getSelectedBusinessContext } from "@/lib/server/selected-business";
 import { ANALYTICS_ORDER_SELECT } from "@/lib/analytics/query-select";
+import { fetchAllRows } from "@/lib/analytics/fetch-all-rows";
 import {
   addDays,
   getPreviousPeriod,
@@ -427,30 +428,35 @@ export async function fetchAnalytics({
     .eq("payment_status", "paid")
     .gte("paid_at", currentStart)
     .lte("paid_at", currentEnd)
-    .order("paid_at", { ascending: true });
+    .order("paid_at", { ascending: true })
+    .order("id", { ascending: true });
   let cancelledQuery = supabase
     .from("orders")
     .select("id, type")
     .eq("status", "cancelled")
     .gte("created_at", currentStart)
-    .lte("created_at", currentEnd);
+    .lte("created_at", currentEnd)
+    .order("id", { ascending: true });
   let openQuery = supabase
     .from("orders")
     .select("id, total, paid_amount, type")
-    .in("status", ["pending", "in_kitchen", "ready", "served"]);
+    .in("status", ["pending", "in_kitchen", "ready", "served"])
+    .order("id", { ascending: true });
   let currentPaymentsQuery = supabase
     .from("payment_transactions")
     .select("id,status,subtotal_amount,discount_amount,tip_amount,total_amount,order_type,created_at,payment_tenders(method,amount)")
     .gte("created_at", currentStart)
     .lte("created_at", currentEnd)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
   let previousPaymentsQuery = supabase
     .from("payment_transactions")
     .select("id,status,subtotal_amount,discount_amount,tip_amount,total_amount,order_type,created_at,payment_tenders(method,amount)")
     .eq("status", "completed")
     .gte("created_at", previousStart)
     .lte("created_at", previousEnd)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (businessContext.businessId) {
     currentQuery = currentQuery.eq("business_id", businessContext.businessId);
@@ -481,11 +487,11 @@ export async function fetchAnalytics({
     currentPaymentsResult,
     previousPaymentsResult,
   ] = await Promise.all([
-    currentQuery,
-    cancelledQuery,
-    openQuery,
-    currentPaymentsQuery,
-    previousPaymentsQuery,
+    fetchAllRows((from, to) => currentQuery.range(from, to)),
+    fetchAllRows((from, to) => cancelledQuery.range(from, to)),
+    fetchAllRows((from, to) => openQuery.range(from, to)),
+    fetchAllRows((from, to) => currentPaymentsQuery.range(from, to)),
+    fetchAllRows((from, to) => previousPaymentsQuery.range(from, to)),
   ]);
 
   const firstError =

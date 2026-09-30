@@ -8,11 +8,13 @@ import {
   sendMetaReplyButtonsMessage,
   sendMetaTemplateMessage,
   sendMetaTextMessage,
-} from "@/lib/whatsapp/meta-provider";
+} from "@/lib/whatsapp/meta-sender";
 import { verifyMetaSignature } from "@/lib/whatsapp/meta-signature";
 import { interactionForState } from "@/lib/whatsapp/quick-replies";
 import { buildConversationCatalog } from "@/lib/whatsapp/catalog";
 import type { MenuItem } from "@/types/database";
+
+const allowMetaSend = async () => {};
 
 test("valida la firma de Meta sobre el cuerpo crudo", () => {
   const body = JSON.stringify({ object: "whatsapp_business_account" });
@@ -164,6 +166,7 @@ test("el adaptador de Meta envía texto sin exponer el token en el resultado", a
       phoneNumberId: "phone-test",
       accessToken: "temporary-test-token",
     },
+    allowMetaSend,
     fetcher
   );
 
@@ -179,6 +182,28 @@ test("el adaptador de Meta envía texto sin exponer el token en el resultado", a
     to: "526440000000",
     type: "text",
   });
+});
+
+test("no envía a Meta cuando el negocio no autoriza WhatsApp", async () => {
+  let fetchCalls = 0;
+  const denied = async () => {
+    throw new Error("WHATSAPP_BUSINESS_UNAVAILABLE");
+  };
+  const fetcher: typeof fetch = async () => {
+    fetchCalls += 1;
+    return new Response(JSON.stringify({ messages: [{ id: "should-not-send" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  await expect(sendMetaTextMessage(
+    { to: "526440000000", body: "No debe salir" },
+    { graphApiVersion: "v25.0", phoneNumberId: "phone-test", accessToken: "test-token" },
+    denied,
+    fetcher,
+  )).rejects.toThrow("WHATSAPP_BUSINESS_UNAVAILABLE");
+  expect(fetchCalls).toBe(0);
 });
 
 test("el adaptador de Meta puede iniciar un aviso con plantilla aprobada", async () => {
@@ -203,6 +228,7 @@ test("el adaptador de Meta puede iniciar un aviso con plantilla aprobada", async
       phoneNumberId: "phone-test",
       accessToken: "temporary-test-token",
     },
+    allowMetaSend,
     fetcher
   );
 
@@ -244,6 +270,7 @@ test("el adaptador de Meta envía el punto nativo de la dirección candidata", a
       phoneNumberId: "phone-test",
       accessToken: "temporary-test-token",
     },
+    allowMetaSend,
     fetcher
   );
 
@@ -284,6 +311,7 @@ test("el adaptador de Meta envía decisiones cortas como botones de respuesta", 
       phoneNumberId: "phone-test",
       accessToken: "temporary-test-token",
     },
+    allowMetaSend,
     fetcher
   );
 
@@ -331,6 +359,7 @@ test("el adaptador de Meta envía categorías y productos como lista nativa", as
       phoneNumberId: "phone-test",
       accessToken: "temporary-test-token",
     },
+    allowMetaSend,
     fetcher
   );
 
@@ -434,6 +463,7 @@ test("un error de Meta se reporta sin incluir credenciales ni cuerpo remoto", as
       phoneNumberId: "phone-test",
       accessToken: "secret-token",
     },
+    allowMetaSend,
     fetcher
   );
   await expect(request).rejects.toThrow(
@@ -447,6 +477,7 @@ test("un error de Meta se reporta sin incluir credenciales ni cuerpo remoto", as
         phoneNumberId: "phone-test",
         accessToken: "secret-token",
       },
+      allowMetaSend,
       fetcher
     )
   ).rejects.not.toThrow("remote sensitive detail");
@@ -475,6 +506,7 @@ test("reintenta un rechazo transitorio de Meta antes de declarar el envío falli
       phoneNumberId: "phone-test",
       accessToken: "test-token",
     },
+    allowMetaSend,
     fetcher
   );
 

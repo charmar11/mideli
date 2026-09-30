@@ -143,6 +143,9 @@ export function CartPanel({
                 key={`${modifier.group}-${modifier.option}-${index}`}
                 className="inline-flex flex-col rounded-xl bg-surface-raised px-2.5 py-1.5 font-body text-xs font-medium text-muted-foreground"
               >
+                <span className="mb-0.5 block font-heading text-[9px] font-bold uppercase tracking-wide text-muted-foreground/75">
+                  {modifier.group}
+                </span>
                 <span>
                   {modifier.option}
                   {modifier.price > 0 ? ` +$${formatPrice(modifier.price)}` : ""}
@@ -197,7 +200,7 @@ export function CartPanel({
 
   return (
     <div
-      className={`flex min-w-0 flex-col bg-surface ${
+      className={`mideli-pos-cart flex min-w-0 flex-col bg-surface ${
         isMobile
           ? "h-[88dvh] w-full rounded-t-3xl shadow-float md:h-[min(88dvh,48rem)] md:max-w-2xl md:rounded-3xl"
           : "h-full w-[min(26rem,40vw)] shrink-0 border-l border-border"

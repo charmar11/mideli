@@ -215,7 +215,7 @@ export function InventoryItemEditor({
               <InputField label="Existencia inicial">
                 <input disabled={isEditing} type="number" min="0" step="0.0001" value={draft.currentStock} onChange={(event) => update("currentStock", event.target.value)} className="form-input disabled:opacity-55" />
               </InputField>
-              <InputField label="Alerta de stock" hint="Mideli avisará cuando llegues a esta cantidad.">
+              <InputField label="Alerta de stock" hint="El sistema avisará cuando llegues a esta cantidad.">
                 <input type="number" min="0" step="0.0001" value={draft.minimumStock} onChange={(event) => update("minimumStock", event.target.value)} className="form-input" />
               </InputField>
               <InputField label="Existencia ideal" hint="Se usa para sugerir cuánto comprar.">
@@ -248,7 +248,7 @@ export function InventoryItemEditor({
                     <p className="font-heading text-sm font-bold text-foreground">
                       1 {draft.purchaseUnit || "presentación"} = {formatInventoryNumber(conversion)} {draft.unit}
                     </p>
-                    <p className="mt-1 font-body text-xs text-muted-foreground">Mideli guardará el stock en {draft.unit}.</p>
+                    <p className="mt-1 font-body text-xs text-muted-foreground">El sistema guardará el stock en {draft.unit}.</p>
                   </div>
                   <div className="sm:text-right">
                     <p className="font-body text-[11px] text-muted-foreground">Costo por {draft.unit}</p>

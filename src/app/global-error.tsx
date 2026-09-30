@@ -14,7 +14,7 @@ export default function GlobalError({
     Sentry.captureException(error);
 
     if (process.env.NODE_ENV !== "production") {
-      console.error("Mideli global error", error);
+      console.error("Global application error", error);
     }
   }, [error]);
 
@@ -52,7 +52,7 @@ export default function GlobalError({
               fontWeight: 800,
             }}
           >
-            Mideli
+            Rincón 404
           </p>
           <h1 style={{ margin: "22px 0 0", fontSize: 25 }}>
             El sistema necesita volver a cargar

@@ -3,9 +3,12 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Building2,
+  CircleAlert,
   History as HistoryIcon,
   ShoppingBag,
   Plus,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -27,12 +30,14 @@ import {
 import { OrderDetailsModal } from "@/components/pos/order-details-modal";
 import type { MenuItem, SelectedModifier } from "@/types/database";
 import { ReadyOrderNotifier } from "./ready-order-notifier";
-import { PushNotificationControl } from "./push-notification-control";
+import { PushNotificationSettings } from "./push-notification-control";
+import { useDashboardUserId } from "./dashboard-user-context";
 import { CashShiftControl } from "@/components/cash/cash-shift-control";
 import {
   ensurePosCustomerAction,
   getWhatsappPosDraftAction,
 } from "@/lib/actions/whatsapp";
+import { getCashAccessibleBusinessContexts } from "@/lib/multibusiness/business-context-selection";
 import {
   quoteManualDeliveryAction,
   quoteManualDeliveryPlaceAction,
@@ -45,6 +50,12 @@ import type {
 } from "@/lib/whatsapp/admin-types";
 import { searchPosCustomersByPhoneAction } from "@/lib/actions/whatsapp";
 import { distanceMetersToKilometers, normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
+import {
+  clearPosCartDraft,
+  readPosCartDraft,
+  savePosCartDraft,
+  type PosCartDraft,
+} from "@/lib/pos-cart-draft";
 
 const StatusView = dynamic(
   () => import("./status-view").then((module) => module.StatusView),
@@ -78,6 +89,14 @@ const VariationModal = dynamic(
   { ssr: false }
 );
 
+const ComboModal = dynamic(
+  () =>
+    import("@/components/pos/combo-modal").then(
+      (module) => module.ComboModal
+    ),
+  { ssr: false }
+);
+
 const PaymentFlow = dynamic(
   () =>
     import("@/components/payments/payment-flow").then(
@@ -87,6 +106,7 @@ const PaymentFlow = dynamic(
 );
 
 export function MeseroView() {
+  const userId = useDashboardUserId();
   const [mode, setMode] = useState<"pos" | "status" | "history">("pos");
   const [orderType, setOrderType] = useState<"comedor" | "domicilio" | "para_llevar">("comedor");
   const [tableNumber, setTableNumber] = useState("");
@@ -110,7 +130,14 @@ export function MeseroView() {
   const [deliveryCoordinates, setDeliveryCoordinates] = useState({ latitude: null as number | null, longitude: null as number | null });
   const [deliveryQuoteLoading, setDeliveryQuoteLoading] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const [blockedCartReview, setBlockedCartReview] = useState<{
+    businessNames: string[];
+    itemIds: string[];
+    payNow: boolean;
+    allowUnconfirmedDelivery: boolean;
+  } | null>(null);
   const [variationItem, setVariationItem] = useState<MenuItem | null>(null);
+  const [comboItem, setComboItem] = useState<MenuItem | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
@@ -121,9 +148,23 @@ export function MeseroView() {
   const [createdOrderForPayment, setCreatedOrderForPayment] = useState<OrderWithItems | null>(null);
   const [addedProduct, setAddedProduct] = useState<{ id: string; token: number } | null>(null);
   const [addedAnnouncement, setAddedAnnouncement] = useState("");
+  const [draftHydratedUserId, setDraftHydratedUserId] = useState<string | null>(null);
+  const draftPersistenceModeRef = useRef<"manual" | "external">("manual");
+  const draftDetailsRef = useRef<Omit<PosCartDraft, "items">>({
+    orderType,
+    tableId,
+    tableNumber,
+    orderNotes,
+    scheduledFor,
+    scheduledForLabel,
+    kitchenReleaseAt,
+  });
   const addedFeedbackTimerRef = useRef<number | null>(null);
 
   const fetchCatalog = useCatalogStore((state) => state.fetchCatalog);
+  const fetchCatalogForBusiness = useCatalogStore(
+    (state) => state.fetchCatalogForBusiness
+  );
   const subscribeToCatalog = useCatalogStore((state) => state.subscribeToCatalog);
   const menuItems = useCatalogStore((state) => state.menuItems);
   const catalogBusinessId = useCatalogStore((state) => state.catalogBusinessId);
@@ -147,7 +188,19 @@ export function MeseroView() {
   const selectedBusinessId = useBusinessContextStore(
     (state) => state.selectedBusinessId
   );
+  const businessContexts = useBusinessContextStore((state) => state.businesses);
+  const multibusinessLegacyFallback = useBusinessContextStore(
+    (state) => state.legacyFallback
+  );
+  const cashBusinesses = getCashAccessibleBusinessContexts(businessContexts);
   const activeMenuBusinessId = catalogBusinessId ?? selectedBusinessId;
+  const editingOrderBusinessId = editingOrderId
+    ? activeOrders.find((order) => order.id === editingOrderId)?.business_id ??
+      catalogBusinessId
+    : null;
+  const editingBusinessName = businessContexts.find(
+    (business) => business.business_id === editingOrderBusinessId
+  )?.business_display_name;
 
   const cartItemCount = getItemCount();
   const cartTotal = getTotal();
@@ -257,6 +310,98 @@ export function MeseroView() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  // Restore browser-only work before exposing POS controls; the server cannot read localStorage.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!userId) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("whatsappConversation")) {
+      draftPersistenceModeRef.current = "external";
+      setCartItems([]);
+      setDraftHydratedUserId(userId);
+      return;
+    }
+
+    draftPersistenceModeRef.current = "manual";
+    const draft = readPosCartDraft(userId);
+    if (draft) {
+      setCartItems(draft.items);
+      setOrderType(draft.orderType);
+      setTableId(draft.tableId);
+      setTableNumber(draft.tableNumber);
+      setOrderNotes(draft.orderNotes);
+      setScheduledFor(draft.scheduledFor);
+      setScheduledForLabel(draft.scheduledForLabel);
+      setKitchenReleaseAt(draft.kitchenReleaseAt);
+    } else {
+      setCartItems([]);
+      setOrderType("comedor");
+      setTableId("");
+      setTableNumber("");
+      setOrderNotes("");
+      setScheduledFor(null);
+      setScheduledForLabel(null);
+      setKitchenReleaseAt(null);
+    }
+    setDraftHydratedUserId(userId);
+  }, [setCartItems, userId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (!userId || draftHydratedUserId !== userId) return;
+
+    return useCartStore.subscribe((state, previousState) => {
+      if (
+        state.items === previousState.items ||
+        draftPersistenceModeRef.current !== "manual"
+      ) {
+        return;
+      }
+
+      savePosCartDraft(userId, {
+        ...draftDetailsRef.current,
+        items: state.items,
+      });
+    });
+  }, [draftHydratedUserId, userId]);
+
+  useEffect(() => {
+    draftDetailsRef.current = {
+      orderType,
+      tableId,
+      tableNumber,
+      orderNotes,
+      scheduledFor,
+      scheduledForLabel,
+      kitchenReleaseAt,
+    };
+
+    if (
+      !userId ||
+      draftHydratedUserId !== userId ||
+      draftPersistenceModeRef.current !== "manual"
+    ) {
+      return;
+    }
+
+    savePosCartDraft(userId, {
+      ...draftDetailsRef.current,
+      items,
+    });
+  }, [
+    draftHydratedUserId,
+    items,
+    kitchenReleaseAt,
+    orderNotes,
+    orderType,
+    scheduledFor,
+    scheduledForLabel,
+    tableId,
+    tableNumber,
+    userId,
+  ]);
+
   useEffect(() => {
     const conversationId = new URLSearchParams(window.location.search).get("whatsappConversation");
     if (!conversationId) return;
@@ -345,6 +490,7 @@ export function MeseroView() {
       void import("./status-view");
       void import("./sales-history");
       void import("@/components/modals/variation-modal");
+      void import("@/components/pos/combo-modal");
     };
 
     if (idleWindow.requestIdleCallback) {
@@ -376,7 +522,9 @@ export function MeseroView() {
 
   const handleProductClick = useCallback(
     (item: MenuItem) => {
-      if (item.modifiers && item.modifiers.length > 0) {
+      if (item.is_combo) {
+        setComboItem(item);
+      } else if (item.modifiers && item.modifiers.length > 0) {
         setVariationItem(item);
       } else {
         addItem(item.id, item.name, item.price, [], "", activeMenuBusinessId ?? undefined);
@@ -384,6 +532,23 @@ export function MeseroView() {
       }
     },
     [activeMenuBusinessId, addItem, markProductAdded]
+  );
+
+  const handleComboConfirm = useCallback(
+    (selectedModifiers: SelectedModifier[], notes: string) => {
+      if (!comboItem) return;
+      addItem(
+        comboItem.id,
+        comboItem.name,
+        comboItem.price,
+        selectedModifiers,
+        notes,
+        activeMenuBusinessId ?? undefined
+      );
+      markProductAdded(comboItem);
+      setComboItem(null);
+    },
+    [activeMenuBusinessId, addItem, comboItem, markProductAdded]
   );
 
   const handleVariationConfirm = useCallback(
@@ -404,8 +569,54 @@ export function MeseroView() {
     [activeMenuBusinessId, addItem, markProductAdded, variationItem]
   );
 
-  async function handleSubmitOrder(payNow = false, allowUnconfirmedDelivery = false) {
-    if (items.length === 0 || isSubmitting) return;
+  async function handleSubmitOrder(
+    payNow = false,
+    allowUnconfirmedDelivery = false,
+    itemsToSubmit = items,
+  ) {
+    if (isSubmitting) return;
+    if (itemsToSubmit.length === 0) {
+      toast.error(
+        editingOrderId
+          ? "El pedido no puede quedar vacío. Cancélalo desde Estado para conservarlo como cancelado en el historial."
+          : "Agrega al menos un producto al pedido."
+      );
+      return;
+    }
+    const businessContextStore = useBusinessContextStore.getState();
+    if (!businessContextStore.legacyFallback) {
+      await businessContextStore.ensureLoaded(true);
+      const refreshedContext = useBusinessContextStore.getState();
+      const contextsById = new Map(
+        refreshedContext.businesses.map((business) => [business.business_id, business]),
+      );
+      const unavailableItems = itemsToSubmit.filter((item) => {
+        const businessId = item.business_id ?? refreshedContext.selectedBusinessId;
+        if (!businessId) return true;
+        const business = contextsById.get(businessId);
+        return (
+          !business ||
+          business.business_lifecycle_status !== "active" ||
+          business.business_license_available !== true
+        );
+      });
+      if (unavailableItems.length > 0) {
+        const unavailableBusinessIds = new Set(
+          unavailableItems
+            .map((item) => item.business_id ?? refreshedContext.selectedBusinessId)
+            .filter((id): id is string => Boolean(id)),
+        );
+        setBlockedCartReview({
+          businessNames: [...unavailableBusinessIds].map(
+            (id) => contextsById.get(id)?.business_display_name ?? "Negocio no disponible",
+          ),
+          itemIds: unavailableItems.map((item) => item.id),
+          payNow,
+          allowUnconfirmedDelivery,
+        });
+        return;
+      }
+    }
     if (!currentCashShift) {
       toast.error("Abre la caja antes de registrar pedidos", {
         description: "Usa el control Caja en la barra superior.",
@@ -417,7 +628,7 @@ export function MeseroView() {
       return;
     }
     const cartBusinessIds = new Set(
-      items
+      itemsToSubmit
         .map((item) => item.business_id)
         .filter((businessId): businessId is string => Boolean(businessId))
     );
@@ -467,7 +678,7 @@ export function MeseroView() {
     if (editingOrderId) {
       const result = await updateOrderWithItems(
         editingOrderId,
-        items,
+        itemsToSubmit,
         tableNumber,
         customerName,
         orderType === "comedor" ? tableId : "",
@@ -497,7 +708,7 @@ export function MeseroView() {
       error = result.error;
     } else {
       const result = await createOrder(
-        items,
+        itemsToSubmit,
         orderType,
         orderNotes,
         tableNumber,
@@ -545,11 +756,13 @@ export function MeseroView() {
           ? `Pedidos ${orderNumbers} enviados a preparación`
           : `Pedido #${orderNumber} enviado a cocina`,
       {
-      description: `${items.reduce((s, i) => s + i.quantity, 0)} artículos · ${orderType}${
+      description: `${itemsToSubmit.reduce((s, i) => s + i.quantity, 0)} artículos · ${orderType}${
         tableNumber ? ` · Mesa ${tableNumber}` : ""
       }`,
       }
     );
+    const completedExternalDraft = draftPersistenceModeRef.current === "external";
+    if (!completedExternalDraft && userId) clearPosCartDraft(userId);
     if (payNow && createdOrder) {
       const { data: savedItems, error: savedItemsError } = await createClient()
         .from("order_items")
@@ -558,7 +771,7 @@ export function MeseroView() {
       if (savedItemsError || !savedItems) {
         toast.error("El pedido se envió, pero no se pudo abrir el cobro. Puedes cobrarlo desde Estado.");
       } else {
-        const names = new Map(items.map((item) => [item.menu_item_id, item.name]));
+        const names = new Map(itemsToSubmit.map((item) => [item.menu_item_id, item.name]));
         const persistedItems = savedItems as Array<{
           id: string;
           order_id: string;
@@ -611,7 +824,20 @@ export function MeseroView() {
     if (!payNow || !createdOrder) setMode("status");
   }
 
-  function handleEditOrder(order: OrderWithItems) {
+  async function handleEditOrder(order: OrderWithItems) {
+    if (
+      order.business_id &&
+      catalogBusinessId !== order.business_id &&
+      !(await fetchCatalogForBusiness(order.business_id, true))
+    ) {
+      toast.error("No se pudo cargar el menú de este pedido", {
+        description: "El pedido sigue sin cambios. Intenta de nuevo.",
+      });
+      return;
+    }
+
+    draftPersistenceModeRef.current = "external";
+    if (userId) clearPosCartDraft(userId);
     const cartItems = order.items.map((item) => ({
       id: crypto.randomUUID(),
       menu_item_id: item.menu_item_id,
@@ -657,7 +883,19 @@ export function MeseroView() {
     setMode("pos");
   }
 
+  function applyLocalCartDraft(draft: PosCartDraft) {
+    setCartItems(draft.items);
+    setOrderType(draft.orderType);
+    setTableId(draft.tableId);
+    setTableNumber(draft.tableNumber);
+    setOrderNotes(draft.orderNotes);
+    setScheduledFor(draft.scheduledFor);
+    setScheduledForLabel(draft.scheduledForLabel);
+    setKitchenReleaseAt(draft.kitchenReleaseAt);
+  }
+
   function handleAddOrderForTable(tableIdValue: string, tableNumberValue: string) {
+    draftPersistenceModeRef.current = "manual";
     clear();
     setEditingOrderId(null);
     setEditingOrderNumber(null);
@@ -687,6 +925,7 @@ export function MeseroView() {
   }
 
   function handleStartNewOrder() {
+    const wasEditingExternalOrder = draftPersistenceModeRef.current === "external";
     if (editingOrderId || whatsappConversationId) {
       clear();
       setEditingOrderId(null);
@@ -712,11 +951,20 @@ export function MeseroView() {
       setDeliveryPaymentMethod(null);
       setDeliveryCashTendered(null);
     }
+    if (wasEditingExternalOrder) {
+      draftPersistenceModeRef.current = "manual";
+      const savedDraft = userId ? readPosCartDraft(userId) : null;
+      if (savedDraft) {
+        applyLocalCartDraft(savedDraft);
+      } else {
+        clear();
+      }
+    }
     setMode("pos");
   }
 
   const modeSwitcher = (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-background px-2 py-1.5 sm:px-4 sm:py-2">
+    <div className="mideli-pos-mode-switcher flex shrink-0 items-center gap-2 border-b border-border/70 bg-background px-2 py-1.5 sm:px-4 sm:py-2">
       <div className="flex min-w-0 flex-1 rounded-xl bg-surface p-1 shadow-card ring-1 ring-border sm:flex-none">
           <button
             data-tour="pos-new-order"
@@ -766,13 +1014,27 @@ export function MeseroView() {
             Historial
           </button>
       </div>
-      <CashShiftControl />
-      <PushNotificationControl topic="ready" />
+      <CashShiftControl
+        canOpenCash={multibusinessLegacyFallback}
+        canCloseCash={multibusinessLegacyFallback}
+        canManageCash={multibusinessLegacyFallback}
+        cashBusinesses={multibusinessLegacyFallback ? undefined : cashBusinesses}
+        preferredBusinessId={selectedBusinessId}
+      />
+      <PushNotificationSettings />
     </div>
   );
 
+  if (userId && draftHydratedUserId !== userId) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background px-5 text-sm text-muted-foreground">
+        Recuperando la comanda...
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="mideli-pos-shell flex h-full min-h-0 flex-col bg-background">
       <ReadyOrderNotifier />
       {mode === "history" ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -791,7 +1053,21 @@ export function MeseroView() {
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {modeSwitcher}
-            <BusinessMenuSelector />
+            {editingOrderId ? (
+              <div className="mx-3 flex min-h-12 items-center gap-2 rounded-xl border border-border bg-surface px-3 sm:mx-4">
+                <Building2 size={16} className="shrink-0 text-brand" aria-hidden />
+                <div className="min-w-0">
+                  <p className="truncate font-heading text-xs font-bold">
+                    Editando pedido #{editingOrderNumber}
+                  </p>
+                  <p className="truncate font-body text-[11px] text-muted-foreground">
+                    {editingBusinessName ?? "Menú del pedido"}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <BusinessMenuSelector />
+            )}
             <CategoryTabs />
             <ProductGrid
               onProductClick={handleProductClick}
@@ -825,7 +1101,7 @@ export function MeseroView() {
                 ? `, ${cartItemCount} ${cartItemCount === 1 ? "artículo" : "artículos"}`
                 : ""
             }`}
-            className="mobile-cart-dock fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] inset-x-3 z-30 flex h-14 touch-manipulation items-center gap-3 rounded-2xl border border-white/10 bg-brand px-4 text-white shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.985] md:bottom-4 md:inset-x-auto md:right-4 md:min-w-72 xl:hidden"
+            className="mideli-mobile-cart-dock mobile-cart-dock fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] inset-x-3 z-30 flex h-14 touch-manipulation items-center gap-3 rounded-2xl border border-white/10 bg-brand px-4 text-white shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.985] md:bottom-4 md:inset-x-auto md:right-4 md:min-w-72 xl:hidden"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15">
               <ShoppingBag size={19} />
@@ -880,6 +1156,14 @@ export function MeseroView() {
           item={variationItem}
           onClose={() => setVariationItem(null)}
           onConfirm={handleVariationConfirm}
+        />
+      ) : null}
+
+      {comboItem ? (
+        <ComboModal
+          item={comboItem}
+          onClose={() => setComboItem(null)}
+          onConfirm={handleComboConfirm}
         />
       ) : null}
 
@@ -956,6 +1240,86 @@ export function MeseroView() {
             setMode("status");
           }}
         />
+      ) : null}
+
+      {blockedCartReview ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-end justify-center bg-ink/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setBlockedCartReview(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="blocked-cart-title"
+            className="w-full max-w-lg rounded-t-3xl border border-border bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-float sm:rounded-2xl sm:p-6"
+          >
+            <div className="flex items-start gap-3">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-warning/12 text-warning">
+                <CircleAlert size={21} aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 id="blocked-cart-title" className="font-heading text-lg font-bold text-foreground">
+                  Revisa la comanda antes de continuar
+                </h2>
+                <p className="mt-1 font-body text-sm leading-5 text-muted-foreground">
+                  Algunos productos ya no están disponibles. Puedes conservar la comanda o quitarlos y continuar con los demás.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Conservar comanda y cerrar aviso"
+                onClick={() => setBlockedCartReview(null)}
+                className="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+              >
+                <X size={18} aria-hidden />
+              </button>
+            </div>
+            <ul className="mt-5 space-y-2">
+              {blockedCartReview.businessNames.map((name, index) => (
+                <li key={`${name}-${index}`} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 font-heading text-sm font-semibold text-foreground">
+                  <Building2 size={16} className="shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="truncate">{name}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setBlockedCartReview(null)}
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border px-4 font-heading text-sm font-bold text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+              >
+                Conservar comanda
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const review = blockedCartReview;
+                  if (!review) return;
+                  const blockedIds = new Set(review.itemIds);
+                  const remainingItems = useCartStore
+                    .getState()
+                    .items.filter((item) => !blockedIds.has(item.id));
+                  setCartItems(remainingItems);
+                  setBlockedCartReview(null);
+                  if (remainingItems.length === 0) {
+                    toast.info("La comanda quedó vacía. Agrega productos disponibles para continuar.");
+                    return;
+                  }
+                  void handleSubmitOrder(
+                    review.payNow,
+                    review.allowUnconfirmedDelivery,
+                    remainingItems,
+                  );
+                }}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand px-4 font-heading text-sm font-bold text-white shadow-sm shadow-brand/20 hover:bg-brand-hover"
+              >
+                Quitar y continuar
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
     </div>
   );

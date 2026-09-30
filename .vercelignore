@@ -2,8 +2,12 @@
 .impeccable
 .opencode
 .tmp
+.playwright-cli
+output
 test-results
+tests/
 docs
+docs_dev
 imagenes
 /supabase/
 /*.mp3

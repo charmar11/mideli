@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Building2,
   Check,
   ChevronDown,
   Clock3,
@@ -24,18 +25,29 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { RinconBrand } from "@/components/auth/rincon-brand";
+import { BusinessStaffRolesManager } from "@/components/admin/business-staff-roles-manager";
 import {
   createUserAction,
   deactivateUserAction,
   deleteUserAction,
   getCurrentUserRole,
+  listGlobalWaiterBusinessAccessAction,
+  listBusinessStaffRolesAction,
   getStaffManagementContextAction,
   listProfilesAction,
   reactivateUserAction,
   resetUserPasswordAction,
+  setBusinessStaffRoleAction,
   setStaffAuthorizationPinAction,
+  setGlobalWaiterBusinessAccessAction,
   updateUserRoleAction,
 } from "@/lib/actions/users";
+import type {
+  GlobalWaiterBusinessAccessBusiness,
+  GlobalWaiterBusinessAccessGrant,
+} from "@/lib/actions/users";
+import type { BusinessStaffRole } from "@/lib/staff-roles";
 import type { StaffMember } from "@/types/database";
 
 type StaffRole = StaffMember["role"];
@@ -47,6 +59,7 @@ type StatusChange = {
 type StaffManagementContext = Awaited<
   ReturnType<typeof getStaffManagementContextAction>
 >;
+type BusinessAccessDraft = { enabled: boolean };
 
 const roleLabels: Record<StaffRole, string> = {
   owner: "Dueño",
@@ -115,7 +128,7 @@ export default function SettingsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedMember, setSelectedMember] = useState<StaffMember | null>(null);
-  const [roleDraft, setRoleDraft] = useState<StaffRole>("waiter");
+  const [roleDraft, setRoleDraft] = useState<string>("waiter");
   const [statusChange, setStatusChange] = useState<StatusChange | null>(null);
   const [passwordTarget, setPasswordTarget] = useState<StaffMember | null>(null);
   const [passwordDraft, setPasswordDraft] = useState("");
@@ -123,12 +136,22 @@ export default function SettingsPage() {
   const [pinTarget, setPinTarget] = useState<StaffMember | null>(null);
   const [pinDraft, setPinDraft] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<StaffMember | null>(null);
+  const [businessAccessTarget, setBusinessAccessTarget] = useState<StaffMember | null>(null);
+  const [businesses, setBusinesses] = useState<GlobalWaiterBusinessAccessBusiness[]>([]);
+  const [businessAccessGrants, setBusinessAccessGrants] = useState<GlobalWaiterBusinessAccessGrant[]>([]);
+  const [businessAccessDrafts, setBusinessAccessDrafts] = useState<Record<string, BusinessAccessDraft>>({});
+  const [businessAccessLoading, setBusinessAccessLoading] = useState(false);
+  const [businessAccessError, setBusinessAccessError] = useState<string | null>(null);
+  const [staffRoles, setStaffRoles] = useState<BusinessStaffRole[]>([]);
+  const [staffRolesLoading, setStaffRolesLoading] = useState(false);
+  const [useExistingAccount, setUseExistingAccount] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [newUser, setNewUser] = useState({
     email: "",
     password: "",
     full_name: "",
     role: "waiter" as StaffRole,
+    staffRoleId: "",
   });
 
   const isOwner = viewerRole === "owner";
@@ -147,20 +170,28 @@ export default function SettingsPage() {
       ? "Meseras globales"
       : managementContext.mode === "business"
         ? `Personal de ${managementContext.businessName ?? "este negocio"}`
-        : "Personas que hacen funcionar Mideli";
+        : "Personas que hacen funcionar el negocio";
 
   useEffect(() => {
+    let cancelled = false;
     void Promise.all([
-      loadProfiles(),
       getCurrentUserRole(),
       getStaffManagementContextAction(),
-    ]).then(([, role, context]) => {
+    ]).then(async ([role, context]) => {
+      if (cancelled) return;
       setViewerRole(role as StaffRole | null);
       setManagementContext(context);
       if (context.mode === "organization") {
         setNewUser((current) => ({ ...current, role: "waiter" }));
+        await loadGlobalWaiterBusinessAccess();
+      } else if (context.mode === "business") {
+        await loadBusinessStaffRoles();
       }
+      if (!cancelled) await loadProfiles();
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function loadProfiles() {
@@ -172,6 +203,32 @@ export default function SettingsPage() {
       setProfiles(nextProfiles);
     }
     setLoading(false);
+  }
+
+  async function loadGlobalWaiterBusinessAccess() {
+    setBusinessAccessLoading(true);
+    setBusinessAccessError(null);
+    const result = await listGlobalWaiterBusinessAccessAction();
+    if (result.error) {
+      setBusinessAccessError(result.error);
+    } else {
+      setBusinesses(result.businesses);
+      setBusinessAccessGrants(result.grants);
+    }
+    setBusinessAccessLoading(false);
+    return result;
+  }
+
+  async function loadBusinessStaffRoles() {
+    setStaffRolesLoading(true);
+    const result = await listBusinessStaffRolesAction();
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      setStaffRoles(result.roles);
+    }
+    setStaffRolesLoading(false);
+    return result;
   }
 
   const filteredProfiles = useMemo(() => {
@@ -196,6 +253,7 @@ export default function SettingsPage() {
 
   function handleAddUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const selectedStaffRole = staffRoles.find((role) => role.id === newUser.staffRoleId);
     const fullEmail = newUser.email.includes("@")
       ? newUser.email.trim()
       : isModernManagement
@@ -207,7 +265,9 @@ export default function SettingsPage() {
         email: fullEmail,
         password: newUser.password,
         fullName: newUser.full_name,
-        role: newUser.role,
+        role: managementContext.mode === "business" ? "waiter" : newUser.role,
+        staffRoleId: managementContext.mode === "business" ? newUser.staffRoleId : null,
+        existingAccount: useExistingAccount,
       });
 
       if (!result.success || result.error) {
@@ -215,8 +275,13 @@ export default function SettingsPage() {
         return;
       }
 
-      toast.success(`Acceso creado para ${fullEmail}`);
-      setNewUser({ email: "", password: "", full_name: "", role: "waiter" });
+      toast.success(
+        useExistingAccount
+          ? `Cuenta vinculada a ${managementContext.businessName ?? "este negocio"}`
+          : `Acceso creado para ${fullEmail}`,
+      );
+      setNewUser({ email: "", password: "", full_name: "", role: "waiter", staffRoleId: selectedStaffRole?.id ?? "" });
+      setUseExistingAccount(false);
       setShowAddForm(false);
       await loadProfiles();
     });
@@ -224,14 +289,26 @@ export default function SettingsPage() {
 
   function openMember(member: StaffMember) {
     setSelectedMember(member);
-    setRoleDraft(member.role);
+    setRoleDraft(
+      managementContext.mode === "business"
+        ? member.staff_role_id ?? ""
+        : member.role,
+    );
   }
 
   function handleRoleSave() {
-    if (!selectedMember || roleDraft === selectedMember.role) return;
+    if (!selectedMember) return;
+    const unchanged = managementContext.mode === "business"
+      ? roleDraft === (selectedMember.staff_role_id ?? "")
+      : roleDraft === selectedMember.role;
+    if (unchanged) return;
 
     startTransition(async () => {
-      const result = await updateUserRoleAction(selectedMember.id, roleDraft);
+      const result = managementContext.mode === "business"
+        ? selectedMember.membership_id
+          ? await setBusinessStaffRoleAction(selectedMember.membership_id, roleDraft)
+          : { success: false, error: "No se encontró la membresía local" }
+        : await updateUserRoleAction(selectedMember.id, roleDraft as StaffRole);
       if (!result.success || result.error) {
         toast.error(result.error ?? "No se pudo actualizar el rol");
         return;
@@ -240,6 +317,7 @@ export default function SettingsPage() {
       toast.success("Rol actualizado");
       setSelectedMember(null);
       await loadProfiles();
+      await loadBusinessStaffRoles();
     });
   }
 
@@ -273,6 +351,81 @@ export default function SettingsPage() {
       setStatusChange(null);
       setSelectedMember(null);
       await loadProfiles();
+    });
+  }
+
+  function openBusinessAccessDialog(member: StaffMember) {
+    if (!member.membership_id) {
+      toast.error("No se encontró la membresía global de esta cuenta");
+      return;
+    }
+    const nextDrafts: Record<string, BusinessAccessDraft> = {};
+    for (const business of businesses) {
+      const grant = businessAccessGrants.find(
+        (item) =>
+          item.membershipId === member.membership_id &&
+          item.businessId === business.id
+      );
+      nextDrafts[business.id] = { enabled: grant?.canOperate === true || grant?.canCharge === true };
+    }
+    setBusinessAccessDrafts(nextDrafts);
+    setBusinessAccessTarget(member);
+  }
+
+  function updateBusinessAccessDraft(businessId: string, enabled: boolean) {
+    setBusinessAccessDrafts((current) => ({
+      ...current,
+      [businessId]: { enabled },
+    }));
+  }
+
+  function saveBusinessAccess(business: GlobalWaiterBusinessAccessBusiness) {
+    if (!businessAccessTarget?.membership_id) return;
+    const draft = businessAccessDrafts[business.id] ?? { enabled: false };
+    const existing = businessAccessGrants.find(
+      (grant) =>
+        grant.membershipId === businessAccessTarget.membership_id &&
+        grant.businessId === business.id
+    );
+    const currentEnabled = existing?.canOperate === true || existing?.canCharge === true;
+    if (draft.enabled === currentEnabled) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await setGlobalWaiterBusinessAccessAction({
+        membershipId: businessAccessTarget.membership_id!,
+        businessId: business.id,
+        enabled: draft.enabled,
+      });
+      if (!result.success || result.error) {
+        toast.error(result.error ?? "No se pudo guardar el acceso");
+        return;
+      }
+
+      setBusinessAccessGrants((current) => {
+        const withoutTarget = current.filter(
+          (grant) =>
+            grant.membershipId !== businessAccessTarget.membership_id ||
+            grant.businessId !== business.id
+        );
+        return draft.enabled
+          ? [
+              ...withoutTarget,
+              {
+                membershipId: businessAccessTarget.membership_id!,
+                businessId: business.id,
+                canOperate: true,
+                canCharge: true,
+              },
+            ]
+          : withoutTarget;
+      });
+      toast.success(
+        draft.enabled
+          ? `Acceso a pedidos y cobros habilitado en ${business.displayName}`
+          : `Acceso retirado en ${business.displayName}`,
+      );
     });
   }
 
@@ -342,23 +495,33 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    <div className="mideli-settings-screen flex min-h-dvh flex-col bg-background">
       <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3 shadow-sm sm:px-6">
         <Link
-          href="/dashboard"
+          href={managementContext.mode === "organization" ? "/settings/negocios" : "/dashboard"}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
-          aria-label="Volver al dashboard"
+          aria-label={managementContext.mode === "organization" ? "Volver a negocios" : "Volver al dashboard"}
         >
           <ChevronDown size={18} className="rotate-90" />
         </Link>
-        <div>
-          <p className="font-data text-[10px] font-bold uppercase tracking-[0.22em] text-brand">
-            Administración
-          </p>
-          <h1 className="font-heading text-lg font-bold text-foreground">
-            Equipo y accesos
-          </h1>
-        </div>
+        {managementContext.mode === "organization" ? (
+          <>
+            <RinconBrand compact />
+            <span aria-hidden className="h-8 w-px bg-border" />
+            <h1 className="font-heading text-sm font-semibold text-muted-foreground">
+              Administración
+            </h1>
+          </>
+        ) : (
+          <div>
+            <p className="font-data text-[10px] font-bold uppercase tracking-[0.22em] text-brand">
+              Administración
+            </p>
+            <h1 className="font-heading text-lg font-bold text-foreground">
+              Equipo y accesos
+            </h1>
+          </div>
+        )}
         <div className="ml-auto hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 sm:flex">
           <ShieldCheck size={14} className="text-success" />
           <span className="font-heading text-[11px] font-bold text-success">
@@ -367,7 +530,32 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      {managementContext.mode === "organization" ? (
+        <nav
+          aria-label="Secciones de administración"
+          className="border-b border-border bg-surface/70 px-4 sm:px-6"
+        >
+          <div className="mx-auto flex max-w-7xl gap-2 overflow-x-auto py-2">
+            <Link
+              href="/settings/negocios"
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 font-heading text-xs font-bold text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground"
+            >
+              <Building2 size={15} aria-hidden />
+              Negocios
+            </Link>
+            <Link
+              href="/settings"
+              aria-current="page"
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white"
+            >
+              <UsersRound size={15} aria-hidden />
+              Personal global
+            </Link>
+          </div>
+        </nav>
+      ) : null}
+
+      <main className="mideli-page-scroll flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
         <div className="mx-auto max-w-5xl space-y-6">
           <section className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
             <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-brand/10 blur-3xl" />
@@ -431,32 +619,52 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <h2 className="font-heading text-base font-bold text-foreground">
-                    Crear acceso nuevo
+                    {useExistingAccount ? "Vincular cuenta existente" : "Crear acceso nuevo"}
                   </h2>
                   <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">
-                    Entrégale estas credenciales al empleado de forma privada. Podrá usar el
-                    sistema según el rol elegido.
+                    {useExistingAccount
+                      ? "Se conserva el mismo usuario y contraseña. Solo se agrega el acceso a este alcance."
+                      : "Define un acceso nuevo. La persona podrá usar el sistema según el rango elegido."}
                   </p>
                 </div>
               </div>
 
               <form onSubmit={handleAddUser} className="space-y-4">
+                {isModernManagement ? (
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-background p-1">
+                    {([
+                      [false, "Cuenta nueva"],
+                      [true, "Ya tiene cuenta"],
+                    ] as const).map(([existing, label]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setUseExistingAccount(existing)}
+                        aria-pressed={useExistingAccount === existing}
+                        className={`min-h-10 rounded-lg px-3 font-heading text-xs font-bold transition ${useExistingAccount === existing ? "bg-brand text-white" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="space-y-1.5 sm:col-span-2">
-                    <span className="font-heading text-xs font-bold text-foreground">Nombre completo</span>
-                    <input
-                      type="text"
-                      value={newUser.full_name}
-                      onChange={(event) =>
-                        setNewUser({ ...newUser, full_name: event.target.value })
-                      }
-                      required
-                      placeholder="Ej. Ana López"
-                      className="h-11 w-full rounded-xl border border-border bg-background px-3 font-body text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
-                    />
-                  </label>
+                  {!useExistingAccount ? (
+                    <label className="space-y-1.5 sm:col-span-2">
+                      <span className="font-heading text-xs font-bold text-foreground">Nombre completo</span>
+                      <input
+                        type="text"
+                        value={newUser.full_name}
+                        onChange={(event) => setNewUser({ ...newUser, full_name: event.target.value })}
+                        required
+                        placeholder="Ej. Ana López"
+                        className="h-11 w-full rounded-xl border border-border bg-background px-3 font-body text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                  ) : null}
                   <label className="space-y-1.5">
-                    <span className="font-heading text-xs font-bold text-foreground">Usuario o correo</span>
+                    <span className="font-heading text-xs font-bold text-foreground">Correo de la cuenta</span>
                     <div className="flex h-11 overflow-hidden rounded-xl border border-border bg-background transition focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20">
                       <input
                         type="text"
@@ -475,23 +683,42 @@ export default function SettingsPage() {
                       )}
                     </div>
                   </label>
-                  <label className="space-y-1.5">
-                    <span className="font-heading text-xs font-bold text-foreground">Contraseña inicial</span>
-                    <input
-                      type="password"
-                      value={newUser.password}
-                      onChange={(event) =>
-                        setNewUser({ ...newUser, password: event.target.value })
-                      }
-                      required
-                      minLength={6}
-                      placeholder="Mínimo 6 caracteres"
-                      className="h-11 w-full rounded-xl border border-border bg-background px-3 font-body text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
-                    />
-                  </label>
+                  {!useExistingAccount ? (
+                    <label className="space-y-1.5">
+                      <span className="font-heading text-xs font-bold text-foreground">Contraseña inicial</span>
+                      <input
+                        type="password"
+                        value={newUser.password}
+                        onChange={(event) => setNewUser({ ...newUser, password: event.target.value })}
+                        required
+                        minLength={6}
+                        placeholder="Mínimo 6 caracteres"
+                        className="h-11 w-full rounded-xl border border-border bg-background px-3 font-body text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                  ) : null}
                 </div>
 
-                <div>
+                {managementContext.mode === "business" ? (
+                  <label className="block space-y-2">
+                    <span className="font-heading text-xs font-bold text-foreground">Rango para {managementContext.businessName}</span>
+                    <select
+                      value={newUser.staffRoleId}
+                      onChange={(event) => setNewUser({ ...newUser, staffRoleId: event.target.value })}
+                      required
+                      disabled={staffRolesLoading || staffRoles.length === 0}
+                      className="h-11 w-full rounded-xl border border-border bg-background px-3 font-body text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:opacity-60"
+                    >
+                      <option value="">{staffRolesLoading ? "Cargando rangos..." : "Selecciona qué podrá hacer"}</option>
+                      {staffRoles.map((staffRole) => (
+                        <option key={staffRole.id} value={staffRole.id} disabled={staffRole.assignable === false}>
+                          {staffRole.name}{staffRole.assignable === false ? " · permisos por revisar" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="block font-body text-[11px] leading-4 text-muted-foreground">Los permisos quedan limitados a este negocio, incluso si la persona también es mesera global.</span>
+                  </label>
+                ) : <div>
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-heading text-xs font-bold text-foreground">Rol de acceso</span>
                     {!isOwner && !isModernManagement && (
@@ -530,7 +757,7 @@ export default function SettingsPage() {
                       );
                     })}
                   </div>
-                </div>
+                </div>}
 
                 <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row">
                   <button
@@ -547,12 +774,19 @@ export default function SettingsPage() {
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-brand px-4 font-heading text-xs font-bold text-white transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isPending && <Loader2 size={14} className="animate-spin" />}
-                    Crear acceso
+                    {useExistingAccount ? "Vincular cuenta" : "Crear acceso"}
                   </button>
                 </div>
               </form>
             </section>
           )}
+
+          {managementContext.mode === "business" ? (
+            <BusinessStaffRolesManager
+              businessName={managementContext.businessName ?? "este negocio"}
+              onRolesChanged={() => void loadBusinessStaffRoles()}
+            />
+          ) : null}
 
           <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
             <div className="border-b border-border p-4 sm:p-5">
@@ -567,7 +801,14 @@ export default function SettingsPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => void loadProfiles()}
+                  onClick={() => {
+                    void loadProfiles();
+                    if (managementContext.mode === "organization") {
+                      void loadGlobalWaiterBusinessAccess();
+                    } else if (managementContext.mode === "business") {
+                      void loadBusinessStaffRoles();
+                    }
+                  }}
                   disabled={loading || isPending}
                   className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-xl border border-border px-3 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50 lg:self-auto"
                 >
@@ -631,7 +872,7 @@ export default function SettingsPage() {
                 </p>
                 <p className="mt-1 max-w-xs font-body text-xs leading-5 text-muted-foreground">
                   {profiles.length === 0
-                    ? "Agrega el primer acceso para que tu equipo pueda operar Mideli."
+                    ? "Agrega el primer acceso para que tu equipo pueda operar el negocio."
                     : "Prueba con otro nombre o cambia el filtro de estado."}
                 </p>
               </div>
@@ -666,6 +907,11 @@ export default function SettingsPage() {
                           >
                             {profile.is_active ? "Activo" : "Inactivo"}
                           </span>
+                          {profile.membership_role_code === "business_owner" ? (
+                            <span className="rounded-full border border-brand/20 bg-brand/10 px-2 py-0.5 font-heading text-[10px] font-bold text-brand">
+                              Tu cuenta
+                            </span>
+                          ) : null}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-body text-xs text-muted-foreground">
                           <span className="inline-flex items-center gap-1.5">
@@ -685,55 +931,76 @@ export default function SettingsPage() {
                       <span
                         className={`rounded-lg border px-2.5 py-1.5 font-heading text-[11px] font-bold ${roleColors[profile.role]}`}
                       >
-                        {roleLabels[profile.role]}
+                        {profile.membership_role_name ?? roleLabels[profile.role]}
                       </span>
                       <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openMember(profile)}
-                          disabled={isPending}
-                          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border px-2.5 font-heading text-xs font-bold text-muted-foreground transition hover:border-brand/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50"
-                          title="Editar permisos"
-                        >
-                          <Pencil size={14} />
-                          <span className="hidden md:inline">Editar</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openPasswordDialog(profile)}
-                          disabled={isPending}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-border px-2.5 text-muted-foreground transition hover:border-gold/40 hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 disabled:opacity-50"
-                          title="Definir contraseña"
-                        >
-                          <KeyRound size={14} />
-                        </button>
+                        {managementContext.mode === "organization" &&
+                        profile.membership_role_code === "global_waiter" ? (
+                          <button
+                            type="button"
+                            onClick={() => openBusinessAccessDialog(profile)}
+                            disabled={isPending || businessAccessLoading || Boolean(businessAccessError) || !profile.is_active}
+                            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-success/25 px-2.5 font-heading text-xs font-bold text-success transition hover:bg-success/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60 disabled:opacity-50"
+                            title="Elegir en qué negocios puede tomar pedidos y cobrar"
+                          >
+                            <Building2 size={14} />
+                            <span className="hidden lg:inline">Negocios</span>
+                          </button>
+                        ) : null}
+                        {profile.membership_role_code !== "business_owner" ? (
+                          <button
+                            type="button"
+                            onClick={() => openMember(profile)}
+                            disabled={isPending}
+                            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border px-2.5 font-heading text-xs font-bold text-muted-foreground transition hover:border-brand/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50"
+                            title="Editar permisos"
+                          >
+                            <Pencil size={14} />
+                            <span className="hidden md:inline">Editar</span>
+                          </button>
+                        ) : null}
+                        {managementContext.mode !== "business" ? (
+                          <button
+                            type="button"
+                            onClick={() => openPasswordDialog(profile)}
+                            disabled={isPending}
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-border px-2.5 text-muted-foreground transition hover:border-gold/40 hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 disabled:opacity-50"
+                            title="Definir contraseña de la cuenta global"
+                          >
+                            <KeyRound size={14} />
+                          </button>
+                        ) : null}
                         {profile.role === "owner" || profile.role === "admin" || profile.role === "supervisor" ? (
                           <button
                             type="button"
                             onClick={() => openPinDialog(profile)}
                             disabled={isPending}
-                            className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-border px-2.5 text-muted-foreground transition hover:border-brand/40 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50"
-                            title="Definir PIN de descuentos"
+                            className={`inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border text-xs font-bold transition hover:border-brand/40 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50 ${profile.membership_role_code === "business_owner" ? "border-brand/25 px-3 font-heading text-brand" : "w-11 border-border px-2.5 text-muted-foreground"}`}
+                            title={profile.membership_role_code === "business_owner" ? "Configurar tu PIN de autorización" : "Configurar PIN de autorización"}
+                            aria-label={profile.membership_role_code === "business_owner" ? "Configurar tu PIN de autorización" : `Configurar PIN de autorización para ${profile.full_name}`}
                           >
                             <ShieldCheck size={14} />
+                            {profile.membership_role_code === "business_owner" ? <span>Configurar PIN</span> : null}
                           </button>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => askStatusChange(profile)}
-                          disabled={isPending}
-                          className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 font-heading text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50 ${
-                            profile.is_active
-                              ? "border-warning/25 text-warning hover:bg-warning-light"
-                              : "border-success/20 text-success hover:bg-success/10"
-                          }`}
-                          title={profile.is_active ? "Desactivar acceso" : "Reactivar acceso"}
-                        >
-                          {profile.is_active ? <UserRoundX size={14} /> : <UserRoundCheck size={14} />}
-                          <span className="hidden md:inline">
-                            {profile.is_active ? "Desactivar" : "Reactivar"}
-                          </span>
-                        </button>
+                        {profile.membership_role_code !== "business_owner" ? (
+                          <button
+                            type="button"
+                            onClick={() => askStatusChange(profile)}
+                            disabled={isPending}
+                            className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 font-heading text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50 ${
+                              profile.is_active
+                                ? "border-warning/25 text-warning hover:bg-warning-light"
+                                : "border-success/20 text-success hover:bg-success/10"
+                            }`}
+                            title={profile.is_active ? "Desactivar acceso" : "Reactivar acceso"}
+                          >
+                            {profile.is_active ? <UserRoundX size={14} /> : <UserRoundCheck size={14} />}
+                            <span className="hidden md:inline">
+                              {profile.is_active ? "Desactivar" : "Reactivar"}
+                            </span>
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   </article>
@@ -787,15 +1054,26 @@ export default function SettingsPage() {
                 <span className="font-heading text-xs font-bold text-foreground">Rol de acceso</span>
                 <select
                   value={roleDraft}
-                  onChange={(event) => setRoleDraft(event.target.value as StaffRole)}
+                  onChange={(event) => setRoleDraft(event.target.value)}
                   className="h-11 w-full rounded-xl border border-border bg-background px-3 font-body text-sm text-foreground outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
                 >
-                  {visibleRoleOptions.map((role) => (
-                    <option key={role} value={role} disabled={role === "owner" && !isOwner}>
-                      {roleLabels[role]} · {roleDescriptions[role]}
-                    </option>
-                  ))}
+                  {managementContext.mode === "business"
+                    ? staffRoles.map((staffRole) => (
+                        <option key={staffRole.id} value={staffRole.id} disabled={staffRole.assignable === false}>
+                          {staffRole.name}{staffRole.assignable === false ? " · permisos por revisar" : ""}
+                        </option>
+                      ))
+                    : visibleRoleOptions.map((role) => (
+                        <option key={role} value={role} disabled={role === "owner" && !isOwner}>
+                          {roleLabels[role]} · {roleDescriptions[role]}
+                        </option>
+                      ))}
                 </select>
+                {managementContext.mode === "business" && selectedMember.membership_role_capability_codes?.length ? (
+                  <p className="font-body text-[11px] leading-4 text-muted-foreground">
+                    Al cambiar el rango, se reemplazan los permisos solo en {managementContext.businessName}.
+                  </p>
+                ) : null}
               </label>
 
               <div className="rounded-xl border border-border bg-background p-3">
@@ -806,7 +1084,7 @@ export default function SettingsPage() {
                       {selectedMember.is_active
                         ? isModernManagement
                           ? "Puede iniciar sesión y operar dentro del alcance autorizado."
-                          : "Puede iniciar sesión y operar Mideli."
+                          : "Puede iniciar sesión y operar el negocio."
                         : isModernManagement
                           ? "No puede operar este alcance. Su identidad y su historial permanecen guardados."
                           : "No puede iniciar sesión. Su historial permanece guardado."}
@@ -859,11 +1137,140 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={handleRoleSave}
-                disabled={isPending || roleDraft === selectedMember.role}
+                disabled={isPending || roleDraft === (managementContext.mode === "business" ? selectedMember.staff_role_id ?? "" : selectedMember.role)}
                 className="action-success inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isPending && <Loader2 size={14} className="animate-spin" />}
                 Guardar cambios
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {businessAccessTarget && (
+        <div className="fixed inset-0 z-[58] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-5">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="global-business-access-title"
+            className="max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-4 shadow-2xl sm:max-h-[calc(100dvh-2.5rem)] sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success">
+                  <Building2 size={20} />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-data text-[10px] font-bold uppercase tracking-[0.18em] text-success">
+                    Acceso global
+                  </p>
+                  <h2 id="global-business-access-title" className="truncate font-heading text-lg font-bold">
+                    {businessAccessTarget.full_name || "Mesera global"}
+                  </h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBusinessAccessTarget(null)}
+                aria-label="Cerrar acceso por negocio"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground hover:text-foreground"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <p className="mt-3 rounded-xl border border-border bg-background/50 p-3 font-body text-xs leading-5 text-muted-foreground">
+              Activa solo los negocios donde esta mesera podrá tomar pedidos y cobrar. La caja se asigna por separado desde los rangos locales del dueño.
+            </p>
+
+            {businessAccessLoading ? (
+              <div className="flex min-h-36 items-center justify-center gap-2 font-body text-sm text-muted-foreground">
+                <Loader2 size={17} className="animate-spin text-brand" />
+                Cargando negocios...
+              </div>
+            ) : businessAccessError ? (
+              <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/8 p-4">
+                <p role="alert" className="font-body text-sm text-destructive">{businessAccessError}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadGlobalWaiterBusinessAccess()}
+                  className="mt-3 min-h-10 rounded-lg border border-destructive/30 px-3 font-heading text-xs font-bold text-destructive"
+                >
+                  Reintentar
+                </button>
+              </div>
+            ) : businesses.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-border p-6 text-center font-body text-sm text-muted-foreground">
+                No hay negocios registrados para asignar.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {businesses.map((business) => {
+                    const draft = businessAccessDrafts[business.id] ?? { enabled: false };
+                    const saved = businessAccessGrants.find(
+                      (grant) =>
+                        grant.membershipId === businessAccessTarget.membership_id &&
+                        grant.businessId === business.id
+                    );
+                    const savedEnabled = saved?.canOperate === true || saved?.canCharge === true;
+                    const isDirty = draft.enabled !== savedEnabled;
+                    const isBusinessActive = business.lifecycleStatus === "active";
+                    const canEnable = isBusinessActive && business.licenseAvailable;
+
+                    return (
+                      <article key={business.id} className={`rounded-xl border p-4 ${draft.enabled ? "border-success/30 bg-success/5" : "border-border bg-background/45"}`}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h3 className="font-heading text-sm font-bold">{business.displayName}</h3>
+                            <p className={`mt-1 font-body text-[11px] ${canEnable ? "text-success" : "text-warning"}`}>
+                              {!isBusinessActive ? "Negocio no activo" : business.licenseAvailable ? "Licencia vigente" : "Sin licencia vigente"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            aria-pressed={draft.enabled}
+                            disabled={!canEnable && !savedEnabled}
+                            onClick={() => updateBusinessAccessDraft(business.id, !draft.enabled)}
+                            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 font-heading text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                              draft.enabled
+                                ? "border-success/35 bg-success/10 text-success"
+                                : "border-border bg-surface-raised text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            <Check size={15} />
+                            {draft.enabled ? "Pedidos y cobros habilitados" : "Habilitar pedidos y cobros"}
+                          </button>
+                        </div>
+                        <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="font-body text-[11px] leading-4 text-muted-foreground">
+                            {draft.enabled
+                              ? `Puede operar pedidos y cobros de ${business.displayName}.`
+                              : "Sin acceso global a este negocio. Sus rangos locales son independientes."}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => saveBusinessAccess(business)}
+                            disabled={!isDirty || isPending || (draft.enabled && !canEnable)}
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-brand px-3 font-heading text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                            Guardar cambio
+                          </button>
+                        </div>
+                      </article>
+                    );
+                })}
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={() => setBusinessAccessTarget(null)}
+                className="min-h-11 rounded-xl border border-border px-4 font-heading text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
+                Cerrar
               </button>
             </div>
           </section>
@@ -881,9 +1288,19 @@ export default function SettingsPage() {
             </h2>
             <p className="mt-2 font-body text-sm leading-6 text-muted-foreground">
               {statusChange.action === "deactivate"
-                ? `¿Quieres desactivar a ${statusChange.member.full_name || "este empleado"}? Ya no podrá entrar, pero sus pedidos, cobros y movimientos seguirán disponibles.`
-                : `¿Quieres devolverle el acceso a ${statusChange.member.full_name || "este empleado"}? Podrá iniciar sesión de nuevo con su contraseña actual.`}
+                ? isModernManagement
+                  ? `¿Quieres desactivar el acceso de ${statusChange.member.full_name || "esta persona"} en ${managementContext.mode === "business" ? managementContext.businessName ?? "este negocio" : "el alcance global"}? Sus otros accesos y su historial no cambiarán.`
+                  : `¿Quieres desactivar a ${statusChange.member.full_name || "este empleado"}? Ya no podrá iniciar sesión, pero sus pedidos, cobros y movimientos seguirán disponibles.`
+                : isModernManagement
+                  ? `¿Quieres reactivar el acceso de ${statusChange.member.full_name || "esta persona"} en este alcance? Sus otros roles y permisos no cambiarán.`
+                  : `¿Quieres devolverle el acceso a ${statusChange.member.full_name || "este empleado"}? Podrá iniciar sesión de nuevo con su contraseña actual.`}
             </p>
+            {statusChange.action === "reactivate" &&
+            managementContext.mode === "organization" ? (
+              <div className="mt-4 rounded-xl border border-border bg-background/55 p-3 font-body text-xs leading-5 text-muted-foreground">
+                Se reactivará su acceso como mesera global. Los negocios donde puede tomar pedidos se administran por separado; los rangos locales y permisos de caja siguen bajo control de cada dueño.
+              </div>
+            ) : null}
             <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
@@ -1030,7 +1447,9 @@ export default function SettingsPage() {
             </div>
             <h2 id="pin-dialog-title" className="mt-4 font-heading text-lg font-bold text-foreground">PIN de autorización</h2>
             <p className="mt-2 font-body text-sm leading-6 text-muted-foreground">
-              Define un PIN privado de 4 dígitos para {pinTarget.full_name || "este responsable"}. Se solicitará para descuentos y operaciones sensibles de caja.
+              {pinTarget.membership_role_code === "business_owner"
+                ? "Define tu PIN privado de 4 dígitos. Se solicitará para descuentos y operaciones sensibles de caja de este negocio."
+                : `Define un PIN privado de 4 dígitos para ${pinTarget.full_name || "este responsable"}. Se solicitará para descuentos y operaciones sensibles de caja.`}
             </p>
             <label className="mt-5 block space-y-2">
               <span className="font-heading text-xs font-bold text-foreground">Nuevo PIN</span>

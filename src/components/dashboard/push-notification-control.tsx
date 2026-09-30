@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bell, BellOff, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Bell,
+  BellOff,
+  Check,
+  ChefHat,
+  CircleAlert,
+  Loader2,
+  MessageCircle,
+  SlidersHorizontal,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   enablePushNotifications,
@@ -23,7 +32,7 @@ function statusCopy(status: PushStatus, topic: PushTopic) {
   const copy: Record<PushStatus, string> = {
     checking: `Comprobando avisos de ${label}`,
     unsupported: "Este dispositivo no admite avisos Push",
-    install_required: "Instala Mideli en la pantalla de inicio para activar avisos",
+    install_required: "Instala la aplicación en la pantalla de inicio para activar avisos",
     denied: "Los avisos están bloqueados en la configuración del dispositivo",
     available: `Activar avisos de ${label}`,
     paused: `Avisos de ${label} pausados en este dispositivo`,
@@ -36,9 +45,13 @@ function statusCopy(status: PushStatus, topic: PushTopic) {
 
 type PushNotificationControlProps = {
   topic: PushTopic;
+  layout?: "icon" | "row";
 };
 
-export function PushNotificationControl({ topic }: PushNotificationControlProps) {
+export function PushNotificationControl({
+  topic,
+  layout = "icon",
+}: PushNotificationControlProps) {
   const [status, setStatus] = useState<PushStatus>("checking");
   const [working, setWorking] = useState(false);
 
@@ -77,7 +90,7 @@ export function PushNotificationControl({ topic }: PushNotificationControlProps)
       return;
     }
     if (status === "denied") {
-      toast.error("Activa las notificaciones de Mideli desde la configuración del dispositivo");
+      toast.error("Activa las notificaciones de la aplicación desde la configuración del dispositivo");
       return;
     }
 
@@ -103,14 +116,14 @@ export function PushNotificationControl({ topic }: PushNotificationControlProps)
 
       if (status === "production_required") {
         if (topic !== "ready") {
-          toast.info("Los avisos Push se activan en la versión publicada de Mideli");
+          toast.info("Los avisos Push se activan en la versión publicada del sistema");
           return;
         }
         const audioReady = await audioPromise;
         toast[audioReady ? "success" : "info"](
           audioReady ? "Sonido de pedidos listo" : "Toca de nuevo para probar el sonido",
           {
-            description: "Los avisos Push se activan en la versión publicada de Mideli.",
+            description: "Los avisos Push se activan en la versión publicada del sistema.",
           }
         );
         return;
@@ -141,10 +154,31 @@ export function PushNotificationControl({ topic }: PushNotificationControlProps)
     }
   }
 
+  const TopicIcon =
+    topic === "kitchen"
+      ? ChefHat
+      : topic === "whatsapp_attention"
+        ? MessageCircle
+        : Bell;
   const Icon =
     status === "denied" || status === "unsupported" || status === "paused"
       ? BellOff
-      : Bell;
+      : TopicIcon;
+  const StatusIcon =
+    status === "denied" || status === "unsupported" || status === "paused"
+      ? BellOff
+      : status === "enabled"
+        ? Check
+        : CircleAlert;
+  const statusLabel =
+    status === "enabled"
+      ? "Activo"
+      : status === "paused"
+        ? "Pausado"
+        : status === "checking"
+          ? "Comprobando"
+          : "Inactivo";
+
   return (
     <button
       type="button"
@@ -153,24 +187,133 @@ export function PushNotificationControl({ topic }: PushNotificationControlProps)
       title={statusCopy(status, topic)}
       aria-label={statusCopy(status, topic)}
       aria-pressed={status === "enabled"}
-      className={`relative flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-wait disabled:opacity-70 ${
-        status === "enabled"
-          ? "border-success/35 bg-success/10 text-success"
-          : status === "paused"
-            ? "border-warning/40 bg-warning/10 text-warning hover:bg-warning/15"
-            : status === "error"
-              ? "border-destructive/35 bg-destructive/10 text-destructive"
-          : "border-border bg-surface text-muted-foreground hover:border-brand/45 hover:text-brand"
-      }`}
+      className={
+        layout === "row"
+          ? `flex min-h-14 w-full touch-manipulation items-center gap-3 rounded-xl border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-wait disabled:opacity-70 ${
+              status === "enabled"
+                ? "border-success/35 bg-success/8"
+                : status === "paused"
+                  ? "border-warning/35 bg-warning/5"
+                  : status === "error"
+                    ? "border-destructive/35 bg-destructive/5"
+                    : "border-border bg-background hover:border-brand/45"
+            }`
+          : `relative flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-wait disabled:opacity-70 ${
+              status === "enabled"
+                ? "border-success/35 bg-success/10 text-success"
+                : status === "paused"
+                  ? "border-warning/40 bg-warning/10 text-warning hover:bg-warning/15"
+                  : status === "error"
+                    ? "border-destructive/35 bg-destructive/10 text-destructive"
+                    : "border-border bg-surface text-muted-foreground hover:border-brand/45 hover:text-brand"
+            }`
+      }
     >
-      {working || status === "checking" ? (
-        <Loader2 size={16} className="animate-spin" />
+      {layout === "row" ? (
+        <>
+          <span
+            className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
+              status === "enabled"
+                ? "bg-success/12 text-success"
+                : status === "paused"
+                  ? "bg-warning/12 text-warning"
+                  : "bg-surface-raised text-muted-foreground"
+            }`}
+            aria-hidden
+          >
+            {working || status === "checking" ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <TopicIcon size={16} />
+            )}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="font-heading text-xs font-bold text-foreground">
+              {TOPIC_LABEL[topic]}
+            </span>
+            <span className="truncate font-body text-[10px] leading-4 text-muted-foreground">
+              {statusCopy(status, topic)}
+            </span>
+          </span>
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 font-heading text-[10px] font-bold ${
+              status === "enabled"
+                ? "text-success"
+                : status === "paused"
+                  ? "text-warning"
+                  : "text-muted-foreground"
+            }`}
+          >
+            <StatusIcon size={12} aria-hidden />
+            {statusLabel}
+          </span>
+        </>
       ) : (
-        <Icon size={16} />
+        <>
+          {working || status === "checking" ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <Icon size={16} />
+          )}
+          {status === "available" || status === "paused" || status === "error" ? (
+            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-warning" />
+          ) : null}
+        </>
       )}
-      {status === "available" || status === "paused" || status === "error" ? (
-        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-warning" />
-      ) : null}
     </button>
+  );
+}
+
+export function PushNotificationSettings() {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    function closeWhenOutside(event: PointerEvent) {
+      if (!detailsRef.current?.contains(event.target as Node)) {
+        detailsRef.current?.removeAttribute("open");
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && detailsRef.current?.open) {
+        detailsRef.current.open = false;
+      }
+    }
+
+    document.addEventListener("pointerdown", closeWhenOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeWhenOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+
+  return (
+    <details ref={detailsRef} className="group relative shrink-0">
+      <summary
+        aria-label="Preferencias de notificaciones"
+        title="Preferencias de notificaciones"
+        className="flex h-11 w-11 cursor-pointer list-none touch-manipulation items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground transition-colors hover:border-brand/45 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset [&::-webkit-details-marker]:hidden"
+      >
+        <Bell size={16} aria-hidden />
+        <SlidersHorizontal
+          size={9}
+          aria-hidden
+          className="absolute right-1.5 top-1.5 text-brand"
+        />
+      </summary>
+      <div
+        role="group"
+        aria-label="Avisos de pedidos"
+        className="absolute right-0 top-full z-50 mt-2 w-[min(19rem,calc(100vw-1rem))] rounded-2xl border border-border bg-surface p-3 shadow-float"
+      >
+        <p className="mb-2 px-1 font-heading text-xs font-bold text-foreground">
+          Notificaciones
+        </p>
+        <div className="space-y-2">
+          <PushNotificationControl topic="kitchen" layout="row" />
+          <PushNotificationControl topic="ready" layout="row" />
+        </div>
+      </div>
+    </details>
   );
 }

@@ -1,12 +1,19 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import {
+  canSendBusinessOrderNotification,
+  capabilityBelongsToBusiness,
+  getOrderNotificationDestination,
+  membershipBelongsToBusiness,
+} from "../_shared/order-notification-policy.ts";
 
 type NotificationEvent = "new_order" | "ready";
 type NotificationTopic = "kitchen" | "ready";
 
 type PushSubscriptionRow = {
   id: string;
+  user_id: string;
   endpoint: string;
   p256dh: string;
   auth_key: string;
@@ -34,6 +41,13 @@ type MembershipRow = {
   id: string;
   user_id: string;
   scope_type: string;
+  organization_id: string | null;
+  business_id: string | null;
+};
+
+type MembershipCapabilityRow = {
+  membership_id: string;
+  capability_code: string;
   organization_id: string | null;
   business_id: string | null;
 };
@@ -87,7 +101,8 @@ function isMissingBusinessColumn(error: { code?: string; message?: string } | nu
 async function getRecipientUserIds(
   admin: AdminClient,
   businessId: string | null,
-  topic: NotificationTopic
+  topic: NotificationTopic,
+  callerUserId: string | null,
 ) {
   if (!businessId) {
     const { data, error } = await admin
@@ -97,6 +112,8 @@ async function getRecipientUserIds(
       .in("role", topic === "kitchen" ? [...READY_ORDER_ROLES] : [...NEW_ORDER_ROLES]);
     return {
       ids: (data ?? []).map((profile) => profile.id),
+      callerCapabilities: new Set<string>(),
+      capabilitiesByUserId: new Map<string, Set<string>>(),
       error: error?.message ?? null,
     };
   }
@@ -109,6 +126,8 @@ async function getRecipientUserIds(
   if (businessError || !business) {
     return {
       ids: [] as string[],
+      callerCapabilities: new Set<string>(),
+      capabilitiesByUserId: new Map<string, Set<string>>(),
       error: businessError?.message ?? "No se encontró la organización del negocio",
     };
   }
@@ -118,28 +137,37 @@ async function getRecipientUserIds(
     .select("id,user_id,scope_type,organization_id,business_id")
     .eq("status", "active");
   if (membershipError) {
-    return { ids: [] as string[], error: membershipError.message };
+    return {
+      ids: [] as string[],
+      callerCapabilities: new Set<string>(),
+      capabilitiesByUserId: new Map<string, Set<string>>(),
+      error: membershipError.message,
+    };
   }
 
   const visibleMemberships = (membershipRows ?? []).filter((membership) => {
     const row = membership as MembershipRow;
-    return (
-      row.scope_type === "platform" ||
-      row.organization_id === business.organization_id ||
-      row.business_id === businessId
+    return membershipBelongsToBusiness(
+      row,
+      business.organization_id,
+      businessId,
     );
   }) as MembershipRow[];
   const membershipIds = visibleMemberships.map((membership) => membership.id);
-  if (membershipIds.length === 0) return { ids: [], error: null };
+  if (membershipIds.length === 0) {
+    return {
+      ids: [] as string[],
+      callerCapabilities: new Set<string>(),
+      capabilitiesByUserId: new Map<string, Set<string>>(),
+      error: null,
+    };
+  }
 
-  const capabilityCodes =
-    topic === "kitchen"
-      ? ["business.update_preparation", "business.operate_orders"]
-      : [
-          "organization.operate_orders",
-          "business.operate_orders",
-          "business.update_preparation",
-        ];
+  const capabilityCodes = [
+    "organization.operate_orders",
+    "business.operate_orders",
+    "business.update_preparation",
+  ];
   const { data: capabilityRows, error: capabilityError } = await admin
     .from("membership_capabilities")
     .select("membership_id,capability_code,organization_id,business_id")
@@ -147,31 +175,71 @@ async function getRecipientUserIds(
     .in("capability_code", capabilityCodes)
     .is("revoked_at", null);
   if (capabilityError) {
-    return { ids: [] as string[], error: capabilityError.message };
+    return {
+      ids: [] as string[],
+      callerCapabilities: new Set<string>(),
+      capabilitiesByUserId: new Map<string, Set<string>>(),
+      error: capabilityError.message,
+    };
   }
 
-  const eligibleMembershipIds = new Set(
-    (capabilityRows ?? [])
-      .filter((capability) => {
-        const isOrganizationCapability =
-          capability.capability_code === "organization.operate_orders";
-        return isOrganizationCapability
-          ? capability.organization_id === business.organization_id &&
-              capability.business_id === null
-          : capability.organization_id === business.organization_id &&
-              capability.business_id === businessId;
-      })
-      .map((capability) => capability.membership_id)
+  const membershipsById = new Map(
+    visibleMemberships.map((membership) => [membership.id, membership]),
   );
+  const capabilitiesByUserId = new Map<string, Set<string>>();
+  for (const rawCapability of capabilityRows ?? []) {
+    const capability = rawCapability as MembershipCapabilityRow;
+    if (
+      !capabilityBelongsToBusiness(
+        capability,
+        business.organization_id,
+        businessId,
+      )
+    ) {
+      continue;
+    }
+    const membership = membershipsById.get(capability.membership_id);
+    if (!membership) continue;
+    const codes = capabilitiesByUserId.get(membership.user_id) ?? new Set<string>();
+    codes.add(capability.capability_code);
+    capabilitiesByUserId.set(membership.user_id, codes);
+  }
+
+  const candidateUserIds = Array.from(capabilitiesByUserId.keys());
+  if (candidateUserIds.length === 0) {
+    return {
+      ids: [] as string[],
+      callerCapabilities: new Set<string>(),
+      capabilitiesByUserId,
+      error: null,
+    };
+  }
+
+  const { data: activeProfiles, error: profilesError } = await admin
+    .from("profiles")
+    .select("id")
+    .in("id", candidateUserIds)
+    .eq("is_active", true);
+  if (profilesError) {
+    return {
+      ids: [] as string[],
+      callerCapabilities: new Set<string>(),
+      capabilitiesByUserId: new Map<string, Set<string>>(),
+      error: profilesError.message,
+    };
+  }
+
+  const activeUserIds = new Set((activeProfiles ?? []).map((profile) => profile.id));
+  for (const userId of candidateUserIds) {
+    if (!activeUserIds.has(userId)) capabilitiesByUserId.delete(userId);
+  }
 
   return {
-    ids: Array.from(
-      new Set(
-        visibleMemberships
-          .filter((membership) => eligibleMembershipIds.has(membership.id))
-          .map((membership) => membership.user_id)
-      )
-    ),
+    ids: Array.from(capabilitiesByUserId.keys()),
+    callerCapabilities: callerUserId
+      ? capabilitiesByUserId.get(callerUserId) ?? new Set<string>()
+      : new Set<string>(),
+    capabilitiesByUserId,
     error: null,
   };
 }
@@ -259,7 +327,10 @@ Deno.serve(async (req) => {
   }
 
   const allowedRoles = event === "new_order" ? NEW_ORDER_ROLES : READY_ORDER_ROLES;
-  if (userId && (!caller?.is_active || !allowedRoles.has(caller.role))) {
+  if (
+    userId &&
+    (!caller?.is_active || (!order?.business_id && !allowedRoles.has(caller.role)))
+  ) {
     return json({ error: "No tienes permiso para enviar este aviso" }, 403);
   }
   if (orderError || !order) {
@@ -268,7 +339,7 @@ Deno.serve(async (req) => {
   if (businessBoundaryAvailable && !order.business_id) {
     return json({ error: "El pedido no tiene un negocio asignado" }, 409);
   }
-  if (event === "new_order" && caller?.role === "waiter" && order.created_by !== userId) {
+  if (event === "new_order" && !order.business_id && caller?.role === "waiter" && order.created_by !== userId) {
     return json({ error: "No puedes publicar otro pedido" }, 403);
   }
   if (event === "ready" && order.status !== "ready") {
@@ -294,13 +365,25 @@ Deno.serve(async (req) => {
     eventKey = `${topic}:${transition.id}`;
   }
 
-  const recipientResult = await getRecipientUserIds(admin, order.business_id, topic);
+  const recipientResult = await getRecipientUserIds(
+    admin,
+    order.business_id,
+    topic,
+    userId,
+  );
   if (recipientResult.error) {
     return json({ error: "No se pudieron preparar los destinatarios" }, 500);
   }
   const recipientUserIds = recipientResult.ids;
-  if (userId && order.business_id && !recipientUserIds.includes(userId)) {
-    return json({ error: "No tienes permiso para avisar sobre este negocio" }, 403);
+  if (userId && order.business_id) {
+    if (
+      !canSendBusinessOrderNotification(event, recipientResult.callerCapabilities)
+    ) {
+      return json({ error: "No tienes permiso para enviar este aviso" }, 403);
+    }
+    if (event === "new_order" && order.created_by !== userId) {
+      return json({ error: "No puedes publicar otro pedido" }, 403);
+    }
   }
   if (recipientUserIds.length === 0) {
     return json({ sent: 0, reason: "Sin personal autorizado" });
@@ -357,7 +440,7 @@ Deno.serve(async (req) => {
   const topicColumn = topic === "kitchen" ? "kitchen_alerts" : "ready_alerts";
   const { data: subscriptions, error: subscriptionsError } = await admin
     .from("push_subscriptions")
-    .select("id,endpoint,p256dh,auth_key")
+    .select("id,user_id,endpoint,p256dh,auth_key")
     .in("user_id", recipientUserIds)
     .eq("is_active", true)
     .eq(topicColumn, true);
@@ -390,26 +473,7 @@ Deno.serve(async (req) => {
     topic === "kitchen"
       ? `${destination} · ${itemSummary}`
       : `${destination}. Toca para entregarlo.`;
-  const url =
-    topic === "kitchen"
-      ? `/dashboard/cocina?order=${order.id}`
-      : `/dashboard/mesero?mode=status&order=${order.id}`;
-
   webpush.setVapidDetails(subject, publicKey, privateKey);
-  const payload = JSON.stringify({
-    title,
-    body,
-    topic,
-    icon: "/icons/icon-192x192.png",
-    badge: "/icons/icon-192x192.png",
-    tag: `mideli-${topic}-${eventKey}`,
-    data: {
-      url,
-      orderId: order.id,
-      eventId,
-      topic,
-    },
-  });
 
   const expiredIds: string[] = [];
   let sent = 0;
@@ -417,6 +481,29 @@ Deno.serve(async (req) => {
   await Promise.all(
     activeSubscriptions.map(async (subscription) => {
       try {
+        const subscriptionCapabilities = recipientResult.capabilitiesByUserId.get(
+          subscription.user_id,
+        );
+        const url = getOrderNotificationDestination(
+          event,
+          order.business_id,
+          subscriptionCapabilities ?? [],
+          order.id,
+        );
+        const payload = JSON.stringify({
+          title,
+          body,
+          topic,
+          icon: "/icons/rincon-404-192.png",
+          badge: "/icons/rincon-404-192.png",
+          tag: `mideli-${topic}-${eventKey}`,
+          data: {
+            url,
+            orderId: order.id,
+            eventId,
+            topic,
+          },
+        });
         await webpush.sendNotification(
           {
             endpoint: subscription.endpoint,

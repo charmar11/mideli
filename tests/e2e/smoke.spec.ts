@@ -1,13 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-test("el inicio carga y permite abrir el acceso", async ({ page }) => {
+test("el inicio muestra solo la marca y el formulario de acceso", async ({ page }) => {
   const response = await page.goto("/");
 
   expect(response?.ok()).toBeTruthy();
-  await expect(
-    page.getByRole("heading", { name: "Acceso del equipo Mideli" })
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: /Entrar al sistema/i })).toBeVisible();
+  await expect(page.getByText("Rincón 404 Food Park", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Iniciar sesión" })).toBeVisible();
+  await expect(page.getByLabel("Usuario")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Contraseña" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Iniciar sesión" })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("Cada local");
+  await expect(page.locator("body")).not.toContainText("Catálogo");
+  await expect(page.locator("body")).not.toContainText("Las opciones cambian");
 });
 
 test("el formulario de acceso no muestra el sufijo interno", async ({ page }) => {
@@ -15,12 +19,30 @@ test("el formulario de acceso no muestra el sufijo interno", async ({ page }) =>
 
   await expect(page.getByRole("heading", { name: "Iniciar sesión" })).toBeVisible();
   await expect(page.getByLabel("Usuario")).toBeVisible();
-  await expect(page.getByLabel("Contraseña")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Contraseña" })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("@mideli");
+});
+
+test("la contraseña se puede mostrar y volver a ocultar", async ({ page }) => {
+  await page.goto("/login");
+
+  const password = page.getByRole("textbox", { name: "Contraseña" });
+  await expect(password).toHaveAttribute("type", "password");
+  await page.getByRole("button", { name: "Mostrar contraseña" }).click();
+  await expect(password).toHaveAttribute("type", "text");
+  await page.getByRole("button", { name: "Ocultar contraseña" }).click();
+  await expect(password).toHaveAttribute("type", "password");
 });
 
 test("una ruta administrativa sin sesión regresa al acceso", async ({ page }) => {
   await page.goto("/settings/diagnostico");
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("heading", { name: "Iniciar sesión" })).toBeVisible();
+});
+
+test("la administración de negocios también exige iniciar sesión", async ({ page }) => {
+  await page.goto("/settings/negocios");
 
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("heading", { name: "Iniciar sesión" })).toBeVisible();
@@ -77,6 +99,18 @@ test("el acceso se adapta al ancho real de un celular", async ({ page }) => {
   expect(sizes.formRight).toBeLessThanOrEqual(sizes.viewport);
 });
 
+test("el acceso minimalista cabe en una pantalla compacta", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.goto("/");
+
+  await expect(page.getByText("Rincón 404 Food Park", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Usuario")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Iniciar sesión" })).toBeVisible();
+
+  const width = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(width).toBeLessThanOrEqual(321);
+});
+
 test("el manifiesto PWA y sus iconos principales están disponibles", async ({ request }) => {
   const manifestResponse = await request.get("/manifest.webmanifest");
   expect(manifestResponse.ok()).toBeTruthy();
@@ -86,7 +120,7 @@ test("el manifiesto PWA y sus iconos principales están disponibles", async ({ r
     icons?: Array<{ src: string }>;
   };
 
-  expect(manifest.name).toContain("Mideli");
+  expect(manifest.name).toBe("Rincón 404 Food Park");
   expect(manifest.start_url).toBe("/dashboard");
   expect(manifest.icons?.length).toBeGreaterThanOrEqual(2);
 

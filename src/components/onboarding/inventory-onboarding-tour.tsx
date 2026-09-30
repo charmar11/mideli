@@ -165,7 +165,7 @@ const STEPS: InventoryTourStep[] = [
   {
     chapter: "Comprar",
     title: "Recibe lo que realmente llegó",
-    body: "Al recibir, captura paquetes reales, costo total y caducidad. Mideli convierte cantidades y recalcula el costo promedio.",
+    body: "Al recibir, captura paquetes reales, costo total y caducidad. El sistema convierte cantidades y recalcula el costo promedio.",
     bullets: [
       "No confirmes cantidades que el proveedor no entregó.",
       "Registra caducidad para utilizar primero lo más antiguo.",

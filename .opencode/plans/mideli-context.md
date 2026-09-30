@@ -1,8 +1,14 @@
-# Mideli: contexto completo para OpenCode
+# Rincón 404: contexto acumulado para agentes
 
-Actualizado: 2026-09-20
+Actualizado: 2026-09-29
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para cualquier agente de IA, no solo OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
+
+Este archivo conserva decisiones en orden cronológico. Algunas fotografías
+anteriores, sobre todo de la fase de un solo negocio, han sido superadas por
+las secciones posteriores. Empieza por `docs/README.md` para ubicar el tema y
+usa `docs/WORKFLOW.md` para ejecutar la tarea. No tomes cifras o fechas de
+este historial como estado remoto presente sin verificarlas.
 
 ## 0. Fuentes de verdad y mantenimiento
 
@@ -14,7 +20,11 @@ La rama de trabajo puede contener cambios sin commit. Esos cambios pertenecen al
 
 ## 1. Producto
 
-Mideli es un sistema operativo para un solo local de comida Burger & Sushi en Ciudad Obregón, Sonora. Lo usan personas del equipo durante el turno, no clientes finales.
+Rincón 404 Food Park usa una aplicación interna para operar negocios separados
+en Ciudad Obregón, Sonora. Mideli y Just Dipping figuran activos en la última
+verificación documentada. Cada uno conserva sus datos y permisos; el estado
+actual de operación y licencias requiere nueva comprobación si afecta una
+tarea. El sistema lo usa el equipo durante el turno, no los clientes finales.
 
 Usuarios principales:
 
@@ -24,10 +34,11 @@ Usuarios principales:
 
 Objetivo del producto: que el equipo pueda pasar de pedido a cocina y de pedido listo a cobro con el menor número de pasos posible, sin depender de papel.
 
-La operación visible sigue siendo Mideli en una sola interfaz y un solo negocio
-activo. La base remota ya tiene aplicada la primera rebanada multinegocio para
-Rincón 404 Food Park, pero todavía no existe un segundo negocio operativo ni se
-ha habilitado WhatsApp fuera de Mideli.
+Mideli conserva Cocina y el canal WhatsApp. Just Dipping cuenta con catálogo y
+combos propios. Las meseras globales pueden crear pedidos en los negocios
+autorizados, con caja y permisos separados. WhatsApp no se ha habilitado fuera
+de Mideli. Los tickets históricos de Firebase siguen sin importarse al archivo
+de Just Dipping según la última verificación documentada.
 
 ## 2. Forma de colaborar con el dueño
 
@@ -156,20 +167,25 @@ Actualización 2026-09-20: las líneas de conteos y órdenes de compra no tienen
 
 ### Licencia de acceso
 
-Desde 2026-08-01 el sistema se bloquea al vencer la licencia mensual:
+Desde 2026-09-27 la vigencia comercial se controla por negocio:
 
-- Una fila única en `public.app_license` guarda estado, `valid_until` y `updated_at`. RLS: lectura para `anon` y `authenticated`; escritura solo en servidor con service role.
-- El proxy (`src/proxy.ts`) redirige `/dashboard`, `/menu` y `/settings` a `/sistema-bloqueado` cuando la licencia no está vigente, y `LicenseHeartbeat` bloquea sesiones abiertas al vencer.
-- `/control/licencia` es la herramienta privada del vendedor. Si todavía no existe una credencial, una sesión activa owner/admin permite crearla una sola vez sin pedir el secreto técnico. Después, todas las operaciones exigen la contraseña privada del vendedor y una sesión firmada de 30 minutos.
-- `MIDELI_LICENSE_ADMIN_SECRET` queda reservado para recuperación técnica. La contraseña privada usa `scrypt`, bloqueo temporal tras cinco fallos y auditoría de renovaciones, suspensión y reactivación.
-- La pantalla de bloqueo no expone la ruta de control ni detalles técnicos.
+- `public.business_licenses` guarda una fecha local inclusiva por negocio y `public.business_license_events` conserva el historial. La fecha global existente se copia a los negocios operativos sin extenderla; no se calcula ni almacena saldo.
+- Sólo la capacidad de plataforma `platform.manage_business_licenses`, asignada a `rincon404`, permite activar, renovar, suspender o cambiar vigencias desde `/settings/licencias`.
+- `public.app_license.status` se conserva únicamente como interruptor técnico global. Su `valid_until` ya no bloquea por fecha ni representa una licencia comercial.
+- Proxy, heartbeat, contexto de negocios, stores, RLS y triggers del servidor bloquean lectura/operación cuando el negocio no está disponible. La identidad y el inicio de sesión siguen funcionando para mostrar el motivo correcto y permitir cerrar sesión.
+- Las meseras globales no reciben fechas ni motivos: ven “No disponible” en el selector y pueden seguir operando negocios autorizados vigentes.
+- WhatsApp pertenece sólo a Mideli. Si Mideli no está disponible, el webhook confirma técnicamente eventos válidos sin procesarlos; el scheduler y todos los envíos salientes se detienen. Pedidos programados atrasados quedan para revisión humana al reactivar.
+- La pantalla bloqueada diferencia vencimiento, suspensión manual, negocio pausado, licencia sin asignar y error de verificación. Sólo el vencimiento confirmado menciona pagos pendientes.
 - Login e Inicio se rediseñaron: sin texto "Mi Momento", el campo Usuario ya no muestra el sufijo `@mideli.com` (se completa internamente) y se aceptan correos completos.
 
 ### Turnos de caja
 
-Caja compartida del local con apertura y cierre explícitos (migración `20260801125712_cash_shifts_and_location_snapshots.sql`):
+Caja por negocio con apertura y cierre explícitos (origen en la migración
+`20260801125712_cash_shifts_and_location_snapshots.sql`):
 
-- Solo un turno abierto a la vez; pedidos y cobros nuevos se vinculan al turno de forma transaccional. No se vende fuera de turno.
+- Solo un turno abierto por negocio a la vez; pedidos y cobros nuevos se
+  vinculan al turno de ese negocio de forma transaccional. No se vende fuera
+  de turno.
 - Cierre con conteo ciego, separación por efectivo, tarjeta y transferencia, y autorización cuando la diferencia es importante.
 - Después del conteo ciego, el corte muestra fondo inicial, ventas en efectivo, entradas, retiros, gastos y correcciones que forman el efectivo esperado.
 - Durante el conteo ciego se muestra únicamente el fondo inicial registrado; el efectivo esperado y la diferencia permanecen ocultos hasta comparar el conteo.
@@ -199,9 +215,11 @@ El cobro pasó a un libro mayor transaccional (migración `20260801092945_unifie
 
 - Serwist configurado (`src/app/sw.ts`, `src/app/serwist/`, `src/app/manifest.ts`, `pwa-provider.tsx`), iconos en `public/icons/`.
 - Suscripciones push en `push_subscriptions`, control en `push-notification-control.tsx`, lógica en `src/lib/push-notifications.ts`.
-- Desde 2026-08-13 cada dispositivo configura por separado `kitchen_alerts` para pedidos nuevos y `ready_alerts` para pedidos listos. Propietario, administrador y supervisor pueden activar ambos al entrar a las vistas correspondientes.
-- La Edge Function `send-order-notification` valida JWT, consulta el pedido en servidor, entrega a todos los perfiles activos que habilitaron el tema y evita duplicados mediante `push_notification_events`.
-- El service worker suprime el banner si Cocina o Mesero ya están visibles; en esa situación se usa el sonido y la señal local. En otra sección, segundo plano o aplicación cerrada se muestra Push.
+- Desde 2026-08-13 cada dispositivo configura por separado `kitchen_alerts` para pedidos nuevos y `ready_alerts` para pedidos listos. Mesero ofrece ambos temas desde un único control compacto; Cocina conserva el acceso directo a los avisos de pedidos nuevos.
+- La Edge Function `send-order-notification` valida JWT y perfil activo, consulta el pedido en servidor y limita destinatarios al negocio exacto según membresías activas, capacidades y preferencia Push del dispositivo. Los permisos de plataforma u organización no se mezclan con permisos de otro negocio.
+- En pedidos multinegocio se emite un aviso por cada pedido persistido con su `business_id`; las capacidades actuales aplican automáticamente a negocios nuevos, sin una lista fija de nombres. El destino al tocar el aviso es Mesero o Cocina según el permiso de la persona.
+- Para eventos multinegocio, publicar un aviso de pedido nuevo requiere permiso para operar pedidos y que la persona sea quien creó la orden; publicar un aviso de pedido listo requiere permiso para actualizar preparación. Los pedidos legacy conservan su validación por rol.
+- El service worker muestra Push aunque Mesero o Cocina estén visibles; el sonido y las señales locales son complementarios, no reemplazan el aviso del sistema.
 - Avisos locales en `ready-order-notifier.tsx`, `ready-order-audio.ts` y `kitchen-order-audio.ts`, con desbloqueo después de una interacción válida.
 - Los textos de ayuda usan términos genéricos como `dispositivo`, sin marcas.
 - Cada usuario puede pausar o reactivar cada tema solo en su dispositivo. `is_active` indica que al menos un tema permanece activo.
@@ -279,8 +297,9 @@ Rutas principales:
 - `/settings/inventario`: inventario, recetas, compras y conteos.
 - `/settings/impresion`: estación de impresión automática de cocina y supervisión de cola.
 - `/settings/caja`: historial de turnos y cortes.
-- `/sistema-bloqueado`: pantalla de licencia vencida.
-- `/control/licencia`: herramienta privada del vendedor.
+- `/sistema-bloqueado`: pantalla de acceso limitado por licencia o suspensión técnica.
+- `/settings/licencias`: control comercial por negocio, exclusivo de la cuenta Rincón 404.
+- `/control/licencia`: control técnico legado; no administra vigencias comerciales.
 
 El layout del dashboard cambia la navegación según el tamaño:
 
@@ -364,9 +383,10 @@ Proyecto:
 - CLI inicializada en `supabase/config.toml` (versionada en git desde 2026-08-02 junto con todas las migraciones).
 - CLI enlazada al proyecto remoto.
 - El repositorio local contiene las migraciones históricas y las rebanadas
-  multinegocio de septiembre, hasta `20260920100000_multibusiness_rls_privilege_cleanup.sql`.
-  `npx supabase migration list` confirmó que el repositorio y el proyecto
-  remoto están alineados en esa migración el 2026-09-19.
+  multinegocio de septiembre. El 2026-09-29, la consulta de solo lectura
+  `npx supabase migration list --linked` mostró alineación local/remota hasta
+  `20260928084400_fix_cash_authorizers_to_local_business.sql`. Volver a
+  consultarla antes de depender de ese dato.
 
 Tablas de dominio (verificado 2026-08-02, todas con RLS):
 
@@ -437,13 +457,15 @@ Pendientes prioritarios:
 5. Ampliar la cobertura automatizada para pedidos, cobro, caja, impresión, inventario y permisos. Actualmente hay 20 archivos E2E de Playwright, con proyectos de escritorio, tablet y móvil; todavía no cubren toda la operación real.
 6. Después de estabilizar el piloto, priorizar clientes/lealtad y pedidos directos.
 
-El plan ordenado para continuar vive en `.opencode/plans/next-session-plan.md`.
+El proceso vigente para continuar está en `docs/WORKFLOW.md` y el checklist de
+operación real en `docs/releases/v0.9-piloto.md`. El archivo
+`.opencode/plans/next-session-plan.md` conserva un plan histórico de septiembre.
 
-### Evolución aprobada en diseño: Rincón 404 Food Park
+### Historial de la evolución multinegocio: Rincón 404 Food Park
 
-La aplicación sigue operando como Mideli en una sola interfaz, pero la
-migración multinegocio ya está versionada localmente en rebanadas aditivas.
-Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park`:
+Los puntos siguientes registran decisiones y avances de septiembre de 2026.
+Algunos verbos en futuro describen el plan de aquel momento: para el estado
+actual, leer primero las secciones 12 a 23 y verificar código y remoto.
 
 - `Mideli` será el primer negocio migrado y conservará credenciales, folios, WhatsApp y funcionamiento visible.
 - `Just Dipping` es el segundo negocio confirmado, pero no se registrará ni se importarán datos hasta contar con autorización y datos reales.
@@ -582,9 +604,50 @@ Durante septiembre de 2026 se preparó la evolución para `Rincón 404 Food Park
 - La navegación multinegocio también quedó cerrada contra el fallback de rol:
   `src/proxy.ts` y `DashboardShell` usan el contexto real para autorizar y
   mostrar POS, Cocina y WhatsApp. Si el contexto existe pero no otorga acceso,
-  la sesión se cierra y vuelve al login con una razón técnica, evitando bucles
-  entre `/dashboard` y una vista sin permisos. El fallback por rol queda solo
-  para instalaciones antiguas donde todavía no existe la función de contexto.
+  se redirige a otra superficie autorizada o a `/dashboard/sin-acceso` sin
+  cerrar la sesión. El fallback por rol queda solo para instalaciones antiguas
+  donde todavía no existe la función de contexto.
+
+### Estado local posterior a la auditoría
+
+- La rama local añade `BusinessScopeFilter` a Estado e Historial. Un alcance
+  organizacional puede consultar varios negocios sin mezclar cuentas de mesa;
+  cada cobro y corrección de método resuelve la caja del `business_id` del
+  pedido, no la caja que quedó seleccionada por accidente en la pantalla.
+- `/settings/negocios` ya tiene el primer registro de plataforma: lista
+  negocios, crea una cuenta de dueño con alias de usuario, inicia cada negocio
+  como `draft`, permite editar nombre, identificador y zona horaria, y permite
+  activar, pausar, archivar o restaurar sin borrar su historial. La acción
+  valida `platform.manage_businesses` directamente con Supabase en servidor,
+  registra la edición en `audit_events` y no expone errores internos.
+- Después de iniciar sesión, una cuenta con `platform.manage_businesses` llega
+  automáticamente a `/settings/negocios` desde `/dashboard`; ya no depende de
+  que la persona escriba la ruta manualmente. La ruta sigue protegida por la
+  sesión y la capacidad, por lo que conocer la URL no concede acceso.
+- La transferencia a una cuenta de plataforma independiente se ejecuta desde
+  la misma vista con una acción protegida: crea el perfil `admin`, la membresía
+  `platform_admin` y su capacidad, audita el cambio y retira únicamente la
+  membresía de plataforma del dueño actual de Mideli. No toca su membresía,
+  pedidos, caja, inventario ni WhatsApp de negocio.
+- Un dueño de un negocio `draft` o `paused` puede configurar catálogo,
+  inventario y personal, pero no puede operar pedidos, preparación, caja o
+  cobros hasta que el negocio esté `active`. La selección operativa sólo admite
+  negocios activos y WhatsApp continúa limitado a Mideli.
+- La administración de plataforma ahora consulta las capacidades activas del
+  dueño desde `membership_capabilities` y las muestra por negocio en
+  `/settings/negocios`: catálogo, inventario, pedidos, cocina, cobros, caja y
+  personal. El alta y la edición permiten seleccionar esos permisos mediante
+  casillas reales; Catálogo es obligatorio. Las capacidades desactivadas se
+  conservan como revocaciones auditables, por lo que activar o reactivar un
+  negocio no las habilita accidentalmente. WhatsApp se muestra como exclusivo
+  de Mideli durante esta primera etapa.
+- La migración local
+  `20260920103000_platform_manager_and_active_business_guards.sql` otorga la
+  capacidad de plataforma al perfil existente `Administrador` únicamente si
+  sigue siendo dueño activo de Mideli, y agrega barreras de ciclo de vida a
+  caja y cobros. Ya está aplicada en remoto y el dry-run posterior confirma que
+  la base está al día. En ese momento no se había creado Just Dipping; la
+  auditoría remota del 2026-09-25 lo encontró ya registrado como borrador.
 
 La auditoría remota del 2026-09-19 confirmó una organización activa, un negocio
 Mideli activo, cuatro membresías activas y aislamiento sin filas operativas sin
@@ -593,8 +656,132 @@ avisos informativos para RPC `SECURITY DEFINER` autenticadas que validan
 capacidades internamente. La protección de contraseñas filtradas de Supabase
 Auth sigue pendiente de activarse manualmente antes del piloto prolongado.
 El dump local no pudo generarse en este equipo porque la CLI requiere Docker o
-Podman; no se debe presentar ese respaldo como existente. Just Dipping y un
-segundo negocio aún no están creados.
+Podman; no se debe presentar ese respaldo como existente. El estado actual y
+las verificaciones de producción se documentan en la siguiente auditoría.
+
+### Auditoría remota y flujo de preparación (2026-09-25)
+
+- Supabase tiene Mideli `active` y Just Dipping `draft`. Just Dipping conserva
+  su catálogo propio (1 producto), pero no tiene insumos de inventario ni
+  pedidos. Su dueño tiene permisos de catálogo, inventario y personal; los
+  permisos de operación, cocina, caja y cobro están revocados/inactivos para
+  la fase de borrador. No copiar datos ni activar el negocio sin revisar los
+  datos reales de su dueño.
+- La navegación atrapaba al dueño en `/menu`: `/dashboard` redirigía al menú y
+  la flecha del menú regresaba a `/dashboard`. Los registros de producción del
+  2026-09-25 confirmaron el ciclo. Se corrige `/dashboard` como centro de
+  preparación para que los permisos de menú, inventario y personal abran
+  herramientas separadas, con el estado de borrador visible.
+- El diagnóstico técnico de negocio no debe probar pedidos o caja de un
+  borrador, aunque sus capacidades aparezcan configuradas en la base; el proxy
+  filtra esos permisos hasta que el negocio esté activo.
+- La RPC `update_business_order_status` acepta que un miembro con
+  `business.operate_orders` actualice `in_kitchen` y `ready` de su propio
+  negocio. Para locales activos sin `business.update_preparation`, Estado
+  muestra acciones para avanzar a Preparando y Listo. Esto no otorga esa
+  capacidad a meseras globales ni crea una pantalla de Cocina adicional.
+- La comanda mixta está soportada en comedor mediante
+  `create_multibusiness_table_orders`, con órdenes y cuentas por negocio. El
+  carrito mixto para llevar o domicilio sigue bloqueado. No habilitarlo con
+  inserciones cliente no atómicas; domicilio además requiere acordar cómo
+  mostrar una sola tarifa externa sin duplicarla en ventas/cobros.
+- WhatsApp permanece exclusivo de Mideli. En los registros Vercel de las 24
+  horas previas a esta revisión no aparecen llamadas a
+  `/api/integraciones/whatsapp/meta`, aunque el cron de WhatsApp se ejecutaba
+  regularmente y no hay errores de runtime agrupados para el webhook. Esto no
+  prueba que Meta esté bien configurado; se añadió al Diagnóstico la URL
+  esperada y la hora del último mensaje entrante visible para comparar con la
+  configuración del webhook de Meta.
+- Supabase registró un 401 aislado en `send-order-notification`; los demás
+  avisos muestreados respondieron 200. Es la función de Push de pedidos, no el
+  webhook entrante de WhatsApp, y no hay evidencia para atribuirle la falla
+  del bot.
+
+### Puestos combinables de caja para meseras globales (2026-09-26)
+
+- El Coordinador de Rincón 404 configura por mesera y por negocio permisos
+  separados para abrir y cerrar caja. La asignación no entrega
+  `business.manage_cash`: movimientos, correcciones, gastos e historial
+  completo siguen reservados al administrador del negocio. El permiso de
+  cierre permite ver únicamente el corte propio recién cerrado.
+- Quien solo opera pedidos o puede abrir caja recibe del RPC únicamente el
+  estado de la caja abierta, no totales, datos de apertura ni identidades del
+  personal. La pantalla usa el estado para permitir pedidos/cobros y oculta
+  las cifras si no tiene permiso de cierre o administración.
+- `/settings` muestra asignaciones por negocio, apertura/cierre combinables,
+  auditoría al cambiar permisos y una vista previa de lo que se conserva al
+  reactivar una mesera. Los grants revocados no se restauran implícitamente.
+- Las migraciones locales
+  `20260926065953_global_waiter_business_cash_permissions.sql` y
+  `20260926065956_seed_global_waiter_cash_coordinator_and_andrea.sql` preparan
+  el RPC protegido, RLS, el endurecimiento de los RPCs legacy y la asignación
+  inicial aprobada: Coordinador para la cuenta existente de plataforma y caja
+  operativa de Mideli para Andrea. La verificación de unicidad remota se hizo
+  sin escrituras antes de aplicar. Ambas migraciones quedaron aplicadas en
+  Supabase producción el 2026-09-26; la verificación remota confirmó el RPC,
+  las dos capacidades de Andrea en Mideli, ninguna capacidad de caja suya en
+  otros negocios y el permiso de coordinación activo para la cuenta de
+  plataforma existente. La versión quedó desplegada en producción en
+  `https://mideli.vercel.app` con estado `READY`; `npm run lint` y el build de
+  Vercel terminaron correctamente. Las pruebas pgTAP locales no se ejecutaron
+  porque Docker no está disponible en este equipo.
+- La migración `20260928084400_fix_cash_authorizers_to_local_business.sql`
+  conserva el flujo de caja pero limita la lista y validación de PIN a perfiles
+  activos con membresía local activa (`scope_type = business`) en el negocio
+  seleccionado. Tener únicamente un puesto de organización o plataforma ya no
+  permite autorizar retiros/cierres de otro local. La implementación anterior
+  se movió al esquema privado y la RPC pública conserva el nombre usado por la
+  aplicación. La migración quedó aplicada en producción; las consultas remotas
+  verificaron el alcance local, el acceso de la RPC pública y el bloqueo de la
+  implementación interna. El pgTAP remoto no pudo ejecutarse porque la base no
+  tiene instalada la función `plan()`.
+
+### Sesión de administrador se cerraba por negocio seleccionado (2026-09-26)
+
+- Causa: el proxy confiaba en la cookie de negocio seleccionada aunque ese
+  contexto sólo mostrara un permiso organizacional compartido, como administrar
+  el plano de mesas, y no permisos operativos del negocio. Si la cookie antigua
+  señalaba Just Dipping mientras el usuario era dueño de Mideli, desaparecían
+  sus capacidades de Mideli y el flujo de acceso terminaba en `/login?reason=scope`,
+  donde se cerraba la sesión.
+- La selección ahora usa una política común en navegador, proxy y servicios de
+  servidor: respeta contextos con capacidades de negocio o permisos
+  organizacionales explícitos; si la cookie apunta a un contexto no autorizado,
+  la corrige al negocio permitido. El permiso compartido de mesas continúa
+  habilitando `/settings/mesas` sin cerrar la sesión. Un negocio propio en
+  preparación conserva prioridad aunque el usuario también vea metadatos de
+  otros negocios activos.
+- No se modificaron cuentas, permisos remotos ni el esquema de Supabase. Pasaron
+  `npm run lint`, `npm run build` y tres pruebas Playwright de selección. La
+  versión quedó desplegada como producción en `https://mideli.vercel.app`,
+  deployment `dpl_9RCkfdFmApfPXP7RKjqhRoPXjMmu`, estado `READY`; Vercel no reportó
+  errores de runtime en los 15 minutos posteriores al despliegue. El inicio con
+  credenciales reales debe confirmarse en el dispositivo del usuario.
+
+### Selector de negocio en Mesero (2026-09-26)
+
+- `/dashboard/mesero` oculta el selector global de contexto: el selector
+  `Menús` de esa vista ya elige el catálogo de cada negocio sin cambiar la
+  sesión ni perder la comanda mixta. El selector global permanece en las demás
+  superficies donde cambiar el negocio sí cambia el contexto administrativo u
+  operativo.
+- `Menús` solo muestra negocios activos donde la cuenta tenga
+  `business.operate_orders` o `organization.operate_orders`. La visibilidad de
+  metadatos, `organization.manage_tables`, administrar catálogo o permisos de
+  plataforma no habilitan pedidos ni hacen aparecer una pestaña vacía. La
+  cuenta dueña de Mideli conserva su menú local; la mesera global mantiene los
+  menús de la organización. Si quedó seleccionado un catálogo fuera del acceso
+  actual, se limpia y se vuelve al primer menú autorizado. Los RPC de Supabase
+  siguen siendo la autoridad para crear pedidos; no se cambiaron permisos ni
+  datos remotos.
+- Se agregaron pruebas para dueño local, mesera global y contextos solo
+  administrativos o en borrador. Pasaron las seis pruebas de selección, lint y
+  build. Desplegado a producción en `https://mideli.vercel.app`, deployment
+  `dpl_9onrj5cGPyeSgPPAiHNbEzyXnT2E`, estado `READY`.
+- Pasaron `npm run lint`, `npm run build` y el detector de layout. El navegador
+  de revisión no tenía una sesión autenticada de Mesero y redirigió a login, así
+  que la comprobación visual del estado autenticado queda pendiente. Cambio
+  publicado en producción como `dpl_CbQhMUtUgqhBv9BR1VmMB3MZGYWK` (`READY`).
 
 ## 10. Verificación obligatoria
 
@@ -617,3 +804,327 @@ Si hay un fallo, corregirlo antes de afirmar que la tarea está completa. Report
 ## 11. Regla de inicio para futuras tareas
 
 Primero inspecciona el archivo afectado, sus consumidores y `git status`. Después resume el plan en español, implementa el cambio más pequeño que resuelva la necesidad, prueba el flujo principal y ejecuta las verificaciones obligatorias. Si la solicitud toca más de un módulo, divide el trabajo en pasos y conserva las decisiones de este documento.
+
+## 12. Just Dipping: combos y archivo histórico (2026-09-26)
+
+- La interfaz de Mesero muestra un selector compacto de menú en teléfonos y
+  tablets; cambiar el catálogo no cambia el negocio operativo ni vacía la
+  comanda. Al cambiar de negocio, las categorías vuelven al inicio y las
+  tarjetas de producto son más bajas en pantallas pequeñas.
+- Un combo nativo se cobra como una sola línea y un precio base. Sus partes
+  fijas y opciones elegidas quedan como snapshots en carrito, cocina, ticket e
+  inventario. El servidor valida productos, cantidades y recargos contra el
+  catálogo del mismo negocio; no confía en precios enviados por el navegador.
+- Una opción elegida en un grupo de combo se puede quitar volviendo a tocarla.
+  En grupos obligatorios, el botón de agregar permanece deshabilitado hasta que
+  se seleccione una opción; elegir otra sustituye la anterior.
+- La regresión pasó sus 2 pruebas Playwright, `npm run lint` y `npm run build`.
+  Producción quedó `READY` en `https://mideli.vercel.app`, deployment
+  `dpl_A8Z73hKTwyYpE8h12xbiKqEpb8VV`.
+- Pedidos, aperturas de caja y pagos pasarán a contadores de folio por negocio.
+  La migración local `20260926120000_business_combos_and_folios.sql` conserva
+  el mayor folio emitido por cada negocio y no renumera el historial existente.
+- Los tickets del Firestore anterior se preparan en una tabla separada y de
+  solo consulta. No cuentan en caja, ventas actuales ni analíticas. La
+  importación permite solamente campos de ticket/artículos y descarta datos
+  personales.
+- La inspección de solo lectura encontró 7 categorías, 28 artículos, 3 combos
+  y 1,138 tickets en Just Dipping. “Regular Box” coincide con el artículo ya
+  sembrado en Supabase, pero debe mapearse explícitamente para no duplicarlo.
+  “Promo Lunes” menciona cheesecake que no está guardado como componente; no
+  activarla hasta que el dueño confirme la receta correcta.
+- Supabase registra aplicadas las migraciones `20260926120000_business_combos_and_folios.sql`,
+  `20260926123000_legacy_sales_archive.sql`, `20260927033000_combo_item_sale_policies.sql`
+  y `20260927033100_import_just_dipping_catalog.sql`; Just Dipping figura activo.
+  En la última lectura remota hay 5 categorías, 28 productos y 3 combos.
+- La inspección previa de Firestore encontró 1,138 tickets históricos, pero la
+  tabla `legacy_sales_tickets` de producción tiene 0 registros para Just Dipping.
+  Por tanto, el catálogo está migrado y los tickets históricos no; no declarar
+  completa la migración de ventas hasta importarlos y reconciliar sus totales.
+
+## 13. Identidad visual por negocio (2026-09-26)
+
+- El acceso compartido, el landing y la PWA identifican a Rincón 404 Food Park.
+- Una cuenta con alcance global conserva esa identidad, incluso al cambiar el
+  menú activo. Una cuenta de un único negocio puede ver su marca local en la
+  operación; en una comanda que mezcla negocios, el selector identifica cada
+  menú, pero no recolorea toda la comanda.
+- Al crear o editar un negocio, la administración de plataforma puede cambiar
+  el nombre visible, elegir una paleta sencilla o colores personalizados y
+  subir o quitar su logo. El identificador interno no se mezcla con el nombre
+  visible. El dueño y sus credenciales no se recrean al editar la marca.
+- Los logos se convierten a WebP y se sirven desde un bucket público de sólo
+  lectura; la escritura y eliminación pasan por una ruta de servidor que exige
+  una membresía y permiso vigentes de administración de plataforma y registra
+  auditoría. No se permite subirlos directamente desde el cliente a Storage.
+- Mideli conserva su rosa/dorado y WhatsApp sigue siendo exclusivo de Mideli.
+  Just Dipping parte de amarillo; los demás negocios nuevos usan una identidad
+  neutra editable. La identidad no cambia la autorización ni el negocio al que
+  pertenecen pedidos, inventario, caja o ventas.
+- La migración `20260927063115_business_branding_and_assets.sql` se aplicó y se
+  verificó en producción. La interfaz pasó lint/build y el landing/login se
+  revisó con Playwright en escritorio, tablet y teléfono; falta una prueba
+  autenticada de la gestión de negocios porque la sesión de revisión no tiene
+  credenciales.
+
+## 14. Consola de plataforma (2026-09-27)
+
+- Un usuario con `platform.manage_businesses` se redirige desde el layout de
+  `/dashboard` a `/settings/negocios` antes de montar la navegación operativa;
+  no debe ver primero Mesero, menús ni otros módulos del restaurante.
+- La consola separa las secciones Negocios y Personal global en navegación
+  propia. La tarjeta del local resume cuántas áreas tiene habilitadas su dueño;
+  el detalle de permisos se consulta al configurar ese negocio.
+- La creación/separación de una cuenta de plataforma está aislada bajo
+  Seguridad de plataforma. Estos cambios son de presentación y encaminamiento;
+  no modifican datos, credenciales, permisos ni el flujo de creación de negocios.
+
+## 15. Licencias independientes y verificación de producción (2026-09-27)
+
+- La licencia comercial es por negocio. Rincón 404 es la única cuenta con
+  `platform.manage_business_licenses`; en meseras globales, los menús
+  autorizados sin licencia quedan deshabilitados sin mostrar deuda, fechas ni
+  motivos internos.
+- Las migraciones `20260927090929`, `20260927090931`, `20260927090934`,
+  `20260927091600` y `20260927091700` se aplicaron en Supabase de producción.
+  Mideli y Just Dipping siguen activos, cada uno con licencia activa hasta el
+  2026-10-01 en su fecha local y un evento de auditoría inicial. Hay un único
+  administrador de licencias, 29 guards de escritura por negocio, 33 políticas
+  de lectura y ningún trigger del guard global antiguo.
+- El webhook, el runtime, el scheduler y todos los envíos salientes de
+  WhatsApp comprueban la licencia de Mideli. Cuando no está disponible, Meta
+  recibe confirmación técnica del webhook válido, pero el bot no procesa ni
+  contesta al cliente, no deriva atención humana ni libera tareas atrasadas.
+  No se envió un mensaje de prueba real a clientes durante la verificación.
+- El linter remoto encontró una ambigüedad real en la RPC de alta de personal
+  local; se corrigió en `20260927091700_fix_business_staff_membership_ambiguity.sql`.
+  Los errores que permanecen en `db lint` son referencias estáticas a tablas
+  temporales creadas dentro de `create_multibusiness_table_orders` y
+  `create_business_order_with_items`, patrón que el analizador no resuelve, y
+  advertencias de inmutabilidad/variables no utilizadas. La ambigüedad nueva
+  de `get_platform_business_license_events` también se corrigió con una
+  migración forward-only.
+- Pasaron lint, build y 558 pruebas E2E: 186 escritorio, 186 tablet y 186
+  móvil. Vercel producción está `READY` en `https://mideli.vercel.app`,
+  deployment `dpl_BCQoEKpMnYSuK7Qren9aXtVuhWvz`. No se cambió ninguna fecha de
+  licencia ni dato operativo para simular expiración.
+
+### Rendimiento de RLS de licencias (2026-09-27)
+
+- Se confirmó que la consulta del catálogo de `menu_items` evaluaba la política
+  de licencia por fila y volvía a recorrer `pg_timezone_names`. En producción,
+  el SELECT autenticado de los dos menús tardó 6.55 s para 81 productos.
+- La migración `20260927110859_optimize_business_license_rls_timezone.sql`
+  valida la zona horaria al insertar o editar un negocio y usa el valor ya
+  validado en las lecturas de vigencia. No modificó pedidos, fechas ni estados
+  de licencias. El mismo SELECT autenticado bajó a 68.6 ms; 81 evaluaciones del
+  guard de lectura de licencia tardaron 36.5 ms.
+- `fetchActiveOrders` solo usa la selección antigua cuando la respuesta indica
+  que falta una columna de metadatos nueva (`42703` o `PGRST204`). Un timeout
+  `57014` ya no dispara otra consulta duplicada.
+- Migración aplicada y `npx supabase db push --linked --dry-run` confirmó la
+  base alineada. Pasaron `npm run lint` y `npm run build`. Desplegado a
+  producción en `https://mideli.vercel.app`, deployment
+  `dpl_4Lv4YbzEtY2iQxPocbS16pLSrhXp`, estado `READY`.
+
+### PIN de autorización del dueño local (2026-09-27)
+
+- En la sección Personal de un negocio, se muestra la membresía `business_owner`
+  únicamente al mismo dueño autenticado. Esa fila permite configurar su propio
+  PIN de autorización, pero no editar ni desactivar la cuenta desde Personal.
+- La acción de PIN valida la membresía activa del dueño dentro del negocio y la
+  organización seleccionados antes de invocar la RPC existente. Supabase guarda
+  un hash del PIN; no se solicita ni se guarda durante la creación del negocio.
+- El alta del negocio indica al administrador que el dueño configura su PIN
+  privado después de iniciar sesión, desde Personal.
+- La regresión tiene pruebas para mostrar el dueño solo a sí mismo y conservar
+  la lista de personal local. Sin cambios de esquema ni datos remotos.
+- Pasaron ESLint, build y seis pruebas de regresión en escritorio, tablet y
+  teléfono. Desplegado en producción como `dpl_5r5k1sXiHJcxrAzNFSi5y5xafSi5`,
+  estado `READY`, con alias `https://mideli.vercel.app`.
+
+## 16. Sesión persistente y recuperación de comanda (2026-09-27)
+
+- Supabase ya conserva la sesión en el navegador (`persistSession: true`); el
+  almacenamiento SSR de `@supabase/ssr` usa una cookie persistente de hasta 400
+  días por defecto. Cerrar y volver a abrir la app no debe cerrar la sesión.
+  La cuenta aún puede requerir acceso de nuevo si se cierra sesión, se desactiva
+  el perfil o la configuración remota de Auth invalida su sesión.
+- Si una cuenta autenticada no tiene permiso para una sección, el proxy la
+  envía a otra vista permitida o a `/dashboard/sin-acceso`; no termina la sesión
+  solo por intentar abrir una función sin permiso. Un perfil inexistente o
+  desactivado sí cierra la sesión por seguridad.
+- La comanda manual en Mesero se guarda localmente por ID de usuario: productos,
+  negocio de cada línea, cantidades, modificadores, notas, tipo de pedido, mesa
+  y programación. No se guardan nombre, teléfono, domicilio, ubicación ni pago.
+  Al restaurar un pedido a domicilio, hay que volver a capturar y confirmar esos
+  datos. Vaciar la comanda o enviarla correctamente borra el borrador.
+- Los borradores se quedan en el navegador hasta vaciarlos o enviar el pedido;
+  no tienen vencimiento automático. Una comanda importada de WhatsApp o una
+  orden existente que se está editando no reemplaza el borrador manual guardado.
+
+## 17. Visibilidad del catálogo para meseras globales (2026-09-27)
+
+- La migración de rangos por negocio cambió los permisos de pedidos/cobros de
+  alcance organizacional a capacidades específicas por negocio. El contexto
+  del selector ya permitía Just Dipping, pero la función de seguridad que filtra
+  `categories` y `menu_items` sólo reconocía los permisos organizacionales
+  antiguos; por eso el menú aparecía vacío.
+- `20260928035510_fix_global_waiter_catalog_rls.sql` alinea la regla de lectura:
+  acepta el permiso de coordinación global o un permiso activo
+  `business.operate_orders` / `business.charge_orders` asignado al mismo
+  negocio. Conserva la restricción del negocio solicitado y no reactiva accesos
+  generales a toda la organización.
+- Migración aplicada en Supabase producción. La comprobación autenticada simulada
+  confirmó que una mesera global con permiso para Just Dipping puede pasar la
+  regla RLS, y que el dueño local de Mideli continúa sin acceso al catálogo de
+  Just Dipping. Los asesores de seguridad y rendimiento no reportaron errores.
+- Pasaron `npm run lint` y `npm run build`. La prueba pgTAP local no pudo correr
+  porque no hay una base Supabase local escuchando en este equipo; queda como
+  regresión automatizada para el próximo entorno local disponible.
+
+## 18. Alcance de Historial y Estado para meseras globales (2026-09-27)
+
+- Historial y Estado ahora consultan todos los negocios activos de la misma
+  organización donde la persona tenga `business.operate_orders`,
+  `business.charge_orders` o `business.update_preparation`, y cuya licencia
+  esté disponible. El negocio seleccionado en la navegación ya no reduce ese
+  alcance por accidente.
+- Crear pedidos conserva un permiso más estricto: solo negocios con
+  `business.operate_orders` (o el alcance organizacional equivalente) forman
+  parte del alcance de creación. El filtro visible solo ofrece los negocios
+  realmente autorizados y con licencia vigente.
+- Borrar pedidos del historial ya no depende del rol genérico del perfil: en
+  el modelo multinegocio solo puede hacerlo la persona con membresía
+  `business_owner` y permiso de lectura de pedidos para ese negocio. En el
+  modo anterior de un solo negocio se conserva el acceso de `owner`/`admin` y
+  se resuelve primero el pedido mediante RLS antes de usar el cliente de
+  servicio.
+- El archivo histórico de Just Dipping solo puede consultarse desde Historial
+  cuando hay permiso de pedidos y la licencia del negocio está disponible. La
+  corrección de visibilidad no importa los tickets históricos que aún no están
+  en Supabase.
+- `npx supabase migration list --linked` confirmó que las migraciones locales y
+  remotas están alineadas; no se necesitó cambiar el esquema. Pasaron lint,
+  build y las 12 pruebas de selección/permisos en Playwright. Producción quedó
+  `READY` en `https://mideli.vercel.app`, deployment
+  `dpl_4wbZwBYZ1T3T3Ni3J4jBGZYYucZt`.
+
+## 19. Acceso de Rincón 404 (2026-09-27)
+
+- `/` y `/login` comparten una pantalla de acceso directa para no interponer un
+  botón antes del formulario. Se conserva Supabase Auth, el usuario sin sufijo
+  visible, la contraseña y el destino seguro `next` de `/login`.
+- Por decisión del dueño, la pantalla se simplificó a la marca textual
+  `Rincón 404 Food Park`, el encabezado `Iniciar sesión`, los campos Usuario y
+  Contraseña y la acción principal. Se retiraron eslogan, ilustración, textos
+  explicativos, pie promocional y ejemplos de los campos; no cambian el flujo
+  de autenticación ni el destino por cuenta.
+- El diseño conserva controles accesibles, mostrar/ocultar contraseña, errores
+  de acceso y estado de espera. Se mantiene adaptable a escritorio y móvil y
+  no abre el teclado automáticamente.
+- `npm run lint` y `npm run build` pasaron. La inspección manual con Playwright
+  revisó `/` y `/login` en escritorio y móvil, sin desbordamiento ni errores de
+  consola; el detector visual no encontró hallazgos.
+- Desplegado a producción en `https://mideli.vercel.app`, deployment
+  `dpl_4MGLLAigAngXPvTyaX6XofMwY1W8`, estado `READY`.
+
+## 20. Borrado seguro de pedidos (2026-09-28)
+
+- El guard de licencias valida la orden principal antes de borrarla. Durante
+  `ON DELETE CASCADE`, los artículos y estados hijos ya no pueden resolver el
+  negocio desde la orden eliminada; el guard permite ese borrado hijo sólo
+  cuando ocurre dentro de una cascada anidada. Los borrados directos conservan
+  su validación de licencia.
+- El servidor vuelve a verificar el negocio permitido por la membresía del
+  dueño y ejecuta pagos relacionados más orden en una sola RPC transaccional.
+  Bloquea pedidos, asignaciones, pagos y cortes sin esperar a otra operación;
+  si hay un cobro/cierre concurrente, pide reintentar sin cambios parciales.
+  Rechaza pagos compartidos o pertenecientes a un corte cerrado.
+- La licencia de Just Dipping estaba activa al investigar. La corrección no
+  toca datos reales de pedidos ni caja. La revisión agregada encontró cero
+  pedidos pagados en Just Dipping y cero órdenes pagadas sin asignación de pago.
+- Las migraciones `20260928070125` y `20260928070741` quedaron aplicadas y
+  sincronizadas en Supabase. La comprobación remota confirmó que el RPC sólo
+  puede ser ejecutado por `service_role`, rechaza accesos `authenticated` y
+  maneja sin escritura un identificador de pedido inexistente. El asesor de
+  seguridad no señaló el nuevo RPC; quedan 27 avisos existentes no relacionados.
+- Pasaron `npm run lint` y `npm run build`. Producción quedó `READY` en
+  `https://mideli.vercel.app`, deployment `dpl_4npvJMc9GiwaeGpWYzouMbsqyx67`.
+
+## 21. Operación de pedidos por meseras globales (2026-09-28)
+
+- En Estado, una membresía `global_waiter` con alcance `organization` ve
+  únicamente pedidos de comedor de los otros negocios. Las entregas y pedidos
+  para llevar siguen con el equipo local; una membresía local conserva todos
+  los tipos de pedido de su negocio. La regla usa el alcance/rol recibido del
+  contexto, sin IDs ni excepciones por nombre, por lo que también aplica a
+  negocios futuros.
+- Los artículos de pedidos activos cargan el nombre mediante la relación con
+  `menu_items`, como ya hacía Historial. Al editar, se carga el catálogo del
+  negocio de esa orden. Si se quita el último producto, la aplicación muestra
+  por qué no puede guardar una orden vacía y ofrece cancelarla desde Estado.
+- La mesera puede cancelar pedidos sin pagos y conservarlos como cancelados en
+  Historial. La actualización usa el RPC de estado con alcance por negocio; el
+  borrado permanente sigue reservado al dueño para proteger la auditoría. Los
+  pedidos con pagos requieren corregir/anular el cobro primero.
+- Este cambio reutiliza permisos, RPC y disparadores existentes, sin migración
+  nueva ni escrituras sobre pedidos reales. Pasaron lint, build y las 13 pruebas
+  Playwright de selección/contexto de negocio. Pendiente: validar el flujo con
+  una sesión real de mesera en producción después del despliegue.
+- Producción quedó `READY` en `https://mideli.vercel.app`, deployment
+  `dpl_7WesveH3qYkfvNhK53QHCScQBk4E`.
+
+## 22. Permiso de preparación para cocina (2026-09-28)
+
+- Andrea veía las acciones de preparación por una condición invertida en Estado:
+  mostraba el botón al tener `business.operate_orders` y no tener
+  `business.update_preparation`. El guard de Supabase también aceptaba el
+  permiso general de pedidos para pasar a `in_kitchen` o `ready`.
+- Estado ahora exige el permiso explícito `business.update_preparation`, igual
+  que el guard del servidor. Los rangos Mesero y Mesera global pueden seguir
+  creando/cobrando según sus permisos, pero no mover estados de cocina. Cocina,
+  Supervisor y dueño conservan esa función cuando su contexto les da el permiso.
+- La migración `20260928074300_require_preparation_capability_for_kitchen_status.sql`
+  se aplicó a Supabase producción; no modifica filas de pedidos. La consulta
+  remota confirmó que la rama de preparación exige únicamente el permiso de
+  preparación, y las migraciones local/remoto quedaron sincronizadas.
+- Pasaron lint, build y las 14 pruebas Playwright de contexto/permisos. La
+  consulta de autorización remota pasó; falta la comprobación visual de Andrea
+  desde su dispositivo después de actualizar la PWA.
+- Producción quedó `READY` en `https://mideli.vercel.app`, deployment
+  `dpl_HrJrhKdxSZQTCsAVeUuwLbUijxRA`.
+
+## 23. Caja por negocio para meseras globales (2026-09-28)
+
+- La vista de Mesero deriva los negocios de caja desde los permisos efectivos
+  del contexto multinegocio, sin confundir el menú seleccionado con el negocio
+  operativo de caja. Andrea conserva acceso de apertura y cierre en Mideli,
+  pero no obtiene acceso a caja de Just Dipping por ser mesera global.
+- Si sólo hay un negocio autorizado, Caja lo selecciona automáticamente; si
+  hay varios, permite elegirlo. Consultas, aperturas, autorizaciones,
+  movimientos, cierres y realtime usan el `business_id` explícito.
+- La transición de negocio limpia sincrónicamente el turno anterior para no
+  mostrar ni reutilizar temporalmente la caja de otro local. Se reutilizan los
+  RPCs y permisos actuales; no hubo cambios ni migración de base de datos.
+
+## 24. Creación atómica de pedidos POS individuales (2026-09-29)
+
+- El POS ya no crea primero un pedido de negocio y luego guarda domicilio,
+  cliente o programación en otra petición. Para pedidos de un solo negocio usa
+  `create_business_order_with_details`: llama a la creación canónica y guarda
+  esos datos dentro de la misma transacción. Si el segundo paso falla, la
+  creación completa se revierte.
+- La función es `SECURITY INVOKER`, conserva el guard de negocio y catálogo del
+  RPC existente, usa RLS para actualizar el pedido y sólo se concede a
+  `authenticated`. Los reintentos con la misma clave devuelven el pedido
+  existente sin sobrescribir cambios posteriores.
+- Los clientes antiguos pueden seguir usando el RPC anterior. La ruta legacy
+  sin contexto multinegocio aún usa dos peticiones y debe revisarse por
+  separado antes de considerarla atómica. La clave de idempotencia del POS
+  todavía vive en memoria y no sobrevive al cierre de la aplicación.
+- Migración `20260930061500_atomic_pos_order_details.sql` aplicada en Supabase.
+  Se validó el SQL en una transacción revertida, los permisos en remoto,
+  `npm run lint`, `npm run build` y la salud pública tras el despliegue.
+  No había una caja abierta para probar la creación de un pedido real sin
+  intervenir la operación; esa verificación autenticada sigue pendiente.

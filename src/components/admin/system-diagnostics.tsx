@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   BellRing,
+  Building2,
   CheckCircle2,
   CircleDashed,
   Clock3,
@@ -27,12 +28,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getPushStatus, type PushStatus } from "@/lib/push-notifications";
 import { isReadyOrderAudioUnlocked } from "@/lib/ready-order-audio";
+import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { createClient } from "@/lib/supabase/client";
 
 type DiagnosticId =
   | "application"
   | "connectivity"
   | "session"
+  | "business"
   | "database"
   | "realtime"
   | "pwa"
@@ -75,7 +78,7 @@ const CHECKS: CheckDefinition[] = [
   {
     id: "connectivity",
     title: "Conectividad",
-    description: "Red y respuesta del servidor de Mideli.",
+    description: "Red y respuesta del servidor de la aplicación.",
     icon: Wifi,
   },
   {
@@ -89,6 +92,12 @@ const CHECKS: CheckDefinition[] = [
     title: "Base de datos",
     description: "Consulta segura de solo lectura.",
     icon: Database,
+  },
+  {
+    id: "business",
+    title: "Integración del negocio",
+    description: "Contexto, menú, inventario, pedidos y caja del negocio seleccionado.",
+    icon: Building2,
   },
   {
     id: "realtime",
@@ -153,8 +162,9 @@ function withAbortTimeout(milliseconds: number) {
 function friendlyFailure(id: DiagnosticId): string {
   const messages: Record<DiagnosticId, string> = {
     application: "La interfaz no pudo confirmar su estado.",
-    connectivity: "Mideli no respondió dentro del tiempo esperado.",
+    connectivity: "La aplicación no respondió dentro del tiempo esperado.",
     session: "No se pudo validar la sesión actual.",
+    business: "No se pudo validar la conexión del negocio.",
     database: "No se pudo completar la consulta de lectura.",
     realtime: "El canal de tiempo real no logró conectarse.",
     pwa: "No se pudo revisar la instalación de la aplicación.",
@@ -254,6 +264,145 @@ async function checkDatabase(): Promise<CheckOutcome> {
     status: "ok",
     message: "Lectura completada",
     detail: `${Math.round(performance.now() - startedAt)} ms de respuesta`,
+  };
+}
+
+async function checkBusinessIntegration(): Promise<CheckOutcome> {
+  const contextStore = useBusinessContextStore.getState();
+  await contextStore.ensureLoaded();
+  const context = useBusinessContextStore.getState();
+
+  if (context.error) {
+    throw new Error("business context unavailable");
+  }
+
+  if (context.legacyFallback) {
+    return {
+      status: "warning",
+      message: "Modelo de negocio único activo",
+      detail: "La cuenta usa el flujo compatible anterior; no se pudo validar el contexto multinegocio.",
+    };
+  }
+
+  const business = context.businesses.find(
+    (candidate) => candidate.business_id === context.selectedBusinessId,
+  );
+  if (!business) {
+    return {
+      status: "warning",
+      message: "No hay un negocio seleccionado",
+      detail: "La cuenta puede tener acceso de plataforma o todavía no tiene un negocio asignado.",
+    };
+  }
+
+  const setupCapabilities = new Set([
+    "business.manage_catalog",
+    "business.manage_inventory",
+    "business.manage_staff",
+  ]);
+  const capabilities = new Set(
+    business.business_lifecycle_status === "active"
+      ? business.capability_codes
+      : business.capability_codes.filter((capability) =>
+          setupCapabilities.has(capability)
+        ),
+  );
+  const supabase = createClient();
+  const checks: Array<{
+    label: string;
+    run: () => Promise<{ error: { code?: string | null } | null; count?: number | null }>;
+  }> = [];
+
+  if (capabilities.has("business.manage_catalog")) {
+    checks.push({
+      label: "catálogo",
+      run: async () => {
+        const result = await supabase
+          .from("menu_items")
+          .select("id", { count: "exact", head: true })
+          .eq("business_id", business.business_id);
+        return { error: result.error, count: result.count };
+      },
+    });
+  }
+
+  if (capabilities.has("business.manage_inventory")) {
+    checks.push({
+      label: "inventario",
+      run: async () => {
+        const result = await supabase
+          .from("inventory_items")
+          .select("id", { count: "exact", head: true })
+          .eq("business_id", business.business_id);
+        return { error: result.error, count: result.count };
+      },
+    });
+  }
+
+  const canReadOrders = [
+    "business.operate_orders",
+    "organization.operate_orders",
+    "business.update_preparation",
+    "business.charge_orders",
+    "organization.charge_orders",
+  ].some((capability) => capabilities.has(capability));
+  if (canReadOrders) {
+    checks.push({
+      label: "pedidos",
+      run: async () => {
+        const result = await supabase
+          .from("orders")
+          .select("id", { count: "exact", head: true })
+          .eq("business_id", business.business_id);
+        return { error: result.error, count: result.count };
+      },
+    });
+  }
+
+  if (capabilities.has("business.manage_cash")) {
+    checks.push({
+      label: "caja",
+      run: async () => {
+        const result = await supabase.rpc("multibusiness_cash_action", {
+          p_business_id: business.business_id,
+          p_action: "current",
+          p_payload: {},
+        });
+        return { error: result.error };
+      },
+    });
+  }
+
+  if (checks.length === 0) {
+    return {
+      status: "ok",
+      message: `${business.business_display_name} está conectado`,
+      detail: "El contexto está disponible; esta cuenta no tiene módulos operativos para probar.",
+    };
+  }
+
+  const results = await Promise.all(
+    checks.map(async (check) => ({ ...check, result: await check.run() })),
+  );
+  const failed = results.filter(({ result }) => result.error);
+  if (failed.length > 0) {
+    return {
+      status: "error",
+      message: "Hay módulos del negocio que requieren atención",
+      detail: `Falló la conexión con: ${failed.map(({ label }) => label).join(", ")}.`,
+    };
+  }
+
+  const counts = results
+    .filter(({ result }) => result.count !== undefined)
+    .map(({ label, result }) => `${label}: ${result.count ?? 0}`)
+    .join(" · ");
+  return {
+    status: "ok",
+    message: `${business.business_display_name} está conectado`,
+    detail: counts
+      ? `Contexto multinegocio válido · ${counts} · permisos respetados.`
+      : "Contexto multinegocio y caja válidos · permisos respetados.",
   };
 }
 
@@ -426,6 +575,7 @@ async function executeDiagnostic(id: DiagnosticId): Promise<DiagnosticResult> {
     application: checkApplication,
     connectivity: checkConnectivity,
     session: checkSession,
+    business: checkBusinessIntegration,
     database: checkDatabase,
     realtime: checkRealtime,
     pwa: checkPwa,
@@ -552,7 +702,7 @@ export function SystemDiagnostics() {
 
   async function copySupportReport() {
     const report = {
-      product: "Mideli",
+      product: "Rincón 404",
       generated_at: new Date().toISOString(),
       route: window.location.pathname,
       environment: process.env.NODE_ENV,
@@ -606,7 +756,7 @@ export function SystemDiagnostics() {
             <div className="min-w-0">
               <h1 className="font-heading text-xl font-bold sm:text-2xl">Diagnóstico</h1>
               <p className="mt-0.5 font-body text-sm text-muted-foreground">
-                Comprueba Mideli antes de una demostración o turno.
+                Comprueba el sistema antes de una demostración o turno.
               </p>
             </div>
           </div>
@@ -634,7 +784,7 @@ export function SystemDiagnostics() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl space-y-5 p-4 pb-24 sm:p-6 lg:p-8">
+      <main className="mideli-page-scroll mx-auto w-full max-w-7xl space-y-5 p-4 pb-24 sm:p-6 lg:p-8">
         <section
           aria-live="polite"
           className={`rounded-2xl border p-5 ${statusClasses(overallStatus)}`}
@@ -651,8 +801,8 @@ export function SystemDiagnostics() {
                     : summary.error > 0
                       ? "Hay funciones que requieren atención"
                       : summary.warning > 0
-                        ? "Mideli funciona con algunas advertencias"
-                        : "Mideli está listo para operar"}
+                        ? "Rincón 404 funciona con algunas advertencias"
+                        : "Rincón 404 está listo para operar"}
                 </h2>
                 <p className="mt-1 font-body text-sm opacity-80">
                   Las advertencias de PWA y Push son normales mientras trabajas en localhost.

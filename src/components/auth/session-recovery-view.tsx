@@ -52,7 +52,7 @@ export function SessionRecoveryView() {
           Recuperando la conexión
         </h1>
         <p className="mt-2 font-body text-base leading-relaxed text-muted-foreground">
-          Tu sesión sigue abierta. Mideli volverá a intentarlo en {seconds} s sin
+          Tu sesión sigue abierta. El sistema volverá a intentarlo en {seconds} s sin
           borrar tu acceso ni el trabajo del turno.
         </p>
 

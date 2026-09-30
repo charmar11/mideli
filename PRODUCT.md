@@ -2,7 +2,8 @@
 
 ## Plataforma
 
-Aplicación web instalable como PWA para la operación interna de un restaurante.
+Aplicación web instalable como PWA para la operación interna de los negocios de
+Rincón 404 Food Park.
 
 ## Usuarios
 
@@ -16,7 +17,10 @@ No existe usuario comensal dentro de la aplicación. WhatsApp sí es un canal ex
 
 ## Propósito
 
-Mideli coordina todo el turno de un solo local Burger & Sushi en Ciudad Obregón, Sonora: capturar la orden correctamente, enviarla a cocina, preparar, entregar y cobrar sin depender de papel ni herramientas desconectadas.
+La aplicación coordina los turnos de negocios independientes en Ciudad
+Obregón, Sonora: capturar pedidos correctamente, prepararlos, entregarlos y
+cobrarlos en el negocio correspondiente. Mideli conserva Cocina y WhatsApp;
+Just Dipping opera con su propio catálogo y estados.
 
 **Éxito:** pedidos correctos y rápidos, estados visibles, cobros auditables y suficiente contexto para resolver excepciones durante el turno.
 
@@ -33,11 +37,21 @@ Mideli coordina todo el turno de un solo local Burger & Sushi en Ciudad Obregón
 - Inventario por insumos, recetas, compras, lotes, conteos y mermas.
 - Estación de impresión automática para tickets de cocina de 48 mm.
 - PWA con notificaciones por dispositivo para pedidos nuevos y pedidos listos.
-- Licencia mensual y protección de rutas.
+- Licencias manuales independientes por negocio; la cuenta Rincón 404 gestiona vigencias y el control técnico global queda separado.
 - Analíticas, control diario y rentabilidad estimada por receta.
 - WhatsApp con bot, catálogo, carrito, variaciones, domicilio, cliente por teléfono, direcciones guardadas, notas, confirmación, relevo humano, clientes, limpieza conversacional y avisos de estado.
 
 ## Flujos críticos
+
+### Licencias por negocio
+
+La vigencia se conserva de forma independiente para cada negocio y se administra
+desde `/settings/licencias` por la cuenta de plataforma Rincón 404. Los dueños y
+empleados pueden iniciar sesión, pero un negocio vencido queda en modo bloqueado
+sin mostrar saldos ni montos. Las meseras globales conservan los demás negocios
+y sólo ven una opción neutral deshabilitada para el que no esté disponible.
+WhatsApp continúa ligado exclusivamente a Mideli y no procesa mensajes ni tareas
+salientes mientras Mideli no tenga acceso operativo.
 
 ### Pedido interno
 
@@ -66,36 +80,43 @@ El cliente conoce el costo estimado de envío, pero el total operativo de Mideli
 
 ## Roles y permisos
 
-| Rol | Operación | Administración |
-|---|---|---|
-| owner | POS, KDS, WhatsApp y caja | Completa, incluida licencia y permisos |
-| admin | POS, KDS, WhatsApp y caja | Menú, mesas, inventario, usuarios y analíticas |
-| supervisor | POS y KDS | No |
-| waiter | POS y áreas operativas autorizadas | No |
-| kitchen | KDS | No |
+El acceso efectivo depende de la membresía y las capacidades asignadas a cada
+negocio; el nombre de un rol legado no concede acceso a otros locales.
+
+| Acceso | Alcance |
+|---|---|
+| Plataforma Rincón 404 | Negocios, coordinación global y licencias; cuenta distinta de los dueños |
+| Dueño local | Administración y operación autorizadas de su negocio |
+| Mesera global | Menús y acciones autorizadas por negocio; puede tener además un rango local |
+| Personal local | Rangos configurables de pedidos, cobros, cocina o caja dentro de su negocio |
+
+Los permisos exactos se verifican en el contexto del usuario, las acciones del
+servidor y RLS, no solamente en la navegación.
 
 ## Restricciones
 
-- Un solo local, sin multi-tenant ni multisucursal.
+- Una organización con negocios independientes; no incluye multisucursal ni
+  un marketplace público.
 - Sin pedidos web directos para el comensal.
 - Las operaciones financieras requieren validación del servidor.
 - No se confirma un cobro, corrección o cierre de caja sin conexión con el servidor.
 - La contingencia completa sin internet todavía está pendiente.
 - PWA, impresora, push, WhatsApp real y flujos financieros requieren validación en hardware y cuentas reales.
 
-## Evolución aprobada: multinegocio gradual
+## Estado multinegocio y límites
 
-La restricción de un solo negocio describe la operación visible actual, no la
-estructura objetivo. La primera rebanada multinegocio para Rincón 404 Food Park
-ya está aplicada y Mideli sigue siendo el único negocio activo. Cada negocio
-tendrá su propio catálogo, inventario, pedidos, caja, pagos, historial,
-personal y permisos.
+La estructura multinegocio ya está aplicada. Mideli y Just Dipping figuraban
+activos en la última verificación documentada; comprobar de nuevo el estado
+remoto antes de depender de él. Cada negocio conserva su catálogo, inventario,
+pedidos, caja, pagos, historial, personal, permisos y licencia.
 
-El POS ya tiene la base para una comanda mixta de comedor: la mesera puede
-cambiar de menú, el carrito identifica el negocio de cada línea y el servidor
-crea órdenes y cuentas separadas de forma atómica. El cobro consulta la caja y
-la cuenta del negocio correcto. Just Dipping no se habilitará ni se registrará
-hasta recibir autorización y datos reales.
+El POS permite una comanda mixta de comedor: la mesera cambia de menú, el
+carrito identifica el negocio de cada línea y el servidor crea órdenes y
+cuentas separadas de forma atómica. El cobro consulta la caja del negocio
+correcto. Las comandas mixtas de domicilio y para llevar siguen bloqueadas.
+El catálogo y combos de Just Dipping están importados; sus tickets históricos
+de Firebase siguen pendientes de importación al archivo, según la última
+verificación documentada.
 
 ## Superficies de producto
 
@@ -110,7 +131,8 @@ hasta recibir autorización y datos reales.
 - `/settings/caja`: caja.
 - `/settings/impresion`: impresión.
 - `/settings/diagnostico`: diagnósticos.
-- `/control/licencia`: control privado del vendedor.
+- `/settings/negocios`: administración de negocios y personal global.
+- `/settings/licencias`: control de vigencias por negocio, exclusivo de la cuenta Rincón 404.
 
 ## Principios de producto
 

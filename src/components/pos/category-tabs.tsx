@@ -1,30 +1,44 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { ListFilter } from "lucide-react";
 import { useCatalogStore, useUIStore } from "@/lib/stores";
 
 export const CategoryTabs = memo(function CategoryTabs() {
   const categories = useCatalogStore((state) => state.categories);
   const menuItems = useCatalogStore((state) => state.menuItems);
+  const catalogBusinessId = useCatalogStore((state) => state.catalogBusinessId);
   const activeCategory = useUIStore((state) => state.activeCategory);
   const setActiveCategory = useUIStore((state) => state.setActiveCategory);
+  const categoryScrollerRef = useRef<HTMLDivElement>(null);
   const activeCats = categories.filter((category) => category.is_active);
+
+  useEffect(() => {
+    if (categoryScrollerRef.current) categoryScrollerRef.current.scrollLeft = 0;
+  }, [catalogBusinessId]);
+
   const { itemCounts, activeItemCount } = useMemo(() => {
     const counts = new Map<string, number>();
+    const activeCategoryIds = new Set(
+      categories.filter((category) => category.is_active).map((category) => category.id)
+    );
     let total = 0;
 
     for (const item of menuItems) {
-      if (!item.is_active) continue;
+      if (
+        !item.is_active ||
+        item.sale_mode === "combo_only" ||
+        (item.category_id && !activeCategoryIds.has(item.category_id))
+      ) continue;
       total += 1;
       counts.set(item.category_id, (counts.get(item.category_id) ?? 0) + 1);
     }
 
     return { itemCounts: counts, activeItemCount: total };
-  }, [menuItems]);
+  }, [categories, menuItems]);
 
   return (
-    <div className="shrink-0 border-b border-border bg-background/80 px-3 py-2 sm:px-4">
+    <div className="mideli-pos-category-tabs shrink-0 border-b border-border bg-background px-3 py-2 sm:px-4">
       <div className="flex min-w-0 items-center gap-2.5">
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-light text-brand">
@@ -38,7 +52,7 @@ export const CategoryTabs = memo(function CategoryTabs() {
           </div>
         </div>
 
-        <div className="pos-scroll min-w-0 flex-1 touch-pan-x overscroll-contain overflow-x-auto xl:overflow-visible">
+        <div ref={categoryScrollerRef} className="pos-scroll min-w-0 flex-1 touch-pan-x overscroll-contain overflow-x-auto xl:overflow-visible">
           <div className="flex min-w-max flex-nowrap items-center gap-2 pb-0.5 xl:min-w-0 xl:flex-wrap">
             <button
               type="button"

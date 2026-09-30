@@ -102,7 +102,7 @@ test("agrupa las ventas del corte por tipo de servicio", () => {
 test("el resumen compartible separa cobros y pendientes", () => {
   const summary = buildCashShiftShareText(shiftFixture());
 
-  expect(summary).toContain("Corte Mideli #38");
+  expect(summary).toContain("Corte #38");
   expect(summary).toContain("Venta neta: $650.00");
   expect(summary).toContain("Efectivo contado: $850.00");
   expect(summary).toContain("Pendientes transferidos: 1");

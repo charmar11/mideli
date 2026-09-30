@@ -25,23 +25,71 @@ Supabase
 
 ## Estado de arquitectura multinegocio
 
-La operación visible continúa siendo Mideli y solo existe un negocio activo,
-pero la primera rebanada multinegocio ya está aplicada en Supabase. El esquema
-usa `business_id`, `organization_id`, membresías, capacidades y RLS para
-separar catálogo, pedidos, inventario, caja, pagos, reportes y personal.
-Just Dipping todavía no está registrado ni tiene datos importados.
+La lectura remota del 2026-09-27 confirmó Mideli y Just Dipping registrados
+como negocios activos. El esquema usa `business_id`, `organization_id`,
+membresías, capacidades y RLS para separar catálogo, pedidos, inventario, caja,
+pagos, reportes y personal. El catálogo y el archivo histórico de Just Dipping
+no se mezclan con las ventas ni la caja operativa de Mideli.
 
-La arquitectura objetivo agrega una organización de Rincón 404 Food Park,
-negocios con ciclo de vida, membresías y capacidades por alcance. El pedido,
-catálogo, inventario, caja, pagos, reportes y notificaciones deberán resolver
-el negocio en servidor y en RLS, no solamente en la interfaz. Las mesas pueden
-seguir siendo compartidas físicamente, pero cada visita tendrá cuentas y
-órdenes separadas por negocio.
+La arquitectura incorpora una organización de Rincón 404 Food Park, negocios
+con ciclo de vida, membresías y capacidades por alcance. Pedido, catálogo,
+inventario, caja, pagos, reportes y notificaciones deben resolver el negocio
+en servidor y RLS, no solamente en la interfaz. Las mesas pueden ser
+compartidas físicamente, mientras cada visita conserva cuentas y órdenes
+separadas por negocio.
 
-La migración es Mideli-first y aditiva. Las fronteras transaccionales se
-habilitan por etapas y se verifican antes de registrar otro negocio real.
+La migración empezó por Mideli y se hizo por etapas aditivas. Las fronteras
+transaccionales se verifican por negocio.
 WhatsApp sigue asignado explícitamente a Mideli y no se habilitará para Just
-Dipping en esta fase.
+Dipping en esta fase. La comanda mixta soporta comedor con una orden y cuenta
+separadas por negocio. Los pedidos mixtos de domicilio y para llevar siguen
+bloqueados hasta implementar un RPC atómico y definir el tratamiento de la
+tarifa externa de entrega.
+
+### Just Dipping: combos y tickets anteriores
+
+La implementación incorpora `is_combo` y una definición de combo simple en
+`menu_items`. El pedido conserva cada combo como una sola línea con el precio
+del paquete; el servidor valida componentes/opciones contra el catálogo del
+mismo negocio y guarda snapshots para cocina, comprobantes e inventario. Los
+folios de pedidos, aperturas de caja y pagos se asignan por `business_id`, sin
+renumerar operaciones existentes.
+
+Los tickets del sistema Firestore no se convierten en órdenes o pagos activos.
+`legacy_sales_tickets` los separa como archivo de consulta con artículos
+sanitizados, RLS por negocio y escritura reservada al servicio de migración.
+No se almacenan datos de cliente y no afectan caja ni reportes operativos. La
+revisión de origen detectó una discrepancia en Promo Lunes: su descripción dice
+que incluye cheesecake, pero no aparece en la configuración de componentes;
+mantenerla deshabilitada hasta confirmación del dueño.
+
+Las migraciones de combos, folios, catálogo y estructura del archivo constan
+aplicadas en producción al corte del 2026-09-27. La inspección de Firebase
+encontró 1,138 tickets anteriores, pero la última revisión documentada de
+`legacy_sales_tickets` encontró cero filas de Just Dipping: la importación de
+esos tickets sigue pendiente. Cuando se importen, quedarán fuera de ventas,
+caja y reportes operativos. Antes del piloto hay que verificar catálogo,
+inventario y permisos con el dueño.
+
+### Licencias por negocio
+
+`business_licenses` conserva una vigencia local inclusiva por negocio y
+`business_license_events` registra cambios auditables sin montos. La cuenta de
+plataforma Rincón 404 administra vigencias desde `/settings/licencias`; el
+`app_license.status` legado sólo conserva una suspensión técnica global. RLS,
+RPCs y triggers bloquean lectura y escritura operativa por negocio. Un fallo de
+verificación es fail-closed sin afirmar deuda.
+
+Las meseras globales mantienen los negocios autorizados y vigentes; un local
+no disponible aparece neutral y deshabilitado, sin exponer fecha o estado de
+licencia. Si Mideli no está disponible, el webhook de WhatsApp descarta eventos
+válidos sin procesarlos y los envíos y tareas programadas se detienen.
+
+El panel `/dashboard` también funciona como centro de preparación para dueños
+con permisos de borrador, evitando redirigirlos de vuelta al menú. Para un
+negocio sin pantalla de Cocina, Estado puede mover pedidos entre Pendiente,
+Preparando y Listo cuando la cuenta tenga el permiso explícito de preparación
+del negocio; operar pedidos por sí solo no concede ese permiso.
 
 ## Mapa de módulos
 

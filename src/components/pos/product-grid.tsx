@@ -1,7 +1,7 @@
 "use client";
 
-import { memo, useMemo } from "react";
-import { Check, Plus, RefreshCw, Search } from "lucide-react";
+import { memo, useMemo, useState } from "react";
+import { Check, Package, Plus, RefreshCw, Search, UtensilsCrossed } from "lucide-react";
 import { useCartStore, useCatalogStore, useUIStore } from "@/lib/stores";
 import type { MenuItem } from "@/types/database";
 
@@ -14,6 +14,34 @@ const priceFormatter = new Intl.NumberFormat("es-MX");
 
 function formatPrice(price: number): string {
   return priceFormatter.format(price);
+}
+
+function ProductPhoto({ src }: { src: string | null }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const imageSrc = src && failedSrc !== src ? src : null;
+
+  return (
+    <div className="flex h-20 w-full items-center justify-center overflow-hidden bg-surface-raised sm:h-24 xl:h-28">
+      {imageSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageSrc}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailedSrc(imageSrc)}
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+        />
+      ) : (
+        <UtensilsCrossed
+          size={24}
+          strokeWidth={1.5}
+          aria-hidden="true"
+          className="text-muted-foreground/35"
+        />
+      )}
+    </div>
+  );
 }
 
 export const ProductGrid = memo(function ProductGrid({
@@ -35,10 +63,15 @@ export const ProductGrid = memo(function ProductGrid({
     const categoryOrder = new Map(
       categories.map((category, index) => [category.id, category.sort_order ?? index])
     );
+    const activeCategoryIds = new Set(
+      categories.filter((category) => category.is_active).map((category) => category.id)
+    );
 
     return menuItems
       .filter((item) => {
         if (!item.is_active) return false;
+        if (item.sale_mode === "combo_only") return false;
+        if (item.category_id && !activeCategoryIds.has(item.category_id)) return false;
         if (activeCategory && item.category_id !== activeCategory) return false;
         if (!query) return true;
 
@@ -84,7 +117,7 @@ export const ProductGrid = memo(function ProductGrid({
   }, [cartItems]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="mideli-pos-catalog flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="px-3 pb-2 sm:px-4">
         {catalogError ? (
           <div
@@ -114,7 +147,7 @@ export const ProductGrid = memo(function ProductGrid({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar platillo…"
-            className="h-12 w-full rounded-2xl border border-border bg-surface py-2 pl-11 pr-4 font-body text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+            className="h-11 w-full rounded-xl border border-border bg-surface py-2 pl-11 pr-4 font-body text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15 sm:h-12 sm:rounded-2xl"
           />
         </div>
       </div>
@@ -157,7 +190,7 @@ export const ProductGrid = memo(function ProductGrid({
                 type="button"
                 data-product-id={item.id}
                 onClick={() => onProductClick(item)}
-                className={`group relative flex min-h-[9rem] touch-manipulation flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition-[border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float active:scale-[0.985] ${
+                className={`group relative flex min-h-[8.5rem] touch-manipulation flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition-[border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float active:scale-[0.985] sm:min-h-[9rem] ${
                   wasJustAdded
                     ? "pos-product-added border-success/70"
                     : "border-border/80"
@@ -171,31 +204,21 @@ export const ProductGrid = memo(function ProductGrid({
                     {quantityInCart}
                   </span>
                 ) : null}
-                {item.image_url ? (
-                  <div className="h-28 w-full overflow-hidden bg-surface-raised">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={item.image_url}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex h-28 items-end bg-gradient-to-br from-brand/15 via-surface-raised to-gold-light px-3 pb-2">
-                    <span className="font-brand text-2xl leading-none text-brand/40">M</span>
-                  </div>
-                )}
+                <ProductPhoto src={item.image_url} />
 
                 <div className="flex flex-1 flex-col gap-1 p-3">
                   <div className="flex items-start justify-between gap-1">
                     <span className="min-w-0 break-words font-heading text-sm font-bold leading-snug text-foreground [overflow-wrap:anywhere]">
                       {item.name}
                     </span>
-                    {item.modifiers?.length ? (
-                      <span className="shrink-0 rounded-full bg-brand-light px-2 py-0.5 font-heading text-[10px] font-bold text-brand">
-                        +
+                {item.is_combo ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 font-heading text-[10px] font-bold text-success">
+                    <Package size={11} aria-hidden />
+                    Combo
+                  </span>
+                ) : item.modifiers?.length ? (
+                  <span className="shrink-0 rounded-full bg-brand-light px-2 py-0.5 font-heading text-[10px] font-bold text-brand">
+                    +
                       </span>
                     ) : null}
                   </div>

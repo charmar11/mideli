@@ -28,10 +28,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { RoleOnboardingTour } from "@/components/onboarding/role-onboarding-tour";
+import { getBusinessLogoUrl } from "@/lib/business-branding";
+import {
+  getSelectableBusinessContexts,
+  resolveBusinessBrandingContext,
+} from "@/lib/multibusiness/business-context-selection";
 import { createClient } from "@/lib/supabase/client";
+import { DashboardUserProvider } from "@/components/dashboard/dashboard-user-context";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { useCartStore } from "@/lib/stores/cart-store";
 import type { Profile } from "@/types/database";
+import type { BusinessContextRow } from "@/types/multibusiness";
 
 type NavItem = {
   href: string;
@@ -85,6 +92,13 @@ const ADMIN_ITEMS: NavItem[] = [
     match: (path) => path === "/settings",
   },
   {
+    href: "/settings/negocios",
+    label: "Negocios",
+    description: "Locales y cuentas de dueños",
+    icon: Building2,
+    match: (path) => path.startsWith("/settings/negocios"),
+  },
+  {
     href: "/settings/mesas",
     label: "Mesas",
     description: "Zonas y distribución",
@@ -123,6 +137,22 @@ const CONTROL_ITEMS: NavItem[] = [
     match: (path) => path.startsWith("/settings/diagnostico"),
   },
 ];
+
+function getSurfaceLabel(pathname: string) {
+  if (pathname === "/dashboard/mesero") return "Mesero";
+  if (pathname === "/dashboard/cocina") return "Cocina";
+  if (pathname === "/dashboard/whatsapp") return "WhatsApp";
+  if (pathname === "/dashboard/analiticas") return "Analíticas";
+  if (pathname.startsWith("/menu")) return "Menú";
+  if (pathname.startsWith("/settings/negocios")) return "Negocios";
+  if (pathname.startsWith("/settings/mesas")) return "Mesas";
+  if (pathname.startsWith("/settings/inventario")) return "Inventario";
+  if (pathname.startsWith("/settings/caja")) return "Caja";
+  if (pathname.startsWith("/settings/impresion")) return "Impresión";
+  if (pathname.startsWith("/settings/diagnostico")) return "Diagnóstico";
+  if (pathname === "/settings") return "Personal";
+  return "Operación";
+}
 
 function isGroupActive(items: NavItem[], pathname: string) {
   return items.some((item) => item.match(pathname));
@@ -285,13 +315,23 @@ function BusinessSelector({ compact = false }: { compact?: boolean }) {
   const ensureLoaded = useBusinessContextStore((state) => state.ensureLoaded);
   const selectBusiness = useBusinessContextStore((state) => state.selectBusiness);
   const hasActiveComanda = useCartStore((state) => state.items.length > 0);
+  const activeBusinesses = getSelectableBusinessContexts(
+    businesses.filter(
+      (business) => business.business_lifecycle_status === "active"
+    )
+  );
 
   useEffect(() => {
     void ensureLoaded();
   }, [ensureLoaded]);
 
+  // Mesero already has an explicit menu selector for mixed-business orders.
+  // Hiding the global context selector here avoids two competing selectors
+  // and keeps the primary navigation clear on tablets.
+  if (pathname === "/dashboard/mesero") return null;
+
   if (
-    businesses.length <= 1 ||
+    activeBusinesses.length <= 1 ||
     !selectedBusinessId ||
     (pathname === "/dashboard/mesero" && hasActiveComanda)
   ) {
@@ -320,13 +360,41 @@ function BusinessSelector({ compact = false }: { compact?: boolean }) {
           compact ? "text-[11px]" : "text-xs"
         }`}
       >
-        {businesses.map((business) => (
+        {activeBusinesses.map((business) => (
           <option key={business.business_id} value={business.business_id}>
             {business.business_display_name}
           </option>
         ))}
       </select>
     </label>
+  );
+}
+
+function WorkspaceBrand({
+  href = "/dashboard",
+  business,
+  className,
+}: {
+  href?: string;
+  business: BusinessContextRow | null;
+  className: string;
+}) {
+  const name = business?.business_display_name ?? "Rincón 404";
+  const logoUrl = getBusinessLogoUrl(business?.business_brand_logo_path);
+  return (
+    <Link href={href} aria-label={`${name}, inicio`} className={`inline-flex min-w-0 items-center gap-2 ${className}`}>
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logoUrl} alt="" className="h-8 w-9 shrink-0 rounded-md bg-white/5 object-contain p-0.5" />
+      ) : (
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand text-primary-foreground">
+          <Building2 size={16} aria-hidden />
+        </span>
+      )}
+      <span className="max-w-36 truncate font-heading font-extrabold tracking-[-0.025em] text-foreground">
+        {name}
+      </span>
+    </Link>
   );
 }
 
@@ -347,12 +415,12 @@ function MobileLink({
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      className={`flex min-h-16 min-w-[4.5rem] flex-1 shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 py-2 font-heading text-[10px] font-semibold focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
+      className={`mideli-touch-target flex min-h-16 min-w-[4.5rem] flex-1 shrink-0 touch-manipulation select-none flex-col items-center justify-center gap-0.5 py-2 font-heading text-[10px] font-semibold focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
         active ? "text-brand" : "text-muted-foreground"
       }`}
     >
       <span
-        className={`flex h-8 w-12 items-center justify-center rounded-full ${
+        className={`flex h-8 w-12 items-center justify-center rounded-xl transition-colors ${
           active ? "bg-brand-light" : ""
         }`}
       >
@@ -465,6 +533,7 @@ function MobileMoreDrawer({
 interface DashboardShellProps {
   children: React.ReactNode;
   userName: string;
+  userId: string;
   userRole: Profile["role"];
   capabilities?: string[];
   multibusinessContextAvailable?: boolean;
@@ -474,6 +543,7 @@ interface DashboardShellProps {
 export function DashboardShell({
   children,
   userName,
+  userId,
   userRole,
   capabilities = [],
   multibusinessContextAvailable = false,
@@ -481,52 +551,109 @@ export function DashboardShell({
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const refreshBusinessContext = useBusinessContextStore((state) => state.ensureLoaded);
+  const businessContexts = useBusinessContextStore((state) => state.businesses);
+  const localBusinessBrand = resolveBusinessBrandingContext(businessContexts);
   const isKitchenFocus = pathname === "/dashboard/cocina";
+  const surfaceLabel = getSurfaceLabel(pathname);
   const isAdmin = userRole === "owner" || userRole === "admin";
   const hasCapability = (capability: string) => capabilities.includes(capability);
+
+  useEffect(() => {
+    void refreshBusinessContext(true);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshBusinessContext(true);
+      }
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
+    };
+  }, [refreshBusinessContext]);
   const canUsePos =
-    isAdmin ||
+    (!multibusinessContextAvailable && isAdmin) ||
     (!multibusinessContextAvailable &&
       (userRole === "waiter" || userRole === "supervisor")) ||
     hasCapability("business.operate_orders") ||
     hasCapability("organization.operate_orders");
   const canUseKitchen =
-    isAdmin ||
+    (!multibusinessContextAvailable && isAdmin) ||
     (!multibusinessContextAvailable &&
       (userRole === "kitchen" || userRole === "supervisor")) ||
     hasCapability("business.update_preparation");
   const canUseWhatsapp =
-    isAdmin ||
+    (!multibusinessContextAvailable && isAdmin) ||
     (multibusinessContextAvailable
       ? whatsappAccess
       : userRole === "waiter" || userRole === "supervisor");
+  const canUseAnalytics =
+    (!multibusinessContextAvailable && isAdmin) ||
+    (multibusinessContextAvailable &&
+      isAdmin &&
+      (hasCapability("business.operate_orders") ||
+        hasCapability("business.charge_orders") ||
+        hasCapability("business.manage_cash") ||
+        hasCapability("organization.charge_orders")));
   const adminItems = ADMIN_ITEMS.filter((item) => {
     if (item.href === "/menu") {
-      return isAdmin || hasCapability("business.manage_catalog");
+      return (
+        (!multibusinessContextAvailable && isAdmin) ||
+        hasCapability("business.manage_catalog")
+      );
     }
     if (item.href === "/settings") {
       return (
-        isAdmin ||
+        (!multibusinessContextAvailable && isAdmin) ||
         hasCapability("business.manage_staff") ||
         hasCapability("organization.manage_global_waiters")
       );
     }
-    return isAdmin || hasCapability("organization.manage_tables");
+    if (item.href === "/settings/negocios") {
+      return hasCapability("platform.manage_businesses");
+    }
+    return (
+      (!multibusinessContextAvailable && isAdmin) ||
+      hasCapability("organization.manage_tables")
+    );
   });
   const controlItems = CONTROL_ITEMS.filter((item) => {
     if (item.href === "/settings/inventario") {
-      return isAdmin || hasCapability("business.manage_inventory");
+      return (
+        (!multibusinessContextAvailable && isAdmin) ||
+        hasCapability("business.manage_inventory")
+      );
     }
     if (item.href === "/settings/caja") {
-      return isAdmin || hasCapability("business.manage_cash");
+      return (
+        (!multibusinessContextAvailable && isAdmin) ||
+        hasCapability("business.manage_cash")
+      );
     }
-    return isAdmin;
+    if (item.href === "/settings/impresion") {
+      return (
+        (!multibusinessContextAvailable && isAdmin) ||
+        hasCapability("business.manage_catalog")
+      );
+    }
+    if (item.href === "/settings/diagnostico") {
+      return (
+        (!multibusinessContextAvailable && isAdmin) ||
+        (isAdmin &&
+          (hasCapability("business.manage_catalog") ||
+            hasCapability("business.manage_cash") ||
+            hasCapability("platform.manage_businesses")))
+      );
+    }
+    return false;
   });
   const operationItems: NavItem[] = [
     ...(canUsePos ? [POS_ITEM] : []),
     ...(canUseKitchen ? [KITCHEN_ITEM] : []),
     ...(canUseWhatsapp ? [WHATSAPP_ITEM] : []),
-    ...(isAdmin ? [ANALYTICS_ITEM] : []),
+    ...(canUseAnalytics ? [ANALYTICS_ITEM] : []),
   ];
   const operationHrefs = operationItems.map((item) => item.href).join("|");
 
@@ -552,7 +679,7 @@ export function DashboardShell({
 
   return (
     <div
-      className={`flex h-dvh flex-col bg-background ${isKitchenFocus ? "" : "xl:flex-row"}`}
+      className={`mideli-dashboard-shell flex h-[100dvh] flex-col bg-background ${isKitchenFocus ? "" : "xl:flex-row"}`}
     >
       <aside
         className={
@@ -562,9 +689,7 @@ export function DashboardShell({
         }
       >
         <div className="flex h-16 items-center border-b border-sidebar-border px-4">
-          <Link href="/dashboard" className="font-brand text-[1.75rem] text-brand">
-            Mideli
-          </Link>
+          <WorkspaceBrand business={localBusinessBrand} className="text-base" />
           <div className="ml-auto">
             <BusinessSelector compact />
           </div>
@@ -626,9 +751,7 @@ export function DashboardShell({
             : "mideli-dashboard-responsive-header hidden h-16 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 shadow-sm sm:px-4 md:flex xl:hidden"
         }
       >
-        <Link href="/dashboard" className="mr-1 shrink-0 font-brand text-2xl text-brand">
-          Mideli
-        </Link>
+        <WorkspaceBrand business={localBusinessBrand} className="mr-1 shrink-0 text-sm" />
         <BusinessSelector compact />
         <nav className="pos-scroll flex min-w-0 flex-1 touch-pan-x items-center gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain" aria-label="Navegación principal">
           {operationItems.map((item) => (
@@ -678,15 +801,19 @@ export function DashboardShell({
         className={
           isKitchenFocus
             ? "hidden"
-            : "mideli-dashboard-responsive-header flex h-14 shrink-0 items-center border-b border-border bg-surface px-4 shadow-sm md:hidden"
+            : "mideli-dashboard-responsive-header mideli-context-bar flex h-14 shrink-0 items-center border-b border-border px-4 shadow-sm md:hidden"
         }
       >
-        <Link href="/dashboard" className="shrink-0 font-brand text-2xl text-brand">
-          Mideli
-        </Link>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <WorkspaceBrand business={localBusinessBrand} className="shrink-0 text-sm" />
+          <span className="h-5 w-px shrink-0 bg-border" aria-hidden />
+          <span className="truncate font-heading text-xs font-bold text-foreground">
+            {surfaceLabel}
+          </span>
+        </div>
         <div className="ml-auto flex min-w-0 items-center gap-2">
           <BusinessSelector compact />
-          <span className="max-w-28 truncate text-xs text-muted-foreground">
+          <span className="hidden max-w-28 truncate text-xs text-muted-foreground sm:inline">
             {userName}
           </span>
           <button
@@ -711,9 +838,7 @@ export function DashboardShell({
 
       {isKitchenFocus ? (
         <header className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface px-3 shadow-sm sm:px-5">
-          <Link href="/dashboard/cocina" className="font-brand text-xl text-brand">
-            Mideli
-          </Link>
+          <WorkspaceBrand href="/dashboard/cocina" business={localBusinessBrand} className="text-sm" />
           <div className="flex items-center gap-2">
             <BusinessSelector compact />
             <span className="hidden font-body text-[11px] text-muted-foreground sm:inline">
@@ -742,13 +867,15 @@ export function DashboardShell({
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+        <main className="mideli-dashboard-main min-h-0 flex-1 overflow-hidden">
+          <DashboardUserProvider value={userId}>{children}</DashboardUserProvider>
+        </main>
 
         <nav
           className={
             isKitchenFocus
               ? "hidden"
-              : "mideli-mobile-bottom-nav flex min-h-16 shrink-0 touch-manipulation items-stretch border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+              : "mideli-mobile-bottom-nav flex min-h-16 shrink-0 touch-manipulation select-none items-stretch overflow-clip overscroll-none border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
           }
           aria-label="Navegación"
         >

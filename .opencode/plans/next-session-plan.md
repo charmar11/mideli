@@ -1,5 +1,10 @@
 # Mideli: plan para la siguiente sesión
 
+> Archivo histórico del 2026-09-02. Varias fases ya avanzaron y el proyecto
+> incorporó Just Dipping después de esta fecha. Para continuar hoy, usar
+> `docs/WORKFLOW.md`, `docs/README.md` y el contexto acumulado; verificar el
+> estado remoto antes de convertir este plan en trabajo pendiente.
+
 Fecha de actualización: 2026-09-02
 Base de trabajo: `v0.9-piloto`
 Producción: https://mideli.vercel.app

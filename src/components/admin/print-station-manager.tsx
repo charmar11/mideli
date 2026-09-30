@@ -310,7 +310,7 @@ export function PrintStationManager() {
   const failedCount = jobs.filter((job) => job.status === "failed").length;
 
   return (
-    <div className="pos-scroll h-full overflow-y-auto bg-background p-3 pb-10 sm:p-5 lg:p-6">
+    <div className="mideli-page-scroll pos-scroll h-full overflow-y-auto bg-background p-3 pb-10 sm:p-5 lg:p-6">
       <div className="mx-auto max-w-6xl space-y-5">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
@@ -459,7 +459,11 @@ function KitchenTicket({ payload }: { payload: KitchenPrintPayload }) {
             {item.selected_modifiers?.length ? (
               <div className="mt-1 space-y-0.5 pl-2 font-body text-[10px] leading-tight">
                 {item.selected_modifiers.map((modifier, index) => (
-                  <p key={`${modifier.option_id ?? modifier.option}-${index}`}>+ {modifier.option}</p>
+                  <p key={`${modifier.option_id ?? modifier.option}-${index}`}>
+                    {modifier.group === "Incluye" ? "• " : "+ "}
+                    {modifier.group && modifier.group !== "Incluye" ? `${modifier.group}: ` : ""}
+                    {modifier.option}
+                  </p>
                 ))}
               </div>
             ) : null}
@@ -468,7 +472,7 @@ function KitchenTicket({ payload }: { payload: KitchenPrintPayload }) {
         ))}
       </div>
       {order.notes ? <p className="border-t-2 border-black pt-2 font-body text-[10px] font-black">NOTA GENERAL: {order.notes}</p> : null}
-      <p className="mt-3 border-t border-dashed border-black pt-2 text-center font-data text-[10px]">Mideli · impresión {payload.attempt}</p>
+      <p className="mt-3 border-t border-dashed border-black pt-2 text-center font-data text-[10px]">Comanda · impresión {payload.attempt}</p>
     </article>
   );
 }

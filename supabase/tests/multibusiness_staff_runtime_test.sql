@@ -45,12 +45,12 @@ SELECT ok(
   'authenticated managers can change membership status'
 );
 SELECT ok(
-  has_function_privilege(
+  NOT has_function_privilege(
     'authenticated',
     'public.update_business_staff_membership_role(uuid,text)'::regprocedure,
     'EXECUTE'
   ),
-  'authenticated business owners can change local roles'
+  'the legacy fixed-role RPC cannot bypass the configurable role gateway'
 );
 SELECT ok(
   NOT has_table_privilege('authenticated', 'public.memberships', 'INSERT'),

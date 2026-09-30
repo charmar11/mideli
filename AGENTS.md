@@ -6,6 +6,12 @@ Antes de modificar el proyecto, lee `.opencode/plans/mideli-context.md`. Ese arc
 
 El archivo `.opencode/plans/handoff.md` es histórico. Si contradice al contexto extendido o al código actual, verifica el código y usa `mideli-context.md` como referencia principal.
 
+Para localizar una función, usa `docs/README.md`; para colaborar con el dueño,
+sigue `docs/WORKFLOW.md`. `docs_dev/` y `docs/superpowers/` contienen planes y
+bitácoras con fecha, no una garantía del estado actual. Si una sección antigua
+de `mideli-context.md` contradice una actualización posterior, confirma el
+comportamiento en el código y en el entorno afectado.
+
 ## Info del Proyecto
 - **Repositorio**: https://github.com/charmar11/mideli
 - **Proyecto Supabase**: qgnjennimvbrfxvcmowb
@@ -69,7 +75,11 @@ Nunca commitear `.env.local`. Usar `.env.example` como fuente de verdad para var
 
 ## Testing
 
-No hay framework de testing configurado aún. Agregar cuando sea necesario.
+Hay pruebas Playwright en `tests/e2e/`, con proyectos de escritorio, tablet y
+móvil, y pruebas SQL en `supabase/tests/`. Ejecuta las pruebas dirigidas al
+flujo afectado además de lint y build. El checklist de operación real está en
+`docs/releases/v0.9-piloto.md`; las pruebas automatizadas no sustituyen la
+impresora, notificaciones, cuentas y dispositivos reales.
 
 ## Despliegue
 
@@ -88,16 +98,25 @@ Antes de actuar, usa esta prioridad:
 4. `.opencode/plans/mideli-context.md` para decisiones acumuladas y pendientes.
 5. `PRODUCT.md`, `DESIGN.md`, `docs/ARCHITECTURE.md` y `docs/DECISIONS.md` para producto, interfaz y arquitectura.
 
+`docs/README.md` es el índice de lectura y `docs/WORKFLOW.md` define el
+proceso de cada entrega. Actualiza la guía vigente cuando cambie una regla o
+un flujo, y etiqueta como histórica la descripción anterior que pueda inducir
+a error.
+
 Si una documentación contradice al código, no inventes una solución silenciosa: confirma el comportamiento real, actualiza la documentación afectada y registra la decisión si cambia el flujo.
 
 Los cambios sin commit son trabajo en curso. No los trates como una versión estable ni los descartes para limpiar el repositorio.
 
 ## Notas
 
-- Sistema de gestión para un local de comida (Burger & Sushi)
-- Producción opera actualmente un solo negocio dentro de la arquitectura
-  multinegocio de Rincón 404 Food Park; Mideli es el único negocio activo y
-  WhatsApp permanece exclusivo de Mideli
+- Sistema interno para los negocios de Rincón 404 Food Park.
+- La última comprobación documentada encontró a Mideli y Just Dipping activos
+  en la arquitectura multinegocio de Rincón 404 Food Park. Revisa el estado
+  remoto cuando la tarea dependa de actividad o licencia actual. WhatsApp
+  permanece exclusivo de Mideli.
+- El catálogo y los combos de Just Dipping están importados. Sus tickets
+  históricos de Firebase siguen pendientes de importación según la última
+  verificación documentada; no contarlos como ventas operativas.
 - UI en español (mercado México/LATAM)
 - Identidad de marca: fondo negro, rosa #F5145F, crema #FBF8E7, dorado #F6DDA4
 - Tipografías: Pacifico (marca), Sora (headings), Karla (body), JetBrains Mono (datos)

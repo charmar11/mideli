@@ -17,7 +17,7 @@ export default function AppError({
     Sentry.captureException(error);
 
     if (process.env.NODE_ENV !== "production") {
-      console.error("Mideli application error", error);
+      console.error("Application error", error);
     }
   }, [error]);
 
@@ -32,7 +32,7 @@ export default function AppError({
         </p>
         <h1 className="mt-2 font-heading text-2xl font-bold">Esta vista no pudo continuar</h1>
         <p className="mt-3 font-body text-sm leading-6 text-muted-foreground">
-          Mideli detuvo esta pantalla para evitar más problemas. Mostrar este aviso no realiza
+          El sistema detuvo esta pantalla para evitar más problemas. Mostrar este aviso no realiza
           cambios adicionales en pedidos, cobros o inventario.
         </p>
 

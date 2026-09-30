@@ -4,7 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Loader2, X, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useCatalogStore } from "@/lib/stores";
-import type { MenuItem, ModifierGroup, ModifierOption } from "@/types/database";
+import type {
+  ComboDefinition,
+  MenuItem,
+  ModifierGroup,
+  ModifierOption,
+  ProductSaleMode,
+} from "@/types/database";
+import { ComboBuilder } from "./combo-builder";
 import {
   PRODUCT_IMAGE_ACCEPT,
   removeManagedProductImage,
@@ -19,8 +26,13 @@ interface ProductFormModalProps {
 }
 
 export function ProductFormModal({ item, categoryId, onClose }: ProductFormModalProps) {
-  const { categories, createMenuItem, updateMenuItem } = useCatalogStore();
-  const [activeTab, setActiveTab] = useState<"info" | "modifiers">("info");
+  const { categories, menuItems, createMenuItem, updateMenuItem } = useCatalogStore();
+  const [activeTab, setActiveTab] = useState<"info" | "modifiers" | "combo">("info");
+  const [isCombo, setIsCombo] = useState(item?.is_combo ?? false);
+  const [saleMode, setSaleMode] = useState<ProductSaleMode>(item?.sale_mode ?? "both");
+  const [comboDefinition, setComboDefinition] = useState<ComboDefinition>(
+    item?.combo_definition ?? { fixed_components: [], choice_groups: [] }
+  );
   const [name, setName] = useState(item?.name ?? "");
   const [price, setPrice] = useState(item ? String(item.price) : "");
   const [description, setDescription] = useState(item?.description ?? "");
@@ -76,6 +88,57 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
       return;
     }
 
+    if (isCombo && modifiers.length > 0) {
+      toast.error("Este producto ya tiene variaciones", {
+        description: "Desactiva «Es un combo» y quita sus variaciones antes de guardarlo.",
+      });
+      return;
+    }
+
+    if (isCombo && saleMode === "combo_only") {
+      toast.error("Un combo debe poder venderse desde el menú", {
+        description: "El modo «Sólo como parte de un combo» se usa en los productos que componen otro combo.",
+      });
+      return;
+    }
+
+    if (isCombo) {
+      const hasInvalidFixedComponent = comboDefinition.fixed_components.some(
+        (component) =>
+          !component.menu_item_id ||
+          !Number.isInteger(component.quantity) ||
+          component.quantity < 1 ||
+          component.quantity > 20
+      );
+      const hasInvalidChoiceGroup = comboDefinition.choice_groups.some(
+        (group) =>
+          !group.name.trim() ||
+          group.options.length === 0 ||
+          group.options.some(
+            (option) =>
+              !option.menu_item_id ||
+              !Number.isInteger(option.quantity) ||
+              option.quantity < 1 ||
+              option.quantity > 20 ||
+              !Number.isInteger(option.price_adjustment) ||
+              option.price_adjustment < 0 ||
+              (option.is_gift && option.price_adjustment !== 0)
+          )
+      );
+      if (
+        (comboDefinition.fixed_components.length === 0 &&
+          comboDefinition.choice_groups.length === 0) ||
+        hasInvalidFixedComponent ||
+        hasInvalidChoiceGroup
+      ) {
+        toast.error("Completa la composición del combo", {
+          description: "Agrega componentes, selecciona sus productos y define las opciones requeridas.",
+        });
+        setActiveTab("combo");
+        return;
+      }
+    }
+
     const normalizedModifiers = modifiers.map((group) => {
       const selectionMode: NonNullable<ModifierGroup["selection_mode"]> =
         group.selection_mode === "multiple" ? "multiple" : "single";
@@ -122,6 +185,28 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
       description: description.trim(),
       category_id: selectedCategoryId,
       modifiers: normalizedModifiers,
+      is_combo: isCombo,
+      sale_mode: saleMode,
+      combo_definition: isCombo
+        ? {
+            fixed_components: comboDefinition.fixed_components.map((component) => ({
+              ...component,
+              quantity: Math.floor(component.quantity),
+              is_gift: Boolean(component.is_gift),
+            })),
+            choice_groups: comboDefinition.choice_groups.map((group) => ({
+              ...group,
+              name: group.name.trim(),
+              options: group.options.map((option) => ({
+                ...option,
+                label: option.label.trim(),
+                quantity: Math.floor(option.quantity),
+                price_adjustment: option.is_gift ? 0 : Math.floor(option.price_adjustment),
+                is_gift: Boolean(option.is_gift),
+              })),
+            })),
+          }
+        : { fixed_components: [], choice_groups: [] },
       image_url: removeImage ? "" : item?.image_url ?? "",
       is_active: item?.is_active ?? true,
       sort_order: item?.sort_order ?? 0,
@@ -273,11 +358,12 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
           <button
             type="button"
             onClick={() => setActiveTab("modifiers")}
+            disabled={isCombo}
             className={`min-h-11 flex-1 whitespace-nowrap rounded-xl px-4 py-2 font-heading text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand cursor-pointer sm:flex-none ${
               activeTab === "modifiers"
                 ? "bg-brand text-white"
                 : "bg-surface text-muted-foreground hover:text-foreground"
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             Variaciones
             {modifiers.length > 0 ? (
@@ -286,6 +372,19 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
               </span>
             ) : null}
           </button>
+          {isCombo ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab("combo")}
+              className={`min-h-11 flex-1 whitespace-nowrap rounded-xl px-4 py-2 font-heading text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:flex-none ${
+                activeTab === "combo"
+                  ? "bg-brand text-white"
+                  : "bg-surface text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Combo
+            </button>
+          ) : null}
         </div>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -330,6 +429,48 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
                     rows={3}
                     className="min-h-24 rounded-xl border border-border bg-surface px-3 py-2 font-body text-base text-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand-light sm:text-sm"
                   />
+                </div>
+
+                <label className="flex min-h-12 items-start gap-3 rounded-xl border border-border bg-surface px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={isCombo}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      setIsCombo(enabled);
+                      if (enabled && saleMode === "combo_only") setSaleMode("both");
+                      setActiveTab(enabled ? "combo" : "info");
+                    }}
+                    className="mt-0.5 h-4 w-4 accent-brand"
+                  />
+                  <span>
+                    <span className="block font-heading text-sm font-semibold text-foreground">Es un combo</span>
+                    <span className="block font-body text-xs leading-relaxed text-muted-foreground">
+                      Se cobra como un producto y puedes agregar lo que incluye y lo que se puede elegir.
+                    </span>
+                  </span>
+                </label>
+
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    htmlFor="product-sale-mode"
+                    className="font-heading text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                  >
+                    Dónde se puede usar
+                  </label>
+                  <select
+                    id="product-sale-mode"
+                    value={saleMode}
+                    onChange={(event) => setSaleMode(event.target.value as ProductSaleMode)}
+                    className="min-h-11 rounded-xl border border-border bg-surface px-3 font-body text-base text-foreground focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand-light sm:text-sm"
+                  >
+                    <option value="both">Venta individual y en combos</option>
+                    <option value="standalone_only">Sólo venta individual</option>
+                    {!isCombo ? <option value="combo_only">Sólo como parte de un combo</option> : null}
+                  </select>
+                  <p className="font-body text-xs leading-relaxed text-muted-foreground">
+                    Este ajuste es independiente de si el producto está activo. Los productos sólo de combo no aparecen para agregarlos directamente al pedido.
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -390,7 +531,7 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
                   </select>
                 </div>
               </div>
-            ) : (
+            ) : activeTab === "modifiers" ? (
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface/70 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
                   <p className="font-body text-sm leading-6 text-muted-foreground">
@@ -573,6 +714,13 @@ export function ProductFormModal({ item, categoryId, onClose }: ProductFormModal
                   </div>
                 )}
               </div>
+            ) : (
+              <ComboBuilder
+                definition={comboDefinition}
+                items={menuItems}
+                parentItemId={item?.id}
+                onChange={setComboDefinition}
+              />
             )}
           </div>
 

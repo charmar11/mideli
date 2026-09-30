@@ -4,6 +4,12 @@ import {
   shouldSuppressPushBanner,
 } from "@/lib/push-notification-policy";
 import {
+  canSendBusinessOrderNotification,
+  capabilityBelongsToBusiness,
+  getOrderNotificationDestination,
+  membershipBelongsToBusiness,
+} from "../../supabase/functions/_shared/order-notification-policy";
+import {
   createRequestDeadline,
   getRealtimeReconnectDelay,
 } from "@/lib/realtime-resilience";
@@ -35,6 +41,52 @@ test.describe("políticas de notificaciones", () => {
         { ...clients[0], visibilityState: "hidden" },
       ])
     ).toBe(false);
+  });
+
+  test("cada aviso multinegocio respeta el negocio y el permiso requerido", () => {
+    const organizationId = "org-1";
+    const businessId = "business-1";
+
+    expect(
+      membershipBelongsToBusiness(
+        { scope_type: "business", organization_id: organizationId, business_id: businessId },
+        organizationId,
+        businessId,
+      ),
+    ).toBe(true);
+    expect(
+      membershipBelongsToBusiness(
+        { scope_type: "business", organization_id: organizationId, business_id: "business-2" },
+        organizationId,
+        businessId,
+      ),
+    ).toBe(false);
+    expect(
+      capabilityBelongsToBusiness(
+        { capability_code: "business.operate_orders", organization_id: organizationId, business_id: "business-2" },
+        organizationId,
+        businessId,
+      ),
+    ).toBe(false);
+    expect(
+      capabilityBelongsToBusiness(
+        { capability_code: "organization.operate_orders", organization_id: organizationId, business_id: null },
+        organizationId,
+        businessId,
+      ),
+    ).toBe(true);
+    expect(canSendBusinessOrderNotification("new_order", ["organization.operate_orders"])).toBe(true);
+    expect(canSendBusinessOrderNotification("ready", ["business.operate_orders"])).toBe(false);
+    expect(canSendBusinessOrderNotification("ready", ["business.update_preparation"])).toBe(true);
+  });
+
+  test("el aviso abre la pantalla que la persona tiene permiso para usar", () => {
+    expect(
+      getOrderNotificationDestination("new_order", "business-1", ["business.operate_orders"], "order-1"),
+    ).toBe("/dashboard/mesero?mode=status&order=order-1");
+    expect(
+      getOrderNotificationDestination("new_order", "business-1", ["business.update_preparation"], "order-1"),
+    ).toBe("/dashboard/cocina?order=order-1");
   });
 });
 

@@ -12,7 +12,7 @@ const SHAPES: Array<{ value: TableShape; label: string }> = [
 ];
 
 const LABEL_PRESETS = [
-  { label: "Mideli", background_color: "#F5145F", text_color: "#FFFFFF", border_color: "#FF3B78" },
+  { label: "Zona principal", background_color: "#36C275", text_color: "#111014", border_color: "#F6DDA4" },
   { label: "Barra", background_color: "#2A242E", text_color: "#FBF8E7", border_color: "#F6DDA4" },
   { label: "Caja", background_color: "#211D24", text_color: "#FBF8E7", border_color: "#36C275" },
   { label: "Entrada", background_color: "#211D24", text_color: "#FBF8E7", border_color: "#B9AEB1" },
@@ -274,7 +274,7 @@ export function TableLayoutInspector({
                   value={label.label_text}
                   onChange={(event) => onChangeLabel({ label_text: event.target.value })}
                   className="h-12 w-full rounded-xl border border-border bg-background px-3 font-heading text-sm font-semibold text-foreground outline-none focus:border-brand focus:ring-4 focus:ring-brand/15"
-                  placeholder="Ej. Mideli, Barra o Entrada"
+                  placeholder="Ej. Barra principal, Terraza o Entrada"
                 />
               </label>
 

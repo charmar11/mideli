@@ -76,7 +76,7 @@ export function InventoryPurchasePanel({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-heading text-lg font-bold text-foreground">Compras y recepción</h2>
-          <p className="mt-1 font-body text-xs text-muted-foreground">Pide en cajas o paquetes. Mideli convierte todo a existencias reales.</p>
+          <p className="mt-1 font-body text-xs text-muted-foreground">Pide en cajas o paquetes. El sistema convierte todo a existencias reales.</p>
         </div>
         <button type="button" onClick={onDirectReceive} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-success/40 bg-success/10 px-4 font-heading text-xs font-bold text-success hover:bg-success/15">
           <Truck size={16} /> Recibir sin pedido

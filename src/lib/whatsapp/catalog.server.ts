@@ -16,7 +16,7 @@ export async function loadWhatsappCatalog(): Promise<ConversationCatalog> {
     const result = await admin
       .from("menu_items")
       .select(
-        "id,category_id,name,description,price,is_active,whatsapp_enabled,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(id,name,sort_order,is_active)"
+        "id,category_id,name,description,price,is_active,sale_mode,whatsapp_enabled,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(id,name,sort_order,is_active)"
       )
       .eq("is_active", true)
       .eq("categories.is_active", true)
@@ -30,7 +30,7 @@ export async function loadWhatsappCatalog(): Promise<ConversationCatalog> {
     const result = await admin
       .from("menu_items")
       .select(
-        "id,business_id,category_id,name,description,price,is_active,whatsapp_enabled,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(id,name,sort_order,is_active)"
+        "id,business_id,category_id,name,description,price,is_active,sale_mode,whatsapp_enabled,sort_order,modifiers,image_url,created_at,updated_at,categories!inner(id,name,sort_order,is_active)"
       )
       .eq("business_id", scope.businessId)
       .eq("is_active", true)

@@ -168,7 +168,7 @@ export default function MenuPage() {
   }
 
   return (
-    <div className="flex min-h-dvh min-w-0 max-w-full flex-col overflow-x-hidden bg-background">
+    <div className="mideli-menu-screen flex min-h-dvh min-w-0 max-w-full flex-col overflow-x-hidden bg-background">
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-surface/95 px-3 py-3 shadow-sm backdrop-blur sm:px-6">
         <div className="flex items-center gap-3">
           <Link
@@ -214,7 +214,7 @@ export default function MenuPage() {
           <CategoryManager />
         </aside>
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="mideli-menu-main flex min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <div className="min-w-0">
               <h2 className="truncate font-heading text-sm font-bold text-foreground sm:text-base">

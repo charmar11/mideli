@@ -1,5 +1,10 @@
 # Flujo de trabajo Mideli
 
+> Diseño histórico del flujo escrito durante la preparación multinegocio.
+> El proceso vigente y más sencillo para el dueño está en
+> `docs/WORKFLOW.md`. Las afirmaciones de esta versión sobre Just Dipping,
+> staging y migraciones deben contrastarse con el código y el estado remoto.
+
 Este es el procedimiento base para trabajar con el dueño y con agentes de IA.
 Está diseñado para que el proyecto avance rápido sin convertir cada petición
 en un cambio difícil de revisar o de revertir.

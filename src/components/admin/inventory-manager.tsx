@@ -124,7 +124,7 @@ export function InventoryManager() {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="mideli-inventory-screen flex h-full min-h-0 flex-col bg-background">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 shadow-sm sm:h-16 sm:px-5">
         <Link href="/dashboard" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground" aria-label="Volver al dashboard">
           <ArrowLeft size={17} />
@@ -164,7 +164,7 @@ export function InventoryManager() {
         </div>
       </nav>
 
-      <main className="pos-scroll min-h-0 flex-1 overflow-y-auto">
+      <main className="mideli-page-scroll pos-scroll min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-6xl p-3 pb-24 sm:p-5 sm:pb-8">
           {lastError ? (
             <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-destructive/25 bg-destructive/8 px-4 py-3">

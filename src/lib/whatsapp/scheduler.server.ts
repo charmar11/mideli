@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isMideliWhatsappAvailable } from "@/lib/business-license-server";
 import { serviceFunctionHeaders } from "@/lib/supabase/function-auth";
 import { readWhatsappServerConfig } from "./config.server";
 import {
@@ -191,6 +192,9 @@ async function processInactiveConversations() {
 }
 
 export async function runWhatsappScheduler() {
+  if (!(await isMideliWhatsappAvailable())) {
+    return { released: 0, reminded: 0, closed: 0 };
+  }
   const [released, inactivity] = await Promise.all([
     releaseScheduledOrders(),
     processInactiveConversations(),

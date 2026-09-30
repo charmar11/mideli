@@ -23,9 +23,10 @@ interface CashShiftState {
   currentShift: CashShift | null;
   loading: boolean;
   lastError: string | null;
-  fetchCurrentShift: (force?: boolean) => Promise<CashShift | null>;
+  fetchCurrentShift: (force?: boolean, businessId?: string | null) => Promise<CashShift | null>;
   fetchCurrentShiftForBusiness: (businessId?: string | null) => Promise<CashShift | null>;
   openShift: (input: {
+    businessId?: string;
     openingFloat: number;
     denominations?: Record<string, number>;
     note?: string;
@@ -35,8 +36,9 @@ interface CashShiftState {
     amount: number;
     reason: string;
   }) => Promise<CashShiftResult<CashShift>>;
-  listAuthorizers: () => Promise<CashShiftResult<CashAuthorizer[]>>;
+  listAuthorizers: (businessId?: string | null) => Promise<CashShiftResult<CashAuthorizer[]>>;
   authorizeAction: (input: {
+    businessId?: string;
     authorizerId: string;
     pin: string;
     shiftId: string;
@@ -44,6 +46,7 @@ interface CashShiftState {
     amount: number;
   }) => Promise<CashShiftResult<string>>;
   recordMovement: (input: {
+    businessId?: string;
     shiftId: string;
     type: CashMovementType;
     direction: CashDirection;
@@ -52,12 +55,14 @@ interface CashShiftState {
     authorization: string;
   }) => Promise<CashShiftResult<CashShift>>;
   previewClose: (input: {
+    businessId?: string;
     shiftId: string;
     countMode: CashCountMode;
     denominations?: Record<string, number>;
     countedCash?: number;
   }) => Promise<CashShiftResult<CashClosePreview>>;
   closeShift: (input: {
+    businessId?: string;
     shiftId: string;
     countMode: CashCountMode;
     denominations?: Record<string, number>;
@@ -66,7 +71,7 @@ interface CashShiftState {
     authorization?: string | null;
   }) => Promise<CashShiftResult<CashShift>>;
   listHistory: () => Promise<CashShiftResult<CashShift[]>>;
-  getDetail: (shiftId: string) => Promise<CashShiftResult<CashShiftDetail>>;
+  getDetail: (shiftId: string, businessId?: string | null) => Promise<CashShiftResult<CashShiftDetail>>;
   listMovements: (input?: {
     since?: string | null;
     until?: string | null;
@@ -98,10 +103,10 @@ interface CashShiftState {
     reason: string;
     confirmation: string;
   }) => Promise<CashShiftResult<{ id: string; number: number; deleted: boolean }>>;
-  subscribe: () => () => void;
+  subscribe: (businessId?: string | null) => () => void;
 }
 
-let currentShiftRequest: Promise<CashShift | null> | null = null;
+const currentShiftRequests = new Map<string, Promise<CashShift | null>>();
 let currentShiftFetchedAt = 0;
 let currentShiftScopeKey: string | null = null;
 const CURRENT_SHIFT_CACHE_MS = 10_000;
@@ -120,13 +125,13 @@ function message(error: { message?: string } | null, fallback: string) {
   return error?.message || fallback;
 }
 
-async function getCashScope(): Promise<CashScope> {
+async function getCashScope(businessId?: string | null): Promise<CashScope> {
   const context = useBusinessContextStore.getState();
   await context.ensureLoaded();
   const current = useBusinessContextStore.getState();
   return {
-    businessId: current.selectedBusinessId,
-    legacyFallback: current.legacyFallback,
+    businessId: businessId ?? current.selectedBusinessId,
+    legacyFallback: businessId ? false : current.legacyFallback,
   };
 }
 
@@ -134,9 +139,10 @@ async function invokeCashAction<T>(
   action: string,
   payload: Record<string, unknown>,
   legacyFunction: string,
-  providedScope?: CashScope
+  providedScope?: CashScope,
+  businessId?: string | null
 ): Promise<CashRpcResult<T>> {
-  const scope = providedScope ?? (await getCashScope());
+  const scope = providedScope ?? (await getCashScope(businessId));
   if (!scope.legacyFallback && !scope.businessId) {
     return {
       data: null,
@@ -164,9 +170,21 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
   loading: false,
   lastError: null,
 
-  fetchCurrentShift: async (force = false) => {
-    const scope = await getCashScope();
-    const scopeKey = scope.legacyFallback ? "legacy" : scope.businessId;
+  fetchCurrentShift: async (force = false, businessId) => {
+    // Clear a previously displayed shift synchronously when switching an
+    // explicitly scoped cash view, before loading the business context.
+    if (businessId && currentShiftScopeKey !== businessId) {
+      currentShiftScopeKey = businessId;
+      currentShiftFetchedAt = 0;
+      set({ currentShift: null, lastError: null });
+    }
+    const scope = await getCashScope(businessId);
+    const scopeKey = scope.legacyFallback ? "legacy" : scope.businessId ?? "missing";
+    if (currentShiftScopeKey !== scopeKey) {
+      currentShiftScopeKey = scopeKey;
+      currentShiftFetchedAt = 0;
+      set({ currentShift: null, lastError: null });
+    }
     if (
       !force &&
       currentShiftScopeKey === scopeKey &&
@@ -174,10 +192,11 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     ) {
       return get().currentShift;
     }
-    if (currentShiftRequest) return currentShiftRequest;
+    const existingRequest = currentShiftRequests.get(scopeKey);
+    if (existingRequest) return existingRequest;
 
-    currentShiftRequest = (async () => {
-      set({ loading: true });
+    set({ loading: true });
+    const request = (async () => {
       try {
         const { data, error } = await invokeCashAction<CashShift>(
           "current",
@@ -186,26 +205,46 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
           scope
         );
         const shift = error || !data ? null : data;
-        currentShiftFetchedAt = Date.now();
-        currentShiftScopeKey = scopeKey;
-        set({
-          currentShift: shift,
-          loading: false,
-          lastError: error ? message(error, "No se pudo consultar la caja") : null,
-        });
+        if (currentShiftScopeKey === scopeKey) {
+          currentShiftFetchedAt = Date.now();
+          set({
+            currentShift: shift,
+            loading: false,
+            lastError: error ? message(error, "No se pudo consultar la caja") : null,
+          });
+        }
         return shift;
+      } catch (error) {
+        if (currentShiftScopeKey === scopeKey) {
+          set({
+            currentShift: null,
+            loading: false,
+            lastError: message(
+              error instanceof Error ? error : null,
+              "No se pudo consultar la caja"
+            ),
+          });
+        }
+        return null;
       } finally {
-        currentShiftRequest = null;
+        if (currentShiftScopeKey === scopeKey) set({ loading: false });
       }
     })();
+    currentShiftRequests.set(scopeKey, request);
+    const clearRequest = () => {
+      if (currentShiftRequests.get(scopeKey) === request) {
+        currentShiftRequests.delete(scopeKey);
+      }
+    };
+    void request.then(clearRequest, clearRequest);
 
-    return currentShiftRequest;
+    return request;
   },
 
   fetchCurrentShiftForBusiness: async (businessId = null) => {
     const scope = await getCashScope();
     if (scope.legacyFallback || !businessId || scope.businessId === businessId) {
-      return get().fetchCurrentShift();
+      return get().fetchCurrentShift(false, scope.legacyFallback ? undefined : businessId);
     }
 
     const { data, error } = await invokeCashAction<CashShift>(
@@ -217,12 +256,12 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     return error || !data ? null : data;
   },
 
-  openShift: async ({ openingFloat, denominations = {}, note = "" }) => {
+  openShift: async ({ businessId, openingFloat, denominations = {}, note = "" }) => {
     const { data, error } = await invokeCashAction<CashShift>("open", {
       p_opening_float: openingFloat,
       p_opening_denominations: denominations,
       p_note: note,
-    }, "open_cash_shift");
+    }, "open_cash_shift", undefined, businessId);
     if (error || !data) {
       return { data: null, error: message(error, "No se pudo abrir la caja") };
     }
@@ -254,11 +293,13 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     return { data: shift, error: null };
   },
 
-  listAuthorizers: async () => {
+  listAuthorizers: async (businessId) => {
     const { data, error } = await invokeCashAction<unknown[]>(
       "list_authorizers",
       {},
-      "list_cash_authorizers"
+      "list_cash_authorizers",
+      undefined,
+      businessId
     );
     if (error) {
       return { data: null, error: message(error, "No se pudieron cargar los autorizadores") };
@@ -266,21 +307,21 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     return { data: (data ?? []) as unknown as CashAuthorizer[], error: null };
   },
 
-  authorizeAction: async ({ authorizerId, pin, shiftId, action, amount }) => {
+  authorizeAction: async ({ businessId, authorizerId, pin, shiftId, action, amount }) => {
     const { data, error } = await invokeCashAction<string>("authorize", {
       p_authorizer_id: authorizerId,
       p_pin: pin,
       p_shift_id: shiftId,
       p_action: action,
       p_amount: amount,
-    }, "authorize_cash_action");
+    }, "authorize_cash_action", undefined, businessId);
     if (error || !data) {
       return { data: null, error: message(error, "No se pudo autorizar la operación") };
     }
     return { data: data as string, error: null };
   },
 
-  recordMovement: async ({ shiftId, type, direction, amount, reason, authorization }) => {
+  recordMovement: async ({ businessId, shiftId, type, direction, amount, reason, authorization }) => {
     const { data, error } = await invokeCashAction<{ shift: CashShift }>(
       "record_movement",
       {
@@ -291,7 +332,9 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
       p_reason: reason,
       p_authorization: authorization,
       },
-      "record_cash_movement"
+      "record_cash_movement",
+      undefined,
+      businessId
     );
     if (error || !data) {
       return { data: null, error: message(error, "No se pudo registrar el movimiento") };
@@ -302,13 +345,13 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     return { data: result.shift, error: null };
   },
 
-  previewClose: async ({ shiftId, countMode, denominations = {}, countedCash }) => {
+  previewClose: async ({ businessId, shiftId, countMode, denominations = {}, countedCash }) => {
     const { data, error } = await invokeCashAction<CashClosePreview>("preview_close", {
       p_shift_id: shiftId,
       p_count_mode: countMode,
       p_denominations: denominations,
       p_counted_cash: countedCash ?? null,
-    }, "preview_cash_shift_close");
+    }, "preview_cash_shift_close", undefined, businessId);
     if (error || !data) {
       return { data: null, error: message(error, "No se pudo calcular el corte") };
     }
@@ -316,6 +359,7 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
   },
 
   closeShift: async ({
+    businessId,
     shiftId,
     countMode,
     denominations = {},
@@ -330,7 +374,7 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
       p_counted_cash: countedCash ?? null,
       p_note: note,
       p_authorization: authorization,
-    }, "close_cash_shift");
+    }, "close_cash_shift", undefined, businessId);
     if (error || !data) {
       return { data: null, error: message(error, "No se pudo cerrar la caja") };
     }
@@ -351,11 +395,13 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     return { data: (data ?? []) as unknown as CashShift[], error: null };
   },
 
-  getDetail: async (shiftId) => {
+  getDetail: async (shiftId, businessId) => {
     const { data, error } = await invokeCashAction<CashShiftDetail>(
       "detail",
       { p_shift_id: shiftId },
-      "get_cash_shift_detail"
+      "get_cash_shift_detail",
+      undefined,
+      businessId
     );
     if (error || !data) {
       return { data: null, error: message(error, "No se pudo cargar el corte") };
@@ -491,21 +537,26 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
     };
   },
 
-  subscribe: () => {
+  subscribe: (businessId) => {
     const supabase = createClient();
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const refresh = () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
         currentShiftFetchedAt = 0;
-        void get().fetchCurrentShift(true);
+        void get().fetchCurrentShift(true, businessId);
       }, 150);
     };
     const channel = supabase
       .channel(`cash-shift-${crypto.randomUUID()}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "cash_shifts" },
+        {
+          event: "*",
+          schema: "public",
+          table: "cash_shifts",
+          ...(businessId ? { filter: `business_id=eq.${businessId}` } : {}),
+        },
         refresh
       )
       .subscribe();
@@ -513,9 +564,10 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
       if (!document.hidden) refresh();
     };
     const businessChanged = () => {
+      if (businessId) return;
       currentShiftFetchedAt = 0;
       currentShiftScopeKey = null;
-      currentShiftRequest = null;
+      currentShiftRequests.clear();
       set({ currentShift: null, lastError: null });
       void get().fetchCurrentShift(true);
     };

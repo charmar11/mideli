@@ -15,6 +15,38 @@ export interface ModifierGroup {
   options: ModifierOption[];
 }
 
+export interface ComboComponentDefinition {
+  id: string;
+  menu_item_id: string;
+  quantity: number;
+  /** This component is a gift in this combo only; it does not add revenue. */
+  is_gift?: boolean;
+}
+
+export interface ComboChoiceOptionDefinition {
+  id: string;
+  menu_item_id: string;
+  label: string;
+  quantity: number;
+  price_adjustment: number;
+  /** This option is a gift in this combo only; it cannot have a surcharge. */
+  is_gift?: boolean;
+}
+
+export interface ComboChoiceGroupDefinition {
+  id: string;
+  name: string;
+  required: boolean;
+  options: ComboChoiceOptionDefinition[];
+}
+
+export interface ComboDefinition {
+  fixed_components: ComboComponentDefinition[];
+  choice_groups: ComboChoiceGroupDefinition[];
+}
+
+export type ProductSaleMode = "both" | "standalone_only" | "combo_only";
+
 export interface Category {
   id: string;
   /** Optional while older clients roll forward to the business-bound catalog. */
@@ -38,6 +70,10 @@ export interface MenuItem {
   whatsapp_enabled?: boolean;
   sort_order: number;
   modifiers: ModifierGroup[];
+  is_combo?: boolean;
+  combo_definition?: ComboDefinition;
+  /** Whether this item can be sold on its own, included in combos, or both. */
+  sale_mode?: ProductSaleMode;
   image_url: string;
   created_at: string;
   updated_at: string;
@@ -287,6 +323,10 @@ export interface SelectedModifier {
   option: string;
   price: number;
   description?: string;
+  /** Catalog component that belongs to a combo line, captured by the server. */
+  combo_component_menu_item_id?: string;
+  combo_component_quantity?: number;
+  combo_component_is_gift?: boolean;
 }
 
 export interface CartItem {
@@ -538,6 +578,10 @@ export interface StaffMember extends Profile {
   membership_id?: string | null;
   membership_scope_type?: "platform" | "organization" | "business" | null;
   membership_role_code?: string | null;
+  /** Business-local custom role; separate from the legacy global profile role. */
+  staff_role_id?: string | null;
+  membership_role_name?: string | null;
+  membership_role_capability_codes?: string[];
   membership_status?: "active" | "inactive" | "revoked" | null;
   business_id?: string | null;
 }
