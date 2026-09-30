@@ -96,6 +96,13 @@ DECLARE
   v_membership_id uuid;
   v_count integer;
 BEGIN
+  -- An empty installation cannot assign a platform capability to a user.
+  -- Keep the strict production checks below when any account already exists.
+  IF NOT EXISTS (SELECT 1 FROM auth.users) THEN
+    RAISE NOTICE 'Se omite la asignación de licencias: no hay cuentas todavía';
+    RETURN;
+  END IF;
+
   SELECT id INTO v_user_id
     FROM auth.users
    WHERE lower(email) = 'rincon404@mideli.com';

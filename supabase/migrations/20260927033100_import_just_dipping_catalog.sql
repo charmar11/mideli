@@ -7,6 +7,15 @@ DECLARE
   v_count integer;
   v_exact_count integer;
 BEGIN
+  -- This one-time import targets an existing production business. A fresh
+  -- database has no Just Dipping account yet, so there is nothing to import.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.businesses WHERE slug = 'just-dipping'
+  ) THEN
+    RAISE NOTICE 'Se omite la importación: Just Dipping todavía no existe';
+    RETURN;
+  END IF;
+
   SELECT business.id
     INTO STRICT v_business_id
     FROM public.businesses AS business
