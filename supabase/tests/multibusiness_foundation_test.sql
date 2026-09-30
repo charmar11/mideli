@@ -39,9 +39,22 @@ SELECT ok(
 );
 
 SELECT is(
-  (SELECT count(*)::integer FROM public.capabilities),
+  (SELECT count(*)::integer FROM public.capabilities WHERE code = ANY (ARRAY[
+    'platform.manage_businesses',
+    'organization.manage_global_waiters',
+    'organization.manage_tables',
+    'organization.operate_orders',
+    'organization.charge_orders',
+    'business.manage_staff',
+    'business.manage_catalog',
+    'business.manage_inventory',
+    'business.operate_orders',
+    'business.update_preparation',
+    'business.charge_orders',
+    'business.manage_cash'
+  ])),
   12,
-  'the foundation seeds only the twelve approved capabilities'
+  'the twelve original capabilities remain available after later migrations'
 );
 SELECT is(
   (SELECT count(*)::integer FROM public.organizations),
@@ -64,16 +77,12 @@ SELECT is(
   'the foundation does not invent audit history'
 );
 
-SELECT is(
-  (
-    SELECT count(*)::integer
-      FROM public.capabilities
-     WHERE code LIKE 'platform.%'
-        OR code LIKE 'organization.%'
-        OR code LIKE 'business.%'
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1 FROM public.capabilities
+     WHERE code NOT LIKE scope_type || '.%'
   ),
-  12,
-  'all seeded capabilities use an approved scope prefix'
+  'every capability code matches its declared scope'
 );
 
 SELECT ok(

@@ -87,8 +87,8 @@ SELECT is(
      FROM pg_policies
     WHERE schemaname = 'public'
       AND tablename = 'print_station_settings'),
-  2,
-  'print station settings retain their two protected policies'
+  3,
+  'print station settings retain scoped access plus the restrictive license gate'
 );
 
 SELECT ok(

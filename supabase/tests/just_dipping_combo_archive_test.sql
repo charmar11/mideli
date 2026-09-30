@@ -145,11 +145,14 @@ SELECT ok(
   'the archive importer is restricted to Just Dipping'
 );
 SELECT ok(
-  (SELECT prosrc LIKE '%sanitize_legacy_sales_items%'
-          AND prosrc NOT LIKE '%customer_phone%'
-          AND prosrc NOT LIKE '%customer_name%'
-     FROM pg_proc
-    WHERE oid = 'private.sanitize_legacy_sales_items(jsonb)'::regprocedure),
+  (private.sanitize_legacy_sales_items(
+    '[{"name":"Regular Box","quantity":1,"customer_phone":"do-not-copy","customer_name":"do-not-copy"}]'::jsonb
+  )->0->>'product_name') = 'Regular Box'
+  AND NOT (
+    private.sanitize_legacy_sales_items(
+      '[{"name":"Regular Box","quantity":1,"customer_phone":"do-not-copy","customer_name":"do-not-copy"}]'::jsonb
+    )->0 ?| ARRAY['customer_phone', 'customer_name']
+  ),
   'the archive sanitizer stores allowlisted ticket items without customer fields'
 );
 SELECT ok(
