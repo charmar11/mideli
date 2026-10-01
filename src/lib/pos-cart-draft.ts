@@ -7,6 +7,8 @@ export type PosDraftOrderType = "comedor" | "domicilio" | "para_llevar";
 
 export interface PosCartDraft {
   items: CartItem[];
+  /** Random key for a POS submission whose database result is not yet confirmed. */
+  creationKey?: string | null;
   orderType: PosDraftOrderType;
   tableId: string;
   tableNumber: string;
@@ -103,7 +105,8 @@ function isStoredDraft(value: unknown): value is StoredPosCartDraft {
     typeof value.orderNotes === "string" &&
     isNullableString(value.scheduledFor) &&
     isNullableString(value.scheduledForLabel) &&
-    isNullableString(value.kitchenReleaseAt)
+    isNullableString(value.kitchenReleaseAt) &&
+    (value.creationKey === undefined || isNullableString(value.creationKey))
   );
 }
 
@@ -126,6 +129,9 @@ export function readPosCartDraft(
 
     return {
       items: value.items,
+      ...(value.creationKey !== undefined
+        ? { creationKey: value.creationKey }
+        : {}),
       orderType: value.orderType,
       tableId: value.tableId,
       tableNumber: value.tableNumber,
@@ -152,10 +158,11 @@ export function savePosCartDraft(
   const key = getStorageKey(userId);
   if (!key || !storage) return false;
 
-  if (draft.items.length === 0) {
+  if (draft.items.length === 0 && !draft.creationKey) {
     clearPosCartDraft(userId, storage);
     return true;
   }
+  if (draft.items.length === 0) return false;
 
   try {
     const serialized: StoredPosCartDraft = {

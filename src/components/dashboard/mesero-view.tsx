@@ -6,6 +6,7 @@ import {
   Building2,
   CircleAlert,
   History as HistoryIcon,
+  Loader2,
   ShoppingBag,
   Plus,
   X,
@@ -49,6 +50,7 @@ import type {
   WhatsappPosDraft,
 } from "@/lib/whatsapp/admin-types";
 import { searchPosCustomersByPhoneAction } from "@/lib/actions/whatsapp";
+import { checkPosOrderAttemptAction } from "@/lib/actions/pos-order-recovery";
 import { distanceMetersToKilometers, normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 import {
   clearPosCartDraft,
@@ -56,6 +58,7 @@ import {
   savePosCartDraft,
   type PosCartDraft,
 } from "@/lib/pos-cart-draft";
+import { isPosCreationKey } from "@/lib/pos-order-recovery";
 
 const StatusView = dynamic(
   () => import("./status-view").then((module) => module.StatusView),
@@ -105,6 +108,23 @@ const PaymentFlow = dynamic(
   { ssr: false }
 );
 
+type PendingPosRecoveryState = "checking" | "retry" | "unavailable" | null;
+
+function getDraftBusinessIds(
+  draft: PosCartDraft,
+  selectedBusinessId: string | null,
+) {
+  const menuItemsBusinessMap = useOrderStore.getState().menuItemsBusinessMap;
+  const businessIds = draft.items.map(
+    (item) =>
+      item.business_id ??
+      menuItemsBusinessMap.get(item.menu_item_id) ??
+      selectedBusinessId,
+  );
+  if (businessIds.some((businessId) => !businessId)) return null;
+  return [...new Set(businessIds.filter((id): id is string => Boolean(id)))];
+}
+
 export function MeseroView() {
   const userId = useDashboardUserId();
   const [mode, setMode] = useState<"pos" | "status" | "history">("pos");
@@ -149,7 +169,11 @@ export function MeseroView() {
   const [addedProduct, setAddedProduct] = useState<{ id: string; token: number } | null>(null);
   const [addedAnnouncement, setAddedAnnouncement] = useState("");
   const [draftHydratedUserId, setDraftHydratedUserId] = useState<string | null>(null);
+  const [pendingCreationKey, setPendingCreationKey] = useState<string | null>(null);
+  const [recoveryState, setRecoveryState] = useState<PendingPosRecoveryState>(null);
   const draftPersistenceModeRef = useRef<"manual" | "external">("manual");
+  const pendingCreationKeyRef = useRef<string | null>(null);
+  const recoveryCheckInFlightRef = useRef(false);
   const draftDetailsRef = useRef<Omit<PosCartDraft, "items">>({
     orderType,
     tableId,
@@ -205,6 +229,120 @@ export function MeseroView() {
   const cartItemCount = getItemCount();
   const cartTotal = getTotal();
   const readyCount = activeOrders.filter((o) => o.status === "ready").length;
+
+  const checkPendingPosOrder = useCallback(async () => {
+    if (
+      !userId ||
+      draftHydratedUserId !== userId ||
+      draftPersistenceModeRef.current !== "manual" ||
+      recoveryCheckInFlightRef.current
+    ) {
+      return;
+    }
+
+    const storedDraft = readPosCartDraft(userId);
+    const creationKey = storedDraft?.creationKey ?? pendingCreationKeyRef.current;
+    if (creationKey === null) {
+      pendingCreationKeyRef.current = null;
+      setPendingCreationKey(null);
+      setRecoveryState(null);
+      return;
+    }
+
+    const draft = storedDraft ?? {
+      ...draftDetailsRef.current,
+      items: useCartStore.getState().items,
+      creationKey,
+    };
+    if (draft.items.length === 0) {
+      setRecoveryState("unavailable");
+      return;
+    }
+
+    if (!isPosCreationKey(creationKey)) {
+      setRecoveryState("unavailable");
+      return;
+    }
+
+    recoveryCheckInFlightRef.current = true;
+    setRecoveryState("checking");
+    try {
+      await useBusinessContextStore.getState().ensureLoaded(true);
+      const businessIds = getDraftBusinessIds(
+        draft,
+        useBusinessContextStore.getState().selectedBusinessId,
+      );
+      if (!businessIds?.length) {
+        setRecoveryState("unavailable");
+        return;
+      }
+
+      const result = await checkPosOrderAttemptAction({
+        creationKey,
+        businessIds,
+      });
+      if (result.status === "unavailable") {
+        setRecoveryState("unavailable");
+        return;
+      }
+      if (result.status === "not_found") {
+        setMode("pos");
+        setRecoveryState("retry");
+        return;
+      }
+
+      // Wait for a possibly stale initial load, then force a fresh query for the recovered order.
+      await fetchActiveOrders();
+      await fetchActiveOrders();
+      if (useOrderStore.getState().lastError) {
+        setRecoveryState("unavailable");
+        return;
+      }
+
+      clearPosCartDraft(userId);
+      pendingCreationKeyRef.current = null;
+      setPendingCreationKey(null);
+      setRecoveryState(null);
+      clear();
+      setOrderType("comedor");
+      setTableId("");
+      setTableNumber("");
+      setOrderNotes("");
+      setCustomerName("");
+      setCustomerPhone("");
+      setCustomerId(null);
+      setWhatsappStatusOptIn(false);
+      setScheduledFor(null);
+      setScheduledForLabel(null);
+      setKitchenReleaseAt(null);
+      setDeliveryAddress("");
+      setDeliveryColony("");
+      setDeliveryReference("");
+      setDeliveryFee(0);
+      setDeliveryDistanceKm(null);
+      setDeliveryConfirmed(false);
+      setDeliveryCoordinates({ latitude: null, longitude: null });
+      setDeliveryPaymentMethod(null);
+      setDeliveryCashTendered(null);
+      setDetailsOpen(false);
+      setCartOpen(false);
+      const hasActiveRecoveredOrder = result.orderIds.some((orderId) =>
+        useOrderStore
+          .getState()
+          .activeOrders.some((order) => order.id === orderId),
+      );
+      setMode(hasActiveRecoveredOrder ? "status" : "history");
+    } catch {
+      setRecoveryState("unavailable");
+    } finally {
+      recoveryCheckInFlightRef.current = false;
+    }
+  }, [
+    clear,
+    draftHydratedUserId,
+    fetchActiveOrders,
+    userId,
+  ]);
 
   async function handleQuoteDelivery() {
     if (deliveryAddress.trim().length < 8 || deliveryQuoteLoading) return;
@@ -318,6 +456,9 @@ export function MeseroView() {
     const params = new URLSearchParams(window.location.search);
     if (params.has("whatsappConversation")) {
       draftPersistenceModeRef.current = "external";
+      pendingCreationKeyRef.current = null;
+      setPendingCreationKey(null);
+      setRecoveryState(null);
       setCartItems([]);
       setDraftHydratedUserId(userId);
       return;
@@ -325,6 +466,10 @@ export function MeseroView() {
 
     draftPersistenceModeRef.current = "manual";
     const draft = readPosCartDraft(userId);
+    const creationKey = draft?.creationKey ?? null;
+    pendingCreationKeyRef.current = creationKey;
+    setPendingCreationKey(creationKey);
+    setRecoveryState(creationKey ? "checking" : null);
     if (draft) {
       setCartItems(draft.items);
       setOrderType(draft.orderType);
@@ -362,6 +507,7 @@ export function MeseroView() {
       savePosCartDraft(userId, {
         ...draftDetailsRef.current,
         items: state.items,
+        creationKey: pendingCreationKeyRef.current,
       });
     });
   }, [draftHydratedUserId, userId]);
@@ -388,6 +534,7 @@ export function MeseroView() {
     savePosCartDraft(userId, {
       ...draftDetailsRef.current,
       items,
+      creationKey: pendingCreationKeyRef.current,
     });
   }, [
     draftHydratedUserId,
@@ -399,6 +546,23 @@ export function MeseroView() {
     scheduledForLabel,
     tableId,
     tableNumber,
+    userId,
+  ]);
+
+  useEffect(() => {
+    if (
+      !userId ||
+      draftHydratedUserId !== userId ||
+      recoveryState !== "checking" ||
+      draftPersistenceModeRef.current !== "manual"
+    ) {
+      return;
+    }
+    void checkPendingPosOrder();
+  }, [
+    checkPendingPosOrder,
+    draftHydratedUserId,
+    recoveryState,
     userId,
   ]);
 
@@ -522,6 +686,7 @@ export function MeseroView() {
 
   const handleProductClick = useCallback(
     (item: MenuItem) => {
+      if (pendingCreationKeyRef.current !== null) return;
       if (item.is_combo) {
         setComboItem(item);
       } else if (item.modifiers && item.modifiers.length > 0) {
@@ -536,7 +701,7 @@ export function MeseroView() {
 
   const handleComboConfirm = useCallback(
     (selectedModifiers: SelectedModifier[], notes: string) => {
-      if (!comboItem) return;
+      if (!comboItem || pendingCreationKeyRef.current !== null) return;
       addItem(
         comboItem.id,
         comboItem.name,
@@ -553,7 +718,7 @@ export function MeseroView() {
 
   const handleVariationConfirm = useCallback(
     (selectedModifiers: SelectedModifier[], notes: string) => {
-      if (variationItem) {
+      if (variationItem && pendingCreationKeyRef.current === null) {
         addItem(
           variationItem.id,
           variationItem.name,
@@ -574,7 +739,13 @@ export function MeseroView() {
     allowUnconfirmedDelivery = false,
     itemsToSubmit = items,
   ) {
-    if (isSubmitting) return;
+    if (
+      isSubmitting ||
+      (userId !== null && draftHydratedUserId !== userId) ||
+      recoveryState === "checking" ||
+      recoveryState === "unavailable" ||
+      (pendingCreationKeyRef.current !== null && recoveryState !== "retry")
+    ) return;
     if (itemsToSubmit.length === 0) {
       toast.error(
         editingOrderId
@@ -654,11 +825,18 @@ export function MeseroView() {
     setIsSubmitting(true);
     let resolvedCustomerId = customerId;
     if (orderType !== "domicilio" ? phoneDigits.length > 0 : phoneIsUsable) {
-      const customerResult = await ensurePosCustomerAction({
-        customerId,
-        phone: persistedCustomerPhone,
-        displayName: customerName,
-      });
+      let customerResult: Awaited<ReturnType<typeof ensurePosCustomerAction>>;
+      try {
+        customerResult = await ensurePosCustomerAction({
+          customerId,
+          phone: persistedCustomerPhone,
+          displayName: customerName,
+        });
+      } catch {
+        setIsSubmitting(false);
+        toast.error("No se pudo validar el cliente. La comanda sigue guardada.");
+        return;
+      }
       if (!customerResult.success) {
         setIsSubmitting(false);
         toast.error(customerResult.error);
@@ -674,6 +852,8 @@ export function MeseroView() {
     let createdOrder: Awaited<ReturnType<typeof createOrder>>["order"] = null;
     let createdOrders: Array<{ id: string; number: number }> = [];
     let error: string | null = null;
+    let orderCreationKey: string | undefined;
+    let attemptOutcome: "committed" | "rejected" | "unknown" | undefined;
 
     if (editingOrderId) {
       const result = await updateOrderWithItems(
@@ -707,36 +887,82 @@ export function MeseroView() {
       );
       error = result.error;
     } else {
-      const result = await createOrder(
-        itemsToSubmit,
-        orderType,
-        orderNotes,
-        tableNumber,
-        customerName,
-        orderType === "comedor" ? tableId : "",
-        orderType === "domicilio"
-          ? {
-              address: deliveryAddress,
-              colony: deliveryColony,
-              reference: deliveryReference,
-              fee: deliveryFee,
-              phone: persistedCustomerPhone,
-              paymentMethod: deliveryPaymentMethod,
-              cashTendered: deliveryCashTendered,
-              whatsappStatusOptIn: whatsappStatusOptIn && phoneIsUsable,
-              distanceMeters: deliveryDistanceKm === null ? null : Math.round(deliveryDistanceKm * 1000),
-              latitude: deliveryCoordinates.latitude,
-              longitude: deliveryCoordinates.longitude,
-            }
-          : undefined,
-        resolvedCustomerId,
-        persistedCustomerPhone,
-        whatsappConversationId,
-        scheduledFor && kitchenReleaseAt
-          ? { scheduledFor, kitchenReleaseAt }
-          : undefined
-      );
+      if (draftPersistenceModeRef.current === "manual") {
+        if (!userId) {
+          setIsSubmitting(false);
+          toast.error("Tu sesión expiró. Inicia sesión y vuelve a intentar.");
+          return;
+        }
+        orderCreationKey = pendingCreationKeyRef.current ?? crypto.randomUUID();
+        const attemptDraft: PosCartDraft = {
+          items: itemsToSubmit,
+          creationKey: orderCreationKey,
+          orderType,
+          tableId,
+          tableNumber,
+          orderNotes,
+          scheduledFor,
+          scheduledForLabel,
+          kitchenReleaseAt,
+        };
+        if (!savePosCartDraft(userId, attemptDraft)) {
+          setIsSubmitting(false);
+          toast.error("No se pudo guardar el intento de envío", {
+            description: "Revisa el almacenamiento del dispositivo antes de enviar la comanda.",
+          });
+          return;
+        }
+        pendingCreationKeyRef.current = orderCreationKey;
+        setPendingCreationKey(orderCreationKey);
+      }
+
+      let result: Awaited<ReturnType<typeof createOrder>>;
+      try {
+        result = await createOrder(
+          itemsToSubmit,
+          orderType,
+          orderNotes,
+          tableNumber,
+          customerName,
+          orderType === "comedor" ? tableId : "",
+          orderType === "domicilio"
+            ? {
+                address: deliveryAddress,
+                colony: deliveryColony,
+                reference: deliveryReference,
+                fee: deliveryFee,
+                phone: persistedCustomerPhone,
+                paymentMethod: deliveryPaymentMethod,
+                cashTendered: deliveryCashTendered,
+                whatsappStatusOptIn: whatsappStatusOptIn && phoneIsUsable,
+                distanceMeters: deliveryDistanceKm === null ? null : Math.round(deliveryDistanceKm * 1000),
+                latitude: deliveryCoordinates.latitude,
+                longitude: deliveryCoordinates.longitude,
+              }
+            : undefined,
+          resolvedCustomerId,
+          persistedCustomerPhone,
+          whatsappConversationId,
+          scheduledFor && kitchenReleaseAt
+            ? { scheduledFor, kitchenReleaseAt }
+            : undefined,
+          orderCreationKey,
+        );
+    } catch {
+      setIsSubmitting(false);
+      if (orderCreationKey) {
+        setRecoveryState("unavailable");
+        setDetailsOpen(false);
+        toast.error("No se pudo confirmar si el pedido se envió", {
+          description: "La comanda se conserva. Comprueba el envío antes de reintentar.",
+        });
+      } else {
+        toast.error("No se pudo enviar el pedido. Intenta de nuevo.");
+      }
+      return;
+      }
       error = result.error;
+      attemptOutcome = result.attemptOutcome;
       createdOrder = result.order;
       createdOrders = result.orders ?? (result.order ? [result.order] : []);
       orderNumber = result.order?.number ?? null;
@@ -744,7 +970,23 @@ export function MeseroView() {
     setIsSubmitting(false);
 
     if (error || !orderNumber) {
-      toast.error(error ?? "Error al enviar el pedido");
+      if (orderCreationKey) {
+        setRecoveryState("unavailable");
+        setDetailsOpen(false);
+      }
+
+      if (orderCreationKey) {
+        toast.error(
+          attemptOutcome === "rejected"
+            ? "El intento respondió con un error"
+            : "No se pudo confirmar si el pedido se envió",
+          {
+            description: "Conservamos la comanda. Comprueba el envío antes de reintentar.",
+          },
+        );
+      } else {
+        toast.error(error ?? "Error al enviar el pedido");
+      }
       return;
     }
 
@@ -763,6 +1005,11 @@ export function MeseroView() {
     );
     const completedExternalDraft = draftPersistenceModeRef.current === "external";
     if (!completedExternalDraft && userId) clearPosCartDraft(userId);
+    if (orderCreationKey) {
+      pendingCreationKeyRef.current = null;
+      setPendingCreationKey(null);
+      setRecoveryState(null);
+    }
     if (payNow && createdOrder) {
       const { data: savedItems, error: savedItemsError } = await createClient()
         .from("order_items")
@@ -825,6 +1072,7 @@ export function MeseroView() {
   }
 
   async function handleEditOrder(order: OrderWithItems) {
+    if (pendingCreationKeyRef.current !== null) return;
     if (
       order.business_id &&
       catalogBusinessId !== order.business_id &&
@@ -884,6 +1132,9 @@ export function MeseroView() {
   }
 
   function applyLocalCartDraft(draft: PosCartDraft) {
+    pendingCreationKeyRef.current = draft.creationKey ?? null;
+    setPendingCreationKey(draft.creationKey ?? null);
+    setRecoveryState(draft.creationKey ? "checking" : null);
     setCartItems(draft.items);
     setOrderType(draft.orderType);
     setTableId(draft.tableId);
@@ -895,6 +1146,7 @@ export function MeseroView() {
   }
 
   function handleAddOrderForTable(tableIdValue: string, tableNumberValue: string) {
+    if (pendingCreationKeyRef.current !== null) return;
     draftPersistenceModeRef.current = "manual";
     clear();
     setEditingOrderId(null);
@@ -1025,6 +1277,44 @@ export function MeseroView() {
     </div>
   );
 
+  const recoveryNotice = pendingCreationKey !== null && recoveryState ? (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`mx-2 flex shrink-0 items-center gap-3 rounded-xl border px-3 py-2.5 sm:mx-4 ${
+        recoveryState === "unavailable"
+          ? "border-warning/35 bg-warning/10"
+          : "border-brand/25 bg-brand/5"
+      }`}
+    >
+      {recoveryState === "checking" ? (
+        <Loader2 size={17} className="shrink-0 animate-spin text-brand" aria-hidden />
+      ) : (
+        <CircleAlert
+          size={17}
+          className={`shrink-0 ${recoveryState === "unavailable" ? "text-warning" : "text-brand"}`}
+          aria-hidden
+        />
+      )}
+      <p className="min-w-0 flex-1 font-body text-xs leading-5 text-foreground">
+        {recoveryState === "checking"
+          ? "Comprobando si el pedido se envió..."
+            : recoveryState === "retry"
+            ? "El pedido no aparece. La comanda se conserva; completa los datos que falten y reintenta sin modificar sus productos."
+            : "No pudimos confirmar el envío. Conservamos la comanda; comprueba el resultado antes de reintentar."}
+      </p>
+      {recoveryState !== "checking" ? (
+        <button
+          type="button"
+          onClick={() => void checkPendingPosOrder()}
+          className="min-h-10 shrink-0 touch-manipulation rounded-lg border border-current/20 px-3 font-heading text-xs font-bold text-foreground hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        >
+          Revisar envío
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+
   if (userId && draftHydratedUserId !== userId) {
     return (
       <div className="flex h-full items-center justify-center bg-background px-5 text-sm text-muted-foreground">
@@ -1039,11 +1329,13 @@ export function MeseroView() {
       {mode === "history" ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {modeSwitcher}
+          {recoveryNotice}
           <SalesHistory />
         </div>
       ) : mode === "status" ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {modeSwitcher}
+          {recoveryNotice}
           <StatusView
             onEditOrder={handleEditOrder}
             onAddOrderForTable={handleAddOrderForTable}
@@ -1053,6 +1345,7 @@ export function MeseroView() {
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {modeSwitcher}
+            {recoveryNotice}
             {editingOrderId ? (
               <div className="mx-3 flex min-h-12 items-center gap-2 rounded-xl border border-border bg-surface px-3 sm:mx-4">
                 <Building2 size={16} className="shrink-0 text-brand" aria-hidden />
@@ -1089,6 +1382,10 @@ export function MeseroView() {
               labels={labels}
               deliveryFee={deliveryFee}
               onRequestSubmit={() => setDetailsOpen(true)}
+              recoveryLocked={pendingCreationKey !== null}
+              disableSubmit={
+                recoveryState === "checking" || recoveryState === "unavailable"
+              }
             />
           </div>
 
@@ -1144,6 +1441,10 @@ export function MeseroView() {
                 deliveryFee={deliveryFee}
                 onRequestSubmit={() => setDetailsOpen(true)}
                 onClose={() => setCartOpen(false)}
+                recoveryLocked={pendingCreationKey !== null}
+                disableSubmit={
+                  recoveryState === "checking" || recoveryState === "unavailable"
+                }
                 isMobile
               />
             </div>
@@ -1195,6 +1496,10 @@ export function MeseroView() {
           orderNotes={orderNotes}
           scheduledForLabel={scheduledForLabel}
           isSubmitting={isSubmitting}
+          disableSubmit={
+            recoveryState === "checking" || recoveryState === "unavailable"
+          }
+          recoveryLocked={pendingCreationKey !== null}
           isEditing={Boolean(editingOrderId)}
           onClose={() => !isSubmitting && setDetailsOpen(false)}
           onTableIdChange={(id, label) => {

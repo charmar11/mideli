@@ -1,7 +1,7 @@
 # Recuperación segura de pedidos POS tras cerrar la app
 
 **Fecha:** 2026-09-30
-**Estado:** Diseño aprobado por el dueño; pendiente de revisión del documento antes de implementar.
+**Estado:** Diseño aprobado por el dueño; implementación local verificada, publicación pendiente.
 
 ## Problema
 

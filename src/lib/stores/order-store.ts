@@ -58,8 +58,14 @@ interface OrderState {
     customerId?: string | null,
     customerPhone?: string | null,
     channelConversationId?: string | null,
-    schedule?: { scheduledFor: string; kitchenReleaseAt: string }
-  ) => Promise<{ order: Order | null; orders?: Order[]; error: string | null }>;
+    schedule?: { scheduledFor: string; kitchenReleaseAt: string },
+    creationKey?: string
+  ) => Promise<{
+    order: Order | null;
+    orders?: Order[];
+    error: string | null;
+    attemptOutcome?: "committed" | "rejected" | "unknown";
+  }>;
   updateOrderStatus: (
     orderId: string,
     status: Order["status"]
@@ -146,6 +152,10 @@ function orderCreateError(error: { message?: string } | null, fallback: string) 
     return "Uno de los negocios de la comanda ya no está disponible. Revisa el menú antes de enviar.";
   }
   return message || fallback;
+}
+
+function hasDefinitivePostgresError(error: { code?: string } | null) {
+  return Boolean(error?.code && /^[0-9A-Z]{5}$/.test(error.code));
 }
 
 const OPTIONAL_ORDER_SELECT_COLUMNS = [
@@ -467,15 +477,24 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     customerId,
     customerPhone,
     channelConversationId,
-    schedule
+    schedule,
+    requestedCreationKey
   ) => {
     if (items.length === 0) {
-      return { order: null, error: "Agrega al menos un producto" };
+      return {
+        order: null,
+        error: "Agrega al menos un producto",
+        attemptOutcome: "rejected",
+      };
     }
 
     const scope = await getOrderScope();
     if (!scope.legacyFallback && !scope.businessId) {
-      return { order: null, error: "No hay un negocio disponible para crear el pedido" };
+      return {
+        order: null,
+        error: "No hay un negocio disponible para crear el pedido",
+        attemptOutcome: "rejected",
+      };
     }
 
     const supabase = createClient();
@@ -497,7 +516,10 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       channelConversationId,
       schedule,
     });
-    const creationKey = pendingOrderCreationKeys.get(creationFingerprint) ?? crypto.randomUUID();
+    const creationKey =
+      requestedCreationKey ??
+      pendingOrderCreationKeys.get(creationFingerprint) ??
+      crypto.randomUUID();
     pendingOrderCreationKeys.set(creationFingerprint, creationKey);
     const productsTotal = calculateItemsTotal(items);
     const total = productsTotal;
@@ -518,6 +540,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       return {
         order: null,
         error: "No se pudo identificar el negocio de uno de los productos",
+        attemptOutcome: "rejected",
       };
     }
     if (!scope.legacyFallback) {
@@ -529,6 +552,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         return {
           order: null,
           error: "No tienes permiso para operar uno de los negocios de la comanda",
+          attemptOutcome: "rejected",
         };
       }
     }
@@ -537,6 +561,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       return {
         order: null,
         error: "Las comandas de varios negocios solo están disponibles para comedor",
+        attemptOutcome: "rejected",
       };
     }
     const useMixedTableOrder =
@@ -549,7 +574,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     let order: Order;
     let createdOrders: Order[] = [];
-    let creationError: { message?: string } | null = null;
+    let creationError: { message?: string; code?: string } | null = null;
 
     if (useMixedTableOrder) {
       const result = await supabase.rpc("create_multibusiness_table_orders", {
@@ -563,9 +588,16 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       creationError = result.error;
       createdOrders = parseCreatedOrders(result.data);
       if (creationError || createdOrders.length === 0) {
+        const attemptOutcome = hasDefinitivePostgresError(creationError)
+          ? "rejected"
+          : "unknown";
+        if (attemptOutcome === "rejected") {
+          pendingOrderCreationKeys.delete(creationFingerprint);
+        }
         return {
           order: null,
           error: orderCreateError(creationError, "No se pudo crear la comanda compartida"),
+          attemptOutcome,
         };
       }
       order = createdOrders[0];
@@ -614,9 +646,16 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       });
       creationError = result.error;
       if (creationError || !result.data) {
+        const attemptOutcome = hasDefinitivePostgresError(creationError)
+          ? "rejected"
+          : "unknown";
+        if (attemptOutcome === "rejected") {
+          pendingOrderCreationKeys.delete(creationFingerprint);
+        }
         return {
           order: null,
           error: orderCreateError(creationError, "No se pudo crear el pedido"),
+          attemptOutcome,
         };
       }
       order = result.data as Order;
@@ -634,9 +673,16 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       });
       creationError = result.error;
       if (creationError || !result.data) {
+        const attemptOutcome = hasDefinitivePostgresError(creationError)
+          ? "rejected"
+          : "unknown";
+        if (attemptOutcome === "rejected") {
+          pendingOrderCreationKeys.delete(creationFingerprint);
+        }
         return {
           order: null,
           error: orderCreateError(creationError, "No se pudo crear el pedido"),
+          attemptOutcome,
         };
       }
       order = result.data as Order;
@@ -693,7 +739,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         .select("*")
         .single();
       if (deliveryError || !updated) {
-        return { order: null, error: "El pedido se creó, pero no se pudo guardar el domicilio" };
+        return {
+          order: null,
+          error: "El pedido se creó, pero no se pudo guardar el domicilio",
+          attemptOutcome: "unknown",
+        };
       }
       order = updated as Order;
       createdOrders = [order];
@@ -736,7 +786,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         void publishOrderNotification(supabase, createdOrder.id, "new_order");
       }
     }
-    return { order, orders: createdOrders, error: null };
+    return {
+      order,
+      orders: createdOrders,
+      error: null,
+      attemptOutcome: "committed",
+    };
   },
 
   markAsServed: async (orderId) => {

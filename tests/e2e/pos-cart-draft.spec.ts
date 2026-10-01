@@ -5,6 +5,10 @@ import {
   savePosCartDraft,
   type PosDraftStorage,
 } from "@/lib/pos-cart-draft";
+import {
+  classifyPosOrderRecovery,
+  isPosCreationKey,
+} from "@/lib/pos-order-recovery";
 
 class MemoryStorage implements PosDraftStorage {
   private readonly entries = new Map<string, string>();
@@ -69,6 +73,25 @@ test("recupera una comanda completa pero separada por cuenta de usuario", () => 
   expect(storage.keys()).toHaveLength(1);
 });
 
+test("conserva la clave aleatoria de un envío pendiente al volver a leer el borrador", () => {
+  const storage = new MemoryStorage();
+  const attemptKey = "0d6c4a93-9480-4df7-a4e6-6b3a9b08b4e2";
+  const pendingDraft = { ...draft, creationKey: attemptKey };
+
+  expect(savePosCartDraft("waiter-a", pendingDraft, storage)).toBe(true);
+  expect(readPosCartDraft("waiter-a", storage)).toEqual(pendingDraft);
+});
+
+test("acepta borradores previos que todavía no tenían clave de envío", () => {
+  const storage = new MemoryStorage();
+  storage.setItem(
+    "mideli.pos-cart-draft.v1.waiter-a",
+    JSON.stringify({ ...draft, version: 1 }),
+  );
+
+  expect(readPosCartDraft("waiter-a", storage)).toEqual(draft);
+});
+
 test("descarta borradores corruptos sin impedir continuar usando el POS", () => {
   const storage = new MemoryStorage();
   storage.setItem("mideli.pos-cart-draft.v1.waiter-a", "not-json");
@@ -114,4 +137,38 @@ test("la estructura persistida no incluye datos personales ni de entrega", () =>
       "version",
     ].sort()
   );
+});
+
+test("no permite borrar accidentalmente un borrador con un envío todavía pendiente", () => {
+  const storage = new MemoryStorage();
+  const pendingDraft = {
+    ...draft,
+    creationKey: "0d6c4a93-9480-4df7-a4e6-6b3a9b08b4e2",
+  };
+  savePosCartDraft("waiter-a", pendingDraft, storage);
+
+  expect(
+    savePosCartDraft(
+      "waiter-a",
+      { ...pendingDraft, items: [] },
+      storage,
+    ),
+  ).toBe(false);
+  expect(readPosCartDraft("waiter-a", storage)).toEqual(pendingDraft);
+});
+
+test("sólo confirma la recuperación si leyó todos los negocios esperados", () => {
+  expect(
+    classifyPosOrderRecovery(["business-a", "business-b"], ["business-b", "business-a"]),
+  ).toBe("found");
+  expect(
+    classifyPosOrderRecovery(["business-a", "business-b"], ["business-a"]),
+  ).toBe("unavailable");
+  expect(classifyPosOrderRecovery(["business-a"], null)).toBe("not_found");
+  expect(classifyPosOrderRecovery(["business-a"], null, true)).toBe("unavailable");
+});
+
+test("valida que la clave persistida sea un UUID", () => {
+  expect(isPosCreationKey("0d6c4a93-9480-4df7-a4e6-6b3a9b08b4e2")).toBe(true);
+  expect(isPosCreationKey("not-a-uuid")).toBe(false);
 });

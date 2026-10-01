@@ -30,7 +30,7 @@ las actualizaciones posteriores antes de actuar.
 |---|---|
 | Inicio de sesión, permisos, negocio seleccionado | `src/proxy.ts`, `src/app/dashboard/layout.tsx`, `src/lib/business-capabilities.ts` |
 | Menú de negocios, productos, combos y comanda | `src/components/dashboard/mesero-view.tsx`, `src/components/pos/`, `src/lib/stores/cart-store.ts`, `src/lib/stores/catalog-store.ts` |
-| Crear, editar y ver pedidos | `src/lib/stores/order-store.ts`, `src/components/dashboard/status-view.tsx`, `src/components/dashboard/sales-history.tsx` |
+| Crear, editar, recuperar y ver pedidos | `src/lib/stores/order-store.ts`, `src/lib/actions/pos-order-recovery.ts`, `src/components/dashboard/status-view.tsx`, `src/components/dashboard/sales-history.tsx` |
 | Cocina y avisos de pedidos | `src/components/dashboard/cocina-view.tsx`, `supabase/functions/send-order-notification/`, `src/app/sw.ts` |
 | Cobros y caja por negocio | `src/components/payments/`, `src/components/cash/cash-shift-control.tsx`, `src/lib/stores/cash-shift-store.ts` |
 | Personal, negocios y licencias | `src/app/settings/`, `src/lib/actions/businesses.ts`, `src/lib/actions/business-licenses.ts` |

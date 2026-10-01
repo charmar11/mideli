@@ -114,6 +114,7 @@ del negocio; operar pedidos por sí solo no concede ese permiso.
 3. El tipo de servicio determina los requisitos: mesa para comedor, domicilio confirmado para entrega, o ninguno para llevar.
 4. `order-details-modal.tsx` concentra datos del cliente, entrega, total y acciones finales.
 5. `order-store.ts` crea o actualiza la orden y sus líneas con protección contra doble envío. En una comanda de comedor con productos de varios negocios, el RPC atómico crea una orden y una cuenta por negocio dentro de la misma visita.
+   Para pedidos manuales, Mesero persiste junto al borrador un UUID aleatorio antes del envío. Si la respuesta se pierde, `pos-order-recovery.ts` consulta con la sesión autenticada, permisos, licencia y creador; al encontrarlo refresca Estado/Historial y limpia el borrador sin aviso adicional. Si no puede confirmarlo, conserva la misma clave y bloquea otro intento distinto. No guarda teléfono ni domicilio en el borrador. WhatsApp conserva su flujo propio.
 6. La orden aparece en Cocina por Realtime y cambia entre `pending`, `in_kitchen`, `ready`, `served`, `paid` o `cancelled`.
 7. El cobro se registra en el libro mayor de pagos. El estado operativo de cocina no se usa como sustituto del estado de pago.
 8. `business_accounts` se sincroniza con los pagos de sus órdenes. Estado consulta la caja del negocio del pedido y no mezcla cuentas de negocios distintos.

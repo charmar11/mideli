@@ -55,6 +55,8 @@ interface OrderDetailsModalProps {
   orderNotes: string;
   scheduledForLabel?: string | null;
   isSubmitting: boolean;
+  disableSubmit?: boolean;
+  recoveryLocked?: boolean;
   isEditing: boolean;
   onClose: () => void;
   onTableIdChange: (id: string, label: string) => void;
@@ -130,6 +132,8 @@ export function OrderDetailsModal({
   orderNotes,
   scheduledForLabel,
   isSubmitting,
+  disableSubmit = false,
+  recoveryLocked = false,
   isEditing,
   onClose,
   onTableIdChange,
@@ -624,7 +628,8 @@ export function OrderDetailsModal({
                   <button
                     type="button"
                     onClick={() => setTablePickerOpen(true)}
-                    className="flex h-12 w-full touch-manipulation items-center justify-between rounded-xl border border-border bg-background px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:border-brand/60"
+                    disabled={recoveryLocked}
+                    className="flex h-12 w-full touch-manipulation items-center justify-between rounded-xl border border-border bg-background px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:border-brand/60 disabled:cursor-not-allowed disabled:opacity-55"
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <UtensilsCrossed size={17} className={selectedTable ? "text-brand" : "text-muted-foreground"} />
@@ -795,9 +800,10 @@ export function OrderDetailsModal({
                 <textarea
                   value={orderNotes}
                   onChange={(event) => onOrderNotesChange(event.target.value)}
+                  disabled={recoveryLocked}
                   placeholder="Ej. mitad de un sabor y mitad de otro"
                   rows={2}
-                  className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 font-body text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/15"
+                  className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 font-body text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-55"
                 />
               </label>
             </div>
@@ -815,7 +821,7 @@ export function OrderDetailsModal({
                 <button
                   type="button"
                   onClick={() => requestSubmit("pay")}
-                  disabled={isSubmitting || !canSubmit}
+                  disabled={isSubmitting || disableSubmit || !canSubmit}
                   className="order-2 flex min-h-16 min-w-0 touch-manipulation items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 font-heading text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-white/15 active:scale-[0.99] disabled:opacity-60 sm:order-1 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
                 >
                   <CreditCard size={18} /> Cobrar y enviar
@@ -824,7 +830,7 @@ export function OrderDetailsModal({
               <button
                 type="button"
                 onClick={() => requestSubmit("submit")}
-                disabled={isSubmitting || !canSubmit}
+                disabled={isSubmitting || disableSubmit || !canSubmit}
                 className="action-success order-1 flex min-h-16 min-w-0 touch-manipulation items-center justify-center gap-2 rounded-2xl px-4 font-heading text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 sm:order-2 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
               >
                 {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}

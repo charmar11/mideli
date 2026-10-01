@@ -1128,3 +1128,25 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
   `npm run lint`, `npm run build` y la salud pública tras el despliegue.
   No había una caja abierta para probar la creación de un pedido real sin
   intervenir la operación; esa verificación autenticada sigue pendiente.
+
+## 25. Recuperación de envíos POS interrumpidos (2026-09-30)
+
+- Mesero guarda un UUID aleatorio del intento junto al borrador antes de llamar
+  al RPC. La clave se reutiliza si el cliente pierde la respuesta; sólo se
+  limpia al recuperar la orden o confirmar un envío exitoso. Un error SQL o de
+  red no autoriza a crear otra clave.
+- Al volver a Mesero se consulta el pedido o lote mediante Server Action con
+  sesión normal, perfil activo, capacidades de lectura, licencia vigente,
+  creador y organización. Para comandas mixtas exige que aparezcan todos los
+  negocios esperados. Los errores o resultados parciales conservan la clave y
+  bloquean el reenvío hasta volver a comprobar.
+- Si la orden aparece, Estado/Historial se refresca y el borrador se limpia sin
+  toast adicional. Mientras el resultado esté pendiente se bloquean cambios a
+  productos, tipo, mesa y notas; datos personales y de domicilio se vuelven a
+  ingresar si hacen falta y nunca se persisten en el navegador.
+- WhatsApp queda sin cambios. No se usa `service_role`, no hubo migración ni
+  cambios a datos remotos. Esta sección actualiza el punto de §24 que indicaba
+  que la clave de idempotencia sólo vivía en memoria.
+- Verificación local: lint y build pasan; 144 pruebas Playwright operativas
+  pasan en escritorio, tablet y teléfono. El deploy y la salud de producción
+  quedan pendientes de CI y publicación.

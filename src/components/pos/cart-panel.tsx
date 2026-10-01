@@ -35,6 +35,8 @@ interface CartPanelProps {
   onRequestSubmit: () => void;
   onClose?: () => void;
   isMobile?: boolean;
+  recoveryLocked?: boolean;
+  disableSubmit?: boolean;
 }
 
 const priceFormatter = new Intl.NumberFormat("es-MX");
@@ -69,6 +71,8 @@ export function CartPanel({
   onRequestSubmit,
   onClose,
   isMobile = false,
+  recoveryLocked = false,
+  disableSubmit = false,
 }: CartPanelProps) {
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
@@ -129,8 +133,9 @@ export function CartPanel({
           <button
             type="button"
             onClick={() => removeItem(item.id)}
+            disabled={recoveryLocked}
             aria-label={`Quitar ${item.name}`}
-            className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
+            className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Trash2 size={15} />
           </button>
@@ -165,8 +170,9 @@ export function CartPanel({
             <button
               type="button"
               onClick={() => updateQuantity(item.id, item.quantity - 1)}
+              disabled={recoveryLocked}
               aria-label={`Reducir ${item.name}`}
-              className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
+              className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Minus size={14} />
             </button>
@@ -176,8 +182,9 @@ export function CartPanel({
             <button
               type="button"
               onClick={() => updateQuantity(item.id, item.quantity + 1)}
+              disabled={recoveryLocked}
               aria-label={`Aumentar ${item.name}`}
-              className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand"
+              className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full bg-surface text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Plus size={14} />
             </button>
@@ -191,8 +198,9 @@ export function CartPanel({
           type="text"
           value={item.notes}
           onChange={(event) => updateNotes(item.id, event.target.value)}
+          disabled={recoveryLocked}
           placeholder="Notas (sin cebolla...)"
-          className="mt-3 h-11 w-full rounded-xl border border-border bg-surface px-3 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
+          className="mt-3 h-11 w-full rounded-xl border border-border bg-surface px-3 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-55"
         />
       </li>
     );
@@ -226,7 +234,8 @@ export function CartPanel({
               data-tour="pos-table-selection"
               type="button"
               onClick={() => setClearConfirmOpen(true)}
-              className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg px-2.5 font-heading text-[11px] font-bold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive"
+              disabled={recoveryLocked}
+              className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg px-2.5 font-heading text-[11px] font-bold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
               title="Vaciar pedido"
             >
               <Trash2 size={14} />
@@ -256,7 +265,8 @@ export function CartPanel({
               type="button"
               aria-pressed={isActive}
               onClick={() => onOrderTypeChange(type.value)}
-              className={`flex h-14 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl border transition-[background-color,border-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
+              disabled={recoveryLocked}
+              className={`flex h-14 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl border transition-[background-color,border-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-50 ${
                 isActive
                   ? ORDER_TYPE_VISUALS[type.value].selected
                   : "border-border bg-background text-muted-foreground hover:border-border-strong hover:text-foreground"
@@ -323,7 +333,7 @@ export function CartPanel({
           data-tour="pos-send-order"
           type="button"
           onClick={onRequestSubmit}
-          disabled={items.length === 0}
+          disabled={items.length === 0 || disableSubmit}
           className="action-success flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-xl py-3.5 font-heading text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
         >
           <Send size={16} />
