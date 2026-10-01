@@ -422,15 +422,14 @@ export async function proxy(request: NextRequest) {
       encodeURIComponent(profile.full_name || String(claims.email || ""))
     );
 
-    const { data: contextRows, error: contextError } = await supabase.rpc(
-      "get_my_multibusiness_context"
-    );
+    const [contextResult, licenseResult] = await Promise.all([
+      supabase.rpc("get_my_multibusiness_context"),
+      supabase.rpc("get_my_business_license_availability"),
+    ]);
+    const { data: contextRows, error: contextError } = contextResult;
     if (!contextError) {
       multibusinessContextAvailable = true;
       const contexts = (contextRows ?? []) as BusinessContextRow[];
-      const licenseResult = await supabase.rpc(
-        "get_my_business_license_availability",
-      );
       const licenseByBusinessId = new Map(
         ((licenseResult.data ?? []) as Array<{
           business_id: string;

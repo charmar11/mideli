@@ -1154,3 +1154,25 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
   `ok` con versión `4d0c05b9a18b`.
 - No se creó ni alteró una venta real para simular la recuperación. La primera
   recuperación con pedido auténtico se observará durante el uso normal.
+
+## 26. Rendimiento de consultas y autorización (2026-10-01)
+
+- En los logs agregados de Supabase de las últimas 24 horas UTC, `GET /orders`
+  registró 1,464 solicitudes, p95 de 321 ms y máximo de 3,965 ms, sin HTTP 5xx.
+  `GET /channel_conversations` registró 2,791 solicitudes, p95 de 516 ms y
+  máximo de 6,077 ms, también sin HTTP 5xx. No se encontraron eventos SQLSTATE
+  `57014` registrados en Postgres durante esa ventana; esto no descarta errores
+  más antiguos ni fallos no registrados.
+- `pg_stat_statements` conserva estadísticas desde el 2026-07-21, por lo que
+  sus máximos de varios segundos son históricos y no bastan para atribuir la
+  lentitud actual a una consulta concreta. El asesor de Supabase reporta varios
+  avisos de índices y RLS; no se agregó ni eliminó ningún índice por esos avisos
+  sin evidencia de un plan de ejecución actual.
+- En `src/proxy.ts`, después de validar que el perfil está activo, la consulta
+  del contexto multinegocio y la disponibilidad de licencias ahora se ejecutan
+  concurrentemente. Son lecturas independientes; se conservan los mismos
+  resultados requeridos para autorizar cada pantalla. No se cambia el esquema ni
+  datos operativos.
+- Falta comparar la experiencia de navegación autenticada después de publicar.
+  El muestreo agregado no incluyó suficientes lecturas del catálogo para medir
+  directamente el cambio entre menús.
