@@ -11,8 +11,10 @@ Si la app se cierra durante el envío de una comanda, al volver debe recuperar e
 - [x] Implementar clave persistente por usuario, consulta autenticada y bloqueo seguro mientras el resultado sea incierto.
 - [x] Añadir pruebas de persistencia, compatibilidad, lote completo, UUID y datos personales.
 - [x] Ejecutar lint, build y regresiones operativas en escritorio, tablet y teléfono.
-- [ ] Confirmar CI de GitHub después del commit/push; no hay migraciones ni cambios remotos de datos.
-- [ ] Desplegar a producción y comprobar `/api/health`.
+- [x] Confirmar CI de GitHub después del commit/push; no hay migraciones ni cambios remotos de datos.
+- [x] Desplegar a producción y comprobar `/api/health`.
+
+La recuperación no se simuló con un pedido real para no escribir datos de venta en producción; se observará durante la operación normal.
 
 ## Decisiones
 

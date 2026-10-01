@@ -1147,6 +1147,10 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
 - WhatsApp queda sin cambios. No se usa `service_role`, no hubo migración ni
   cambios a datos remotos. Esta sección actualiza el punto de §24 que indicaba
   que la clave de idempotencia sólo vivía en memoria.
-- Verificación local: lint y build pasan; 144 pruebas Playwright operativas
-  pasan en escritorio, tablet y teléfono. El deploy y la salud de producción
-  quedan pendientes de CI y publicación.
+- Verificación: lint/build locales pasan; 144 pruebas Playwright operativas
+  pasan en escritorio, tablet y teléfono; GitHub `Verify Mideli` pasó,
+  incluido el gate PostgreSQL/pgTAP aislado. Deploy de producción
+  `dpl_7sfNkHrETwaCvzPCXi694GxUiiGD` quedó `READY`; `/api/health` respondió
+  `ok` con versión `4d0c05b9a18b`.
+- No se creó ni alteró una venta real para simular la recuperación. La primera
+  recuperación con pedido auténtico se observará durante el uso normal.

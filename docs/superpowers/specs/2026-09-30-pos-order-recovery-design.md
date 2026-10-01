@@ -1,7 +1,7 @@
 # Recuperación segura de pedidos POS tras cerrar la app
 
 **Fecha:** 2026-09-30
-**Estado:** Diseño aprobado por el dueño; implementación local verificada, publicación pendiente.
+**Estado:** Diseño aprobado e implementado; producción `READY` en `dpl_7sfNkHrETwaCvzPCXi694GxUiiGD` el 2026-09-30. Salud `/api/health`: `ok`.
 
 ## Problema
 
@@ -35,3 +35,5 @@ No se cambiará la caja, numeración de folios, lógica de cobro, catálogo ni p
 ## Criterio de aceptación
 
 Después de cerrar Mesero durante un envío y volver a abrirlo, nunca se genera automáticamente una clave nueva para ese intento. Si la base ya guardó el pedido, se recupera sin mensaje y sin duplicarlo; si no lo guardó o no puede comprobarse, el borrador se conserva y no se envía otro pedido con una clave distinta.
+
+La verificación automatizada no generó pedidos en producción; la primera recuperación con un pedido real se observará durante el uso normal.

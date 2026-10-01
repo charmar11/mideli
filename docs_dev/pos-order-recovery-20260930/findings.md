@@ -28,3 +28,9 @@
 3. Los errores de creación no eliminan la clave local. La clave queda hasta encontrar el pedido o completar un intento exitoso.
 4. Los borradores antiguos sin clave siguen siendo válidos; el teléfono, domicilio, colonia y otros datos del cliente no se serializan.
 5. No se requiere migración SQL. Los flujos legacy de WhatsApp permanecen fuera del cambio.
+
+## Cierre
+
+- GitHub `Verify Mideli` pasó para `4d0c05b9a18b42927f59d87cf61f6776408d564b`.
+- Producción quedó `READY` en Vercel como `dpl_7sfNkHrETwaCvzPCXi694GxUiiGD`; `/api/health` respondió `ok` con versión `4d0c05b9a18b`.
+- No se simuló una comanda real de extremo a extremo porque eso escribiría una venta en la base operativa. La primera recuperación real queda para el uso normal.

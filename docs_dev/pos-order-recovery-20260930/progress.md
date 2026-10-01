@@ -16,4 +16,6 @@
 - La recuperación encontrada refresca Estado/Historial y limpia en silencio el borrador, sin toast adicional. WhatsApp no fue modificado.
 - `npm run lint` pasó; `npm run build` pasó después de corregir la unión discriminada de estados; regresiones operativas Playwright pasaron en los tres proyectos (144/144). No se aplicaron migraciones ni se cambiaron datos remotos.
 - Detectado durante la revisión final: el store comparte consultas activas; por eso la recuperación espera la carga existente y luego hace una segunda consulta secuencial antes de decidir entre Estado e Historial.
-- Pendiente: commit/push, resultado de CI de GitHub, deploy de producción y comprobación de salud.
+- Commit de implementación `4d0c05b` subido a `codex/whatsapp-orders`; GitHub `Verify Mideli` pasó (lint/build/regresiones y Supabase PostgreSQL/pgTAP aislado).
+- Deploy real de Vercel `dpl_7sfNkHrETwaCvzPCXi694GxUiiGD` quedó `READY` en `https://mideli.vercel.app`.
+- `/api/health` respondió `status: ok`, versión `4d0c05b9a18b`. No se creó ni alteró ningún pedido real; la primera recuperación de una orden real quedará validada por el uso normal del local.
