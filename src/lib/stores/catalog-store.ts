@@ -2,6 +2,12 @@ import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import type { Category, MenuItem } from "@/types/database";
 import { removeManagedProductImage } from "@/lib/product-images";
+import {
+  BUSINESS_CATALOG_CACHE_MS,
+  cacheBusinessCatalog,
+  clearBusinessCatalogCache,
+  readBusinessCatalog,
+} from "@/lib/catalog-cache";
 import { useBusinessContextStore } from "./business-context-store";
 
 interface CatalogState {
@@ -35,10 +41,12 @@ interface CatalogState {
 }
 
 let catalogRequest: Promise<void> | null = null;
-let scopedCatalogRequest: Promise<boolean> | null = null;
+const scopedCatalogRequests = new Map<string, Promise<boolean>>();
 let catalogFetchedAt = 0;
 let catalogScopeKey = "";
-const CATALOG_CACHE_MS = 30_000;
+let catalogDisplayRequestId = 0;
+let catalogCacheRevision = 0;
+const CATALOG_CACHE_MS = BUSINESS_CATALOG_CACHE_MS;
 const MENU_ITEM_SELECT =
   "id,business_id,category_id,name,description,price,is_active,sort_order,modifiers,is_combo,combo_definition,sale_mode,image_url,created_at,updated_at";
 const MENU_ITEM_COMBO_SELECT =
@@ -127,6 +135,12 @@ function canLoadBusinessCatalog(business: {
   );
 }
 
+function invalidateCatalogCache(businessId?: string | null) {
+  catalogCacheRevision += 1;
+  clearBusinessCatalogCache(businessId ?? undefined);
+  catalogFetchedAt = 0;
+}
+
 export const useCatalogStore = create<CatalogState>((set, get) => ({
   categories: [],
   menuItems: [],
@@ -135,7 +149,8 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   lastError: null,
 
   clearCatalog: () => {
-    catalogFetchedAt = 0;
+    catalogDisplayRequestId += 1;
+    invalidateCatalogCache();
     catalogScopeKey = "";
     set({
       categories: [],
@@ -167,6 +182,9 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     }
 
     const requestKey = `business:${businessId}`;
+    const requestId = ++catalogDisplayRequestId;
+    if (force) invalidateCatalogCache(businessId);
+
     if (
       !force &&
       get().catalogBusinessId === businessId &&
@@ -177,18 +195,49 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       return true;
     }
 
-    if (catalogRequest) await catalogRequest;
-    if (scopedCatalogRequest) await scopedCatalogRequest;
-
-    if (
-      !force &&
-      get().catalogBusinessId === businessId &&
-      catalogScopeKey === requestKey &&
-      Date.now() - catalogFetchedAt < CATALOG_CACHE_MS
-    ) {
+    const cachedCatalog = force
+      ? null
+      : readBusinessCatalog<Category, MenuItem>(businessId);
+    if (cachedCatalog) {
+      set({
+        categories: cachedCatalog.categories,
+        menuItems: cachedCatalog.menuItems,
+        catalogBusinessId: businessId,
+        loading: false,
+        lastError: null,
+      });
+      catalogScopeKey = requestKey;
+      catalogFetchedAt = Date.now();
       return true;
     }
 
+    const pendingRequest = scopedCatalogRequests.get(businessId);
+    if (pendingRequest) {
+      const pendingResult = await pendingRequest;
+      if (requestId !== catalogDisplayRequestId) return pendingResult;
+
+      const refreshedCatalog = readBusinessCatalog<Category, MenuItem>(businessId);
+      if (refreshedCatalog) {
+        set({
+          categories: refreshedCatalog.categories,
+          menuItems: refreshedCatalog.menuItems,
+          catalogBusinessId: businessId,
+          loading: false,
+          lastError: null,
+        });
+        catalogScopeKey = requestKey;
+        catalogFetchedAt = Date.now();
+        if (!force) return true;
+      } else if (!force) {
+        set({
+          loading: false,
+          lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
+        });
+        return pendingResult;
+      }
+    }
+
+    const requestCacheRevision = catalogCacheRevision;
     const request = (async () => {
       set({ loading: true, lastError: null });
       try {
@@ -204,36 +253,50 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
 
         const catalogError = categoriesResult.error ?? menuItemsResult.error;
         if (catalogError) {
-          set({
-            lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
-          });
+          if (requestId === catalogDisplayRequestId) {
+            set({
+              lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
+            });
+          }
           return false;
         }
 
-        set({
+        const catalog = {
           categories: categoriesResult.data ?? [],
           menuItems: menuItemsResult.data ?? [],
-          catalogBusinessId: businessId,
-          lastError: null,
-        });
-        catalogScopeKey = requestKey;
-        catalogFetchedAt = Date.now();
+        };
+        if (requestCacheRevision === catalogCacheRevision) {
+          cacheBusinessCatalog(businessId, catalog);
+        }
+        if (requestId === catalogDisplayRequestId) {
+          set({
+            ...catalog,
+            catalogBusinessId: businessId,
+            lastError: null,
+          });
+          catalogScopeKey = requestKey;
+          catalogFetchedAt = Date.now();
+        }
         return true;
       } catch {
-        set({
-          lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
-        });
+        if (requestId === catalogDisplayRequestId) {
+          set({
+            lastError: "No se pudo actualizar el menú. Mostramos la última versión.",
+          });
+        }
         return false;
       } finally {
-        set({ loading: false });
+        if (requestId === catalogDisplayRequestId) set({ loading: false });
       }
     })();
 
-    scopedCatalogRequest = request;
+    scopedCatalogRequests.set(businessId, request);
     try {
       return await request;
     } finally {
-      if (scopedCatalogRequest === request) scopedCatalogRequest = null;
+      if (scopedCatalogRequests.get(businessId) === request) {
+        scopedCatalogRequests.delete(businessId);
+      }
     }
   },
 
@@ -382,7 +445,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     const supabase = createClient();
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleRefresh = (targetBusinessId?: string | null) => {
-      catalogFetchedAt = 0;
+      invalidateCatalogCache();
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
@@ -446,6 +509,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       .single();
 
     if (!error && data) {
+      invalidateCatalogCache(scope.businessId);
       set((state) => ({ categories: [...state.categories, data] }));
       return data;
     }
@@ -467,6 +531,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       return false;
     }
 
+    invalidateCatalogCache(scope.businessId);
     set((state) => ({
       categories: state.categories.map((c) =>
         c.id === id ? { ...c, ...updates } : c
@@ -490,6 +555,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       return false;
     }
 
+    invalidateCatalogCache(scope.businessId);
     set((state) => ({
       categories: state.categories.filter((c) => c.id !== id),
       menuItems: state.menuItems.filter((m) => m.category_id !== id),
@@ -532,7 +598,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       return false;
     }
 
-    catalogFetchedAt = Date.now();
+    invalidateCatalogCache(scope.businessId);
     return true;
   },
 
@@ -550,6 +616,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       .single();
 
     if (!error && data) {
+      invalidateCatalogCache(scope.businessId);
       set((state) => ({ menuItems: [...state.menuItems, data] }));
       return data;
     }
@@ -571,6 +638,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       return false;
     }
 
+    invalidateCatalogCache(scope.businessId);
     set((state) => ({
       menuItems: state.menuItems.map((m) =>
         m.id === id ? { ...m, ...updates } : m
@@ -595,6 +663,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       return false;
     }
 
+    invalidateCatalogCache(scope.businessId);
     set((state) => ({
       menuItems: state.menuItems.filter((m) => m.id !== id),
     }));

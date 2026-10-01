@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 import {
+  cacheBusinessCatalog,
+  clearBusinessCatalogCache,
+  readBusinessCatalog,
+} from "../../src/lib/catalog-cache";
+import {
   canManageOrderPreparation,
   canDeleteBusinessOrderHistory,
   getCashAccessibleBusinessContexts,
@@ -21,6 +26,40 @@ const justDippingSharedTablesContext = {
   business_id: "just-dipping-id",
   capability_codes: ["organization.manage_tables"],
 };
+
+test("conserva una caché independiente para volver rápido al menú de cada negocio", () => {
+  clearBusinessCatalogCache();
+  cacheBusinessCatalog("mideli-id", {
+    categories: [{ name: "Hamburguesas" }],
+    menuItems: [{ name: "Triple" }],
+  }, 100);
+  cacheBusinessCatalog("just-dipping-id", {
+    categories: [{ name: "Box Combos" }],
+    menuItems: [{ name: "Regular Box" }],
+  }, 200);
+
+  expect(readBusinessCatalog("mideli-id", 201)).toEqual({
+    categories: [{ name: "Hamburguesas" }],
+    menuItems: [{ name: "Triple" }],
+  });
+  expect(readBusinessCatalog("just-dipping-id", 201)).toEqual({
+    categories: [{ name: "Box Combos" }],
+    menuItems: [{ name: "Regular Box" }],
+  });
+  expect(readBusinessCatalog("mideli-id", 30_100)).toBeNull();
+});
+
+test("invalida catálogos almacenados al cambiar o actualizar datos", () => {
+  clearBusinessCatalogCache();
+  cacheBusinessCatalog("mideli-id", {
+    categories: [{ name: "Hamburguesas" }],
+    menuItems: [{ name: "Triple" }],
+  }, 100);
+
+  clearBusinessCatalogCache("mideli-id");
+
+  expect(readBusinessCatalog("mideli-id", 101)).toBeNull();
+});
 
 test("una selección obsoleta de otro negocio vuelve al negocio autorizado", () => {
   const selected = resolveBusinessContextSelection(

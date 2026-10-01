@@ -1176,3 +1176,19 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
 - Falta comparar la experiencia de navegación autenticada después de publicar.
   El muestreo agregado no incluyó suficientes lecturas del catálogo para medir
   directamente el cambio entre menús.
+
+## 27. Cambio rápido entre menús de negocios (2026-10-01)
+
+- El selector sólo conservaba la última carta cargada. Además, una sola promesa
+  compartida hacía esperar a una carga de otro negocio antes de iniciar la
+  siguiente. Por eso volver a un menú ya visitado podía repetir dos lecturas de
+  red y esperar innecesariamente.
+- Los catálogos autorizados ahora se guardan sólo en memoria por negocio durante
+  30 segundos, con límite de 12 negocios. Cada selección vuelve a comprobar el
+  contexto/licencia antes de usar la caché. Se invalida al recibir cambios de
+  catálogo, forzar actualización o guardar cambios del menú; las respuestas
+  tardías no pueden reemplazar el negocio seleccionado más recientemente.
+- La caché no se persiste en navegador ni incluye datos de clientes/pedidos.
+  No hay cambios de esquema ni escrituras en ventas. Playwright cubre separación
+  por negocio, expiración e invalidación; falta que una mesera global confirme
+  en producción la primera carga y el regreso repetido entre ambos menús.
