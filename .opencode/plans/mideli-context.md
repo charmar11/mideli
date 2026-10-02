@@ -1210,5 +1210,11 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
 - Se agregaron pruebas de límite de página, cursores empatados por timestamp y
   validación de entrada; Playwright y aislamiento entre negocios pasan en
   desktop, tablet y móvil. El workflow de GitHub ejecuta la prueba nueva.
-- `npm run lint` y `npm run build` pasan. Pendiente: resultado del CI posterior
-  al push, despliegue de producción y comprobar `/api/health`.
+- Verificación: `npm run lint`, `npm run build` y 63 pruebas Playwright pasan
+  localmente en desktop, tablet y móvil. GitHub `Verify Mideli` (run 54)
+  concluyó `success`, incluidos build, regresiones operativas y gate aislado de
+  Supabase. Producción `dpl_Aip9ma2frH8uZVS2Mzb5wgEBWtrV` quedó `READY`, alias
+  `mideli.vercel.app`; `/api/health` respondió HTTP 200, versión `fa7f5f3865cc`.
+- No se alteraron pedidos ni tickets y no se probó el botón con una sesión de
+  empleado real. El archivo histórico sigue pendiente de importar desde
+  Firebase.
