@@ -5,10 +5,22 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Order, OrderItem } from "@/types/database";
 import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 import { getSelectedBusinessContext } from "@/lib/server/selected-business";
+import {
+  buildSalesHistoryCursorFilter,
+  isValidSalesHistoryCursor,
+  normalizeSalesHistoryCursor,
+  SALES_HISTORY_PAGE_SIZE,
+  sliceSalesHistoryPage,
+  type SalesHistoryCursor,
+} from "@/lib/sales-history-pagination";
 
 export interface SalesHistoryParams {
   desde: string;
   hasta: string;
+  ordersCursor?: SalesHistoryCursor | null;
+  legacyCursor?: SalesHistoryCursor | null;
+  loadOrders?: boolean;
+  loadLegacyTickets?: boolean;
 }
 
 export interface SalesHistoryItem extends OrderItem {
@@ -24,6 +36,10 @@ export interface SalesHistoryResult {
   orders: SalesHistoryOrder[];
   legacyTickets: LegacySalesTicket[];
   legacyArchiveAvailable: boolean;
+  hasMoreOrders: boolean;
+  nextOrdersCursor: SalesHistoryCursor | null;
+  hasMoreLegacyTickets: boolean;
+  nextLegacyCursor: SalesHistoryCursor | null;
   error: string | null;
 }
 
@@ -65,22 +81,53 @@ function isValidDate(value: string) {
   return value.length > 0 && !Number.isNaN(new Date(value).getTime());
 }
 
+function emptySalesHistoryResult(
+  error: string | null,
+  legacyTickets: LegacySalesTicket[] = [],
+  legacyArchiveAvailable = false
+): SalesHistoryResult {
+  return {
+    orders: [],
+    legacyTickets,
+    legacyArchiveAvailable,
+    hasMoreOrders: false,
+    nextOrdersCursor: null,
+    hasMoreLegacyTickets: false,
+    nextLegacyCursor: null,
+    error,
+  };
+}
+
 export async function fetchSalesHistory({
   desde,
   hasta,
+  ordersCursor: rawOrdersCursor,
+  legacyCursor: rawLegacyCursor,
+  loadOrders = true,
+  loadLegacyTickets = true,
 }: SalesHistoryParams): Promise<SalesHistoryResult> {
   try {
+    if (
+      !isValidSalesHistoryCursor(rawOrdersCursor) ||
+      !isValidSalesHistoryCursor(rawLegacyCursor)
+    ) {
+      return emptySalesHistoryResult("El cursor del historial no es válido");
+    }
+
+    const ordersCursor = normalizeSalesHistoryCursor(rawOrdersCursor);
+    const legacyCursor = normalizeSalesHistoryCursor(rawLegacyCursor);
+
     if (!isValidDate(desde) || !isValidDate(hasta)) {
-      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "El rango de fechas no es válido" };
+      return emptySalesHistoryResult("El rango de fechas no es válido");
     }
 
     const from = new Date(desde);
     const to = new Date(hasta);
     if (from > to) {
-      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "La fecha inicial debe ser anterior a la final" };
+      return emptySalesHistoryResult("La fecha inicial debe ser anterior a la final");
     }
     if (from > new Date()) {
-      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "No puedes consultar una fecha futura" };
+      return emptySalesHistoryResult("No puedes consultar una fecha futura");
     }
 
     const supabase = await createClient();
@@ -89,7 +136,7 @@ export async function fetchSalesHistory({
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "Tu sesión expiró. Inicia sesión nuevamente" };
+      return emptySalesHistoryResult("Tu sesión expiró. Inicia sesión nuevamente");
     }
 
     const { data: profile } = await supabase
@@ -99,18 +146,18 @@ export async function fetchSalesHistory({
       .maybeSingle();
 
     if (!profile?.is_active) {
-      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "Tu cuenta está desactivada" };
+      return emptySalesHistoryResult("Tu cuenta está desactivada");
     }
 
     const businessContext = await getSelectedBusinessContext(supabase);
     if (businessContext.multibusinessAvailable && !businessContext.businessId) {
-      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "No hay un negocio disponible para esta cuenta" };
+      return emptySalesHistoryResult("No hay un negocio disponible para esta cuenta");
     }
     if (
       businessContext.multibusinessAvailable &&
       businessContext.readableBusinessIds.length === 0
     ) {
-      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: null };
+      return emptySalesHistoryResult(null);
     }
     let readableBusinessIds = businessContext.readableBusinessIds;
     if (businessContext.multibusinessAvailable) {
@@ -119,10 +166,7 @@ export async function fetchSalesHistory({
       );
       if (licenseResult.error) {
         return {
-          orders: [],
-          legacyTickets: [],
-          legacyArchiveAvailable: false,
-          error: "No se pudo verificar qué negocios están habilitados",
+          ...emptySalesHistoryResult("No se pudo verificar qué negocios están habilitados"),
         };
       }
       const licensedBusinessIds = new Set(
@@ -137,7 +181,7 @@ export async function fetchSalesHistory({
         licensedBusinessIds.has(businessId)
       );
       if (readableBusinessIds.length === 0) {
-        return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: null };
+        return emptySalesHistoryResult(null);
       }
     }
 
@@ -149,7 +193,13 @@ export async function fetchSalesHistory({
       .gte("created_at", from.toISOString())
       .lte("created_at", to.toISOString())
       .order("created_at", { ascending: false })
-      .limit(500);
+      .order("id", { ascending: false })
+      .limit(SALES_HISTORY_PAGE_SIZE + 1);
+    if (ordersCursor) {
+      ordersQuery = ordersQuery.or(
+        buildSalesHistoryCursorFilter("created_at", ordersCursor)
+      );
+    }
     if (businessContext.multibusinessAvailable) {
       ordersQuery = ordersQuery.in("business_id", readableBusinessIds);
     } else if (businessContext.businessId) {
@@ -157,10 +207,20 @@ export async function fetchSalesHistory({
     }
 
     const loadLegacyArchive = async () => {
+      if (!loadLegacyTickets) {
+        return {
+          tickets: [] as LegacySalesTicket[],
+          available: false,
+          hasMore: false,
+          nextCursor: null,
+        };
+      }
       if (!businessContext.multibusinessAvailable || readableBusinessIds.length === 0) {
         return {
           tickets: [] as LegacySalesTicket[],
           available: false,
+          hasMore: false,
+          nextCursor: null,
         };
       }
 
@@ -171,39 +231,71 @@ export async function fetchSalesHistory({
         .lte("occurred_at", to.toISOString())
         .eq("source_system", "just-dipping-firestore")
         .order("occurred_at", { ascending: false })
-        .limit(1000);
+        .order("id", { ascending: false })
+        .limit(SALES_HISTORY_PAGE_SIZE + 1);
+      if (legacyCursor) {
+        archiveQuery = archiveQuery.or(
+          buildSalesHistoryCursorFilter("occurred_at", legacyCursor)
+        );
+      }
       if (businessContext.multibusinessAvailable) {
         archiveQuery = archiveQuery.in("business_id", readableBusinessIds);
       } else {
         archiveQuery = archiveQuery.eq("business_id", businessContext.businessId);
       }
       const { data, error } = await archiveQuery;
-      return error
-        ? { tickets: [] as LegacySalesTicket[], available: false }
-        : {
-            tickets: (data ?? []) as unknown as LegacySalesTicket[],
-            available: true,
-          };
+      if (error) {
+        return {
+          tickets: [] as LegacySalesTicket[],
+          available: false,
+          hasMore: false,
+          nextCursor: null,
+        };
+      }
+      const page = sliceSalesHistoryPage(
+        (data ?? []) as unknown as LegacySalesTicket[],
+        SALES_HISTORY_PAGE_SIZE,
+        (ticket) => ticket.occurred_at
+      );
+      return {
+        tickets: page.rows,
+        available: true,
+        hasMore: page.hasMore,
+        nextCursor: page.nextCursor,
+      };
     };
 
     const [ordersResult, legacyArchive] = await Promise.all([
-      ordersQuery,
+      loadOrders
+        ? ordersQuery
+        : Promise.resolve({ data: null, error: null }),
       loadLegacyArchive(),
     ]);
     const { data: ordersData, error: ordersError } = ordersResult;
 
     if (ordersError) {
-      return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "No se pudo cargar el historial de ventas" };
+      return emptySalesHistoryResult("No se pudo cargar el historial de ventas");
     }
 
-    const orders = (ordersData ?? []) as Order[];
+    const ordersPage = sliceSalesHistoryPage(
+      (ordersData ?? []) as Order[],
+      SALES_HISTORY_PAGE_SIZE,
+      (order) => order.created_at
+    );
+    const orders = ordersPage.rows;
     // Authenticated RLS remains the authorization boundary for the archive;
     // older deployments can run before its additive migration exists.
     const legacyTickets = legacyArchive.tickets;
     const legacyArchiveAvailable = legacyArchive.available;
 
     if (orders.length === 0) {
-      return { orders: [], legacyTickets, legacyArchiveAvailable, error: null };
+      return {
+        ...emptySalesHistoryResult(null, legacyTickets, legacyArchiveAvailable),
+        hasMoreOrders: ordersPage.hasMore,
+        nextOrdersCursor: ordersPage.nextCursor,
+        hasMoreLegacyTickets: legacyArchive.hasMore,
+        nextLegacyCursor: legacyArchive.nextCursor,
+      };
     }
 
     const orderIds = orders.map((order) => order.id);
@@ -228,7 +320,11 @@ export async function fetchSalesHistory({
     ]);
 
     if (itemsResult.error) {
-      return { orders: [], legacyTickets, legacyArchiveAvailable, error: "No se pudieron cargar los artículos del historial" };
+      return emptySalesHistoryResult(
+        "No se pudieron cargar los artículos del historial",
+        legacyTickets,
+        legacyArchiveAvailable
+      );
     }
 
     const creatorNames = new Map<string, string>();
@@ -273,10 +369,14 @@ export async function fetchSalesHistory({
       })),
       legacyTickets,
       legacyArchiveAvailable,
+      hasMoreOrders: ordersPage.hasMore,
+      nextOrdersCursor: ordersPage.nextCursor,
+      hasMoreLegacyTickets: legacyArchive.hasMore,
+      nextLegacyCursor: legacyArchive.nextCursor,
       error: null,
     };
   } catch {
-    return { orders: [], legacyTickets: [], legacyArchiveAvailable: false, error: "No se pudo cargar el historial de ventas" };
+    return emptySalesHistoryResult("No se pudo cargar el historial de ventas");
   }
 }
 

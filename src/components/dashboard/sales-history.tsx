@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftRight,
   Banknote,
@@ -37,6 +37,7 @@ import {
   type LegacySalesTicket,
   type SalesHistoryOrder,
 } from "@/lib/actions/sales";
+import type { SalesHistoryCursor } from "@/lib/sales-history-pagination";
 import { getCurrentUserRole } from "@/lib/actions/users";
 import {
   PaymentFlow,
@@ -91,6 +92,30 @@ type TicketChoice = {
   cash_shift_id: string | null;
   created_at: string;
 };
+
+function LoadMoreHistoryButton({
+  loading,
+  onClick,
+}: {
+  loading: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className="inline-flex h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-brand px-5 font-heading text-sm font-bold text-white shadow-md shadow-brand/20 transition hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+    >
+      {loading ? (
+        <RefreshCw size={16} className="animate-spin" />
+      ) : (
+        <ChevronDown size={17} />
+      )}
+      {loading ? "Cargando..." : "Cargar más historial"}
+    </button>
+  );
+}
 
 const TYPE_LABELS: Record<Order["type"], string> = {
   comedor: "Comedor",
@@ -761,6 +786,11 @@ export function SalesHistory() {
   const [orders, setOrders] = useState<SalesHistoryOrder[]>([]);
   const [legacyTickets, setLegacyTickets] = useState<LegacySalesTicket[]>([]);
   const [legacyArchiveAvailable, setLegacyArchiveAvailable] = useState(false);
+  const [hasMoreOrders, setHasMoreOrders] = useState(false);
+  const [nextOrdersCursor, setNextOrdersCursor] = useState<SalesHistoryCursor | null>(null);
+  const [hasMoreLegacyTickets, setHasMoreLegacyTickets] = useState(false);
+  const [nextLegacyCursor, setNextLegacyCursor] = useState<SalesHistoryCursor | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<SalesHistoryOrder | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -785,6 +815,8 @@ export function SalesHistory() {
   } | null>(null);
   const [viewerRole, setViewerRole] = useState<Profile["role"] | null>(null);
   const [expandedPendingAccount, setExpandedPendingAccount] = useState<string | null>(null);
+  const historyRequestId = useRef(0);
+  const loadingMoreLock = useRef(false);
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
   const fetchCurrentShiftForBusiness = useCashShiftStore(
     (state) => state.fetchCurrentShiftForBusiness
@@ -823,22 +855,120 @@ export function SalesHistory() {
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
-    const result = await fetchSalesHistory(range);
-    if (result.error) {
-      toast.error(result.error);
-      setOrders([]);
-      setLegacyTickets([]);
-      setLegacyArchiveAvailable(false);
-    } else {
-      setOrders(result.orders);
-      setLegacyTickets(result.legacyTickets);
-      setLegacyArchiveAvailable(result.legacyArchiveAvailable);
-      setSelectedOrder((current) =>
-        current ? result.orders.find((order) => order.id === current.id) ?? null : null
-      );
+    setLoadingMore(false);
+    loadingMoreLock.current = false;
+    const requestId = ++historyRequestId.current;
+    try {
+      const result = await fetchSalesHistory(range);
+      if (requestId !== historyRequestId.current) return;
+      if (result.error) {
+        toast.error(result.error);
+        setOrders([]);
+        setLegacyTickets([]);
+        setLegacyArchiveAvailable(false);
+        setHasMoreOrders(false);
+        setNextOrdersCursor(null);
+        setHasMoreLegacyTickets(false);
+        setNextLegacyCursor(null);
+      } else {
+        setOrders(result.orders);
+        setLegacyTickets(result.legacyTickets);
+        setLegacyArchiveAvailable(result.legacyArchiveAvailable);
+        setHasMoreOrders(result.hasMoreOrders);
+        setNextOrdersCursor(result.nextOrdersCursor);
+        setHasMoreLegacyTickets(result.hasMoreLegacyTickets);
+        setNextLegacyCursor(result.nextLegacyCursor);
+        setSelectedOrder((current) =>
+          current ? result.orders.find((order) => order.id === current.id) ?? null : null
+        );
+      }
+    } catch {
+      if (requestId === historyRequestId.current) {
+        toast.error("No se pudo cargar el historial de ventas");
+        setOrders([]);
+        setLegacyTickets([]);
+        setLegacyArchiveAvailable(false);
+        setHasMoreOrders(false);
+        setNextOrdersCursor(null);
+        setHasMoreLegacyTickets(false);
+        setNextLegacyCursor(null);
+      }
+    } finally {
+      if (requestId === historyRequestId.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        loadingMoreLock.current = false;
+      }
     }
-    setLoading(false);
   }, [range]);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (
+      loading ||
+      loadingMoreLock.current ||
+      (!hasMoreOrders && !hasMoreLegacyTickets)
+    ) {
+      return;
+    }
+
+    const requestId = historyRequestId.current;
+    loadingMoreLock.current = true;
+    setLoadingMore(true);
+    try {
+      const result = await fetchSalesHistory({
+        ...range,
+        ordersCursor: hasMoreOrders ? nextOrdersCursor : null,
+        legacyCursor: hasMoreLegacyTickets ? nextLegacyCursor : null,
+        loadOrders: hasMoreOrders,
+        loadLegacyTickets: hasMoreLegacyTickets,
+      });
+      if (requestId !== historyRequestId.current) return;
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      const legacyPageFailed =
+        hasMoreLegacyTickets && !result.legacyArchiveAvailable;
+      if (legacyPageFailed) {
+        toast.error("No se pudieron cargar más tickets históricos. Intenta de nuevo.");
+      }
+
+      setOrders((current) => {
+        const knownIds = new Set(current.map((order) => order.id));
+        return [...current, ...result.orders.filter((order) => !knownIds.has(order.id))];
+      });
+      setLegacyTickets((current) => {
+        const knownIds = new Set(current.map((ticket) => ticket.id));
+        return [
+          ...current,
+          ...result.legacyTickets.filter((ticket) => !knownIds.has(ticket.id)),
+        ];
+      });
+      if (result.legacyArchiveAvailable) setLegacyArchiveAvailable(true);
+      setHasMoreOrders(result.hasMoreOrders);
+      setNextOrdersCursor(result.nextOrdersCursor);
+      if (!legacyPageFailed) {
+        setHasMoreLegacyTickets(result.hasMoreLegacyTickets);
+        setNextLegacyCursor(result.nextLegacyCursor);
+      }
+    } catch {
+      if (requestId === historyRequestId.current) {
+        toast.error("No se pudo cargar más historial");
+      }
+    } finally {
+      if (requestId === historyRequestId.current) {
+        loadingMoreLock.current = false;
+        setLoadingMore(false);
+      }
+    }
+  }, [
+    hasMoreLegacyTickets,
+    hasMoreOrders,
+    loading,
+    nextLegacyCursor,
+    nextOrdersCursor,
+    range,
+  ]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadHistory(), 0);
@@ -1092,7 +1222,7 @@ export function SalesHistory() {
                   {pendingPaymentOrders.length} pedido{pendingPaymentOrders.length !== 1 ? "s" : ""} pendiente{pendingPaymentOrders.length !== 1 ? "s" : ""} de cobro
                 </p>
                 <p className="font-body text-xs text-muted-foreground">
-                  Total por cobrar: {formatMoney(pendingPaymentTotal)}
+                  En los pedidos cargados · Total por cobrar: {formatMoney(pendingPaymentTotal)}
                 </p>
               </div>
               <button
@@ -1113,7 +1243,7 @@ export function SalesHistory() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <h2 className="font-heading text-base font-bold">Cuentas pendientes por mesa</h2>
-                  <p className="font-body text-xs text-muted-foreground">Liquida todos los pedidos de una mesa en un solo cobro</p>
+                  <p className="font-body text-xs text-muted-foreground">Cuentas de los pedidos cargados</p>
                 </div>
                 <span className="rounded-full bg-brand-light px-2.5 py-1 font-data text-xs font-bold text-brand">{pendingTableAccounts.length}</span>
               </div>
@@ -1214,7 +1344,8 @@ export function SalesHistory() {
                 ]}
               />
               <span className="ml-auto self-center font-body text-xs text-muted-foreground">
-                {filteredOrders.length} de {scopedOrders.length} pedidos
+                {filteredOrders.length} de {scopedOrders.length} pedidos cargados
+                {hasMoreOrders ? " · hay más" : ""}
               </span>
             </div>
           </section>
@@ -1243,7 +1374,9 @@ export function SalesHistory() {
                   <ReceiptText size={34} className="mb-3 text-muted-foreground/50" />
                   <p className="font-heading text-sm font-bold">No encontramos pedidos</p>
                   <p className="mt-1 max-w-sm font-body text-xs text-muted-foreground">
-                    Prueba con otro rango o limpia los filtros para ver más ventas.
+                    {hasMoreOrders
+                      ? "No hay coincidencias entre los pedidos cargados. Carga más historial o cambia los filtros."
+                      : "Prueba con otro rango o limpia los filtros para ver más ventas."}
                   </p>
                 </div>
               ) : (
@@ -1259,6 +1392,14 @@ export function SalesHistory() {
                   ))}
                 </div>
               )}
+              {(hasMoreOrders || hasMoreLegacyTickets) && !loading ? (
+                <div className="mt-4 flex justify-center">
+                  <LoadMoreHistoryButton
+                    loading={loadingMore}
+                    onClick={() => void loadMoreHistory()}
+                  />
+                </div>
+              ) : null}
             </section>
 
             <aside className="hidden min-h-0 overflow-hidden rounded-2xl border border-border bg-surface shadow-card xl:block">
@@ -1281,7 +1422,8 @@ export function SalesHistory() {
             </aside>
           </div>
 
-          {legacyArchiveAvailable && filteredLegacyTickets.length > 0 ? (
+          {legacyArchiveAvailable &&
+          (filteredLegacyTickets.length > 0 || hasMoreLegacyTickets) ? (
             <section className="rounded-2xl border border-warning/25 bg-surface p-3 shadow-card sm:p-4">
               <div className="mb-3 flex items-start gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-warning/10 text-warning">
@@ -1339,7 +1481,25 @@ export function SalesHistory() {
                     </details>
                   </article>
                 ))}
+                {filteredLegacyTickets.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-border p-4 text-center font-body text-xs text-muted-foreground">
+                    No hay coincidencias en los tickets cargados. Puedes cargar más historial o cambiar la búsqueda.
+                  </p>
+                ) : null}
               </div>
+            </section>
+          ) : null}
+
+          {(hasMoreOrders || hasMoreLegacyTickets) && !loading ? (
+            <section className="flex flex-col items-center gap-2 rounded-2xl border border-border bg-surface p-4 text-center shadow-card sm:flex-row sm:justify-between sm:text-left">
+              <p className="font-body text-xs text-muted-foreground">
+                {scopedOrders.length} pedidos
+                {legacyArchiveAvailable ? ` y ${legacyTickets.length} tickets históricos` : ""} cargados en este periodo.
+              </p>
+              <LoadMoreHistoryButton
+                loading={loadingMore}
+                onClick={() => void loadMoreHistory()}
+              />
             </section>
           ) : null}
         </div>

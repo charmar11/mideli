@@ -48,7 +48,8 @@ jobs:
             tests/e2e/combo-selection.spec.ts \
             tests/e2e/operational-policies.spec.ts \
             tests/e2e/order-totals.spec.ts \
-            tests/e2e/pos-cart-draft.spec.ts
+            tests/e2e/pos-cart-draft.spec.ts \
+            tests/e2e/sales-history-pagination.spec.ts
 
   database:
     name: Supabase staging gate and pgTAP

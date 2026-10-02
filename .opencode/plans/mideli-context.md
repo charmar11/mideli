@@ -1173,9 +1173,8 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
   concurrentemente. Son lecturas independientes; se conservan los mismos
   resultados requeridos para autorizar cada pantalla. No se cambia el esquema ni
   datos operativos.
-- Falta comparar la experiencia de navegación autenticada después de publicar.
-  El muestreo agregado no incluyó suficientes lecturas del catálogo para medir
-  directamente el cambio entre menús.
+- La usuaria confirmó que ahora se percibe más rápido el cambio repetido entre
+  los menús de los negocios en producción.
 
 ## 27. Cambio rápido entre menús de negocios (2026-10-01)
 
@@ -1190,5 +1189,26 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
   tardías no pueden reemplazar el negocio seleccionado más recientemente.
 - La caché no se persiste en navegador ni incluye datos de clientes/pedidos.
   No hay cambios de esquema ni escrituras en ventas. Playwright cubre separación
-  por negocio, expiración e invalidación; falta que una mesera global confirme
-  en producción la primera carga y el regreso repetido entre ambos menús.
+  por negocio, expiración e invalidación; la usuaria confirmó que ahora se
+  percibe más rápido el regreso entre menús en producción.
+
+## 28. Historial sin topes de 500 pedidos y 1,000 tickets (2026-10-01)
+
+- Historial reemplaza los topes fijos por páginas de 100 pedidos y 100 tickets
+  históricos. Usa un cursor compuesto por fecha e ID, orden estable en ambas
+  columnas y lectura de una fila extra para saber si hay otra página; evita
+  desplazamientos que podrían duplicar o saltar registros al entrar pedidos.
+- «Cargar más historial» aparece junto a pedidos y después del archivo. Continúa
+  por cada fuente solo si le quedan filas. Buscar y filtrar siguen operando sobre
+  lo cargado; contadores y avisos de cobro aclaran ese alcance.
+- Cada página vuelve a autenticar y resolver negocios/licencias. Se mantienen
+  filtros de fecha, RLS y separación de tickets históricos; no hay migración,
+  escritura de ventas ni cambio de permisos.
+- Una consulta agregada de solo lectura en Supabase el 2026-10-01 encontró 267
+  pedidos operativos y cero filas en `legacy_sales_tickets`. La paginación no
+  importa los 1,138 tickets Firestore: esa migración continúa pendiente.
+- Se agregaron pruebas de límite de página, cursores empatados por timestamp y
+  validación de entrada; Playwright y aislamiento entre negocios pasan en
+  desktop, tablet y móvil. El workflow de GitHub ejecuta la prueba nueva.
+- `npm run lint` y `npm run build` pasan. Pendiente: resultado del CI posterior
+  al push, despliegue de producción y comprobar `/api/health`.

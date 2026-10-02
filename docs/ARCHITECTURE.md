@@ -65,11 +65,19 @@ mantenerla deshabilitada hasta confirmación del dueño.
 
 Las migraciones de combos, folios, catálogo y estructura del archivo constan
 aplicadas en producción al corte del 2026-09-27. La inspección de Firebase
-encontró 1,138 tickets anteriores, pero la última revisión documentada de
-`legacy_sales_tickets` encontró cero filas de Just Dipping: la importación de
-esos tickets sigue pendiente. Cuando se importen, quedarán fuera de ventas,
-caja y reportes operativos. Antes del piloto hay que verificar catálogo,
-inventario y permisos con el dueño.
+encontró 1,138 tickets anteriores; una consulta agregada de solo lectura en
+Supabase confirmó que `legacy_sales_tickets` seguía vacía el 2026-10-01. La
+importación de esos tickets sigue pendiente. Cuando se importen, quedarán fuera
+de ventas, caja y reportes operativos. Antes del piloto hay que verificar
+catálogo, inventario y permisos con el dueño.
+
+Historial carga 100 pedidos y, cuando el archivo está disponible, 100 tickets
+históricos por página. Un cursor compuesto por fecha e ID mantiene el orden y
+evita depender de desplazamientos que cambian cuando llegan pedidos nuevos.
+Los filtros se aplican sobre lo ya cargado; el botón «Cargar más historial»
+avanza ambas fuentes sin cambiar sus permisos ni mezclar tickets archivados con
+ventas operativas. Los contadores y el resumen de cobros pendientes indican el
+alcance cargado, no un total del periodo mientras haya páginas por consultar.
 
 ### Licencias por negocio
 
