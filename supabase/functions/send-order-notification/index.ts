@@ -3,12 +3,15 @@ import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import {
   canSendBusinessOrderNotification,
+  canReceiveOrderNotificationEvent,
+  canReceiveBusinessOrderNotification,
+  isWaiterNotificationRole,
   capabilityBelongsToBusiness,
   getOrderNotificationDestination,
   membershipBelongsToBusiness,
 } from "../_shared/order-notification-policy.ts";
 
-type NotificationEvent = "new_order" | "ready";
+type NotificationEvent = "new_order" | "in_preparation" | "ready";
 type NotificationTopic = "kitchen" | "ready";
 
 type PushSubscriptionRow = {
@@ -41,6 +44,7 @@ type MembershipRow = {
   id: string;
   user_id: string;
   scope_type: string;
+  role_code: string;
   organization_id: string | null;
   business_id: string | null;
 };
@@ -101,19 +105,32 @@ function isMissingBusinessColumn(error: { code?: string; message?: string } | nu
 async function getRecipientUserIds(
   admin: AdminClient,
   businessId: string | null,
-  topic: NotificationTopic,
+  event: NotificationEvent,
   callerUserId: string | null,
 ) {
   if (!businessId) {
+    const roles =
+      event === "new_order"
+        ? [...NEW_ORDER_ROLES]
+        : event === "ready"
+          ? [...READY_ORDER_ROLES, "waiter"]
+          : [...READY_ORDER_ROLES];
     const { data, error } = await admin
       .from("profiles")
-      .select("id")
+      .select("id,role")
       .eq("is_active", true)
-      .in("role", topic === "kitchen" ? [...READY_ORDER_ROLES] : [...NEW_ORDER_ROLES]);
+      .in("role", roles);
     return {
       ids: (data ?? []).map((profile) => profile.id),
       callerCapabilities: new Set<string>(),
       capabilitiesByUserId: new Map<string, Set<string>>(),
+      globalWaiterUserIds: new Set<string>(),
+      localOrderAccessUserIds: new Set<string>(),
+      waiterUserIds: new Set(
+        (data ?? [])
+          .filter((profile) => isWaiterNotificationRole(profile.role))
+          .map((profile) => profile.id),
+      ),
       error: error?.message ?? null,
     };
   }
@@ -128,19 +145,25 @@ async function getRecipientUserIds(
       ids: [] as string[],
       callerCapabilities: new Set<string>(),
       capabilitiesByUserId: new Map<string, Set<string>>(),
+      globalWaiterUserIds: new Set<string>(),
+      localOrderAccessUserIds: new Set<string>(),
+      waiterUserIds: new Set<string>(),
       error: businessError?.message ?? "No se encontró la organización del negocio",
     };
   }
 
   const { data: membershipRows, error: membershipError } = await admin
     .from("memberships")
-    .select("id,user_id,scope_type,organization_id,business_id")
+    .select("id,user_id,scope_type,role_code,organization_id,business_id")
     .eq("status", "active");
   if (membershipError) {
     return {
       ids: [] as string[],
       callerCapabilities: new Set<string>(),
       capabilitiesByUserId: new Map<string, Set<string>>(),
+      globalWaiterUserIds: new Set<string>(),
+      localOrderAccessUserIds: new Set<string>(),
+      waiterUserIds: new Set<string>(),
       error: membershipError.message,
     };
   }
@@ -153,12 +176,29 @@ async function getRecipientUserIds(
       businessId,
     );
   }) as MembershipRow[];
+  const globalWaiterUserIds = new Set(
+    visibleMemberships
+      .filter(
+        (membership) =>
+          membership.scope_type === "organization" &&
+          membership.role_code === "global_waiter",
+      )
+      .map((membership) => membership.user_id),
+  );
+  const waiterUserIds = new Set(
+    visibleMemberships
+      .filter((membership) => isWaiterNotificationRole(membership.role_code))
+      .map((membership) => membership.user_id),
+  );
   const membershipIds = visibleMemberships.map((membership) => membership.id);
   if (membershipIds.length === 0) {
     return {
       ids: [] as string[],
       callerCapabilities: new Set<string>(),
       capabilitiesByUserId: new Map<string, Set<string>>(),
+      globalWaiterUserIds,
+      localOrderAccessUserIds: new Set<string>(),
+      waiterUserIds,
       error: null,
     };
   }
@@ -179,6 +219,9 @@ async function getRecipientUserIds(
       ids: [] as string[],
       callerCapabilities: new Set<string>(),
       capabilitiesByUserId: new Map<string, Set<string>>(),
+      globalWaiterUserIds,
+      localOrderAccessUserIds: new Set<string>(),
+      waiterUserIds,
       error: capabilityError.message,
     };
   }
@@ -187,6 +230,7 @@ async function getRecipientUserIds(
     visibleMemberships.map((membership) => [membership.id, membership]),
   );
   const capabilitiesByUserId = new Map<string, Set<string>>();
+  const localOrderAccessUserIds = new Set<string>();
   for (const rawCapability of capabilityRows ?? []) {
     const capability = rawCapability as MembershipCapabilityRow;
     if (
@@ -200,6 +244,13 @@ async function getRecipientUserIds(
     }
     const membership = membershipsById.get(capability.membership_id);
     if (!membership) continue;
+    if (
+      membership.scope_type === "business" &&
+      (capability.capability_code === "business.operate_orders" ||
+        capability.capability_code === "business.update_preparation")
+    ) {
+      localOrderAccessUserIds.add(membership.user_id);
+    }
     const codes = capabilitiesByUserId.get(membership.user_id) ?? new Set<string>();
     codes.add(capability.capability_code);
     capabilitiesByUserId.set(membership.user_id, codes);
@@ -211,13 +262,16 @@ async function getRecipientUserIds(
       ids: [] as string[],
       callerCapabilities: new Set<string>(),
       capabilitiesByUserId,
+      globalWaiterUserIds,
+      localOrderAccessUserIds,
+      waiterUserIds,
       error: null,
     };
   }
 
   const { data: activeProfiles, error: profilesError } = await admin
     .from("profiles")
-    .select("id")
+    .select("id,role")
     .in("id", candidateUserIds)
     .eq("is_active", true);
   if (profilesError) {
@@ -225,11 +279,17 @@ async function getRecipientUserIds(
       ids: [] as string[],
       callerCapabilities: new Set<string>(),
       capabilitiesByUserId: new Map<string, Set<string>>(),
+      globalWaiterUserIds,
+      localOrderAccessUserIds,
+      waiterUserIds,
       error: profilesError.message,
     };
   }
 
   const activeUserIds = new Set((activeProfiles ?? []).map((profile) => profile.id));
+  for (const profile of activeProfiles ?? []) {
+    if (isWaiterNotificationRole(profile.role)) waiterUserIds.add(profile.id);
+  }
   for (const userId of candidateUserIds) {
     if (!activeUserIds.has(userId)) capabilitiesByUserId.delete(userId);
   }
@@ -240,6 +300,9 @@ async function getRecipientUserIds(
       ? capabilitiesByUserId.get(callerUserId) ?? new Set<string>()
       : new Set<string>(),
     capabilitiesByUserId,
+    globalWaiterUserIds,
+    localOrderAccessUserIds,
+    waiterUserIds,
     error: null,
   };
 }
@@ -288,7 +351,12 @@ Deno.serve(async (req) => {
     orderId?: string;
     event?: NotificationEvent;
   };
-  if (!orderId || (event !== "new_order" && event !== "ready")) {
+  if (
+    !orderId ||
+    (event !== "new_order" &&
+      event !== "in_preparation" &&
+      event !== "ready")
+  ) {
     return json({ error: "Evento de pedido incompleto" }, 400);
   }
   const topic: NotificationTopic = event === "new_order" ? "kitchen" : "ready";
@@ -342,19 +410,23 @@ Deno.serve(async (req) => {
   if (event === "new_order" && !order.business_id && caller?.role === "waiter" && order.created_by !== userId) {
     return json({ error: "No puedes publicar otro pedido" }, 403);
   }
-  if (event === "ready" && order.status !== "ready") {
-    return json({ error: "El pedido no está listo" }, 409);
+  if (
+    event !== "new_order" &&
+    order.status !== (event === "ready" ? "ready" : "in_kitchen")
+  ) {
+    return json({ error: "El pedido ya no tiene ese estado" }, 409);
   }
 
   let transitionLogId: string | null = null;
   let eventKey = `${topic}:${order.id}`;
 
-  if (event === "ready") {
+  if (event !== "new_order") {
+    const targetStatus = event === "ready" ? "ready" : "in_kitchen";
     const { data: transition, error: transitionError } = await admin
       .from("order_status_log")
       .select("id")
       .eq("order_id", order.id)
-      .eq("to_status", "ready")
+      .eq("to_status", targetStatus)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -368,13 +440,23 @@ Deno.serve(async (req) => {
   const recipientResult = await getRecipientUserIds(
     admin,
     order.business_id,
-    topic,
+    event,
     userId,
   );
   if (recipientResult.error) {
     return json({ error: "No se pudieron preparar los destinatarios" }, 500);
   }
-  const recipientUserIds = recipientResult.ids;
+  const recipientUserIds = recipientResult.ids.filter((recipientUserId) =>
+    canReceiveBusinessOrderNotification(
+      order.type,
+      recipientResult.globalWaiterUserIds.has(recipientUserId),
+      recipientResult.localOrderAccessUserIds.has(recipientUserId),
+    ) &&
+    canReceiveOrderNotificationEvent(
+      event,
+      recipientResult.waiterUserIds.has(recipientUserId),
+    ),
+  );
   if (userId && order.business_id) {
     if (
       !canSendBusinessOrderNotification(event, recipientResult.callerCapabilities)
@@ -466,13 +548,17 @@ Deno.serve(async (req) => {
   const destination = locationLabel(order);
   const itemSummary = `${itemCount} artículo${itemCount === 1 ? "" : "s"}`;
   const title =
-    topic === "kitchen"
+    event === "new_order"
       ? `Nuevo pedido #${order.number}`
-      : `Pedido #${order.number} listo`;
+      : event === "in_preparation"
+        ? `Pedido #${order.number} en preparación`
+        : `Pedido #${order.number} listo`;
   const body =
-    topic === "kitchen"
+    event === "new_order"
       ? `${destination} · ${itemSummary}`
-      : `${destination}. Toca para entregarlo.`;
+      : event === "in_preparation"
+        ? `${destination}. Ya comenzó la preparación.`
+        : `${destination}. Toca para entregarlo.`;
   webpush.setVapidDetails(subject, publicKey, privateKey);
 
   const expiredIds: string[] = [];

@@ -1,4 +1,4 @@
-export type OrderNotificationEvent = "new_order" | "ready";
+export type OrderNotificationEvent = "new_order" | "in_preparation" | "ready";
 
 export type NotificationMembershipScope = {
   scope_type: string;
@@ -59,6 +59,33 @@ export function canSendBusinessOrderNotification(
     ? capabilities.has("business.operate_orders") ||
         capabilities.has("organization.operate_orders")
     : capabilities.has("business.update_preparation");
+}
+
+export function isWaiterNotificationRole(roleCode: string) {
+  return (
+    roleCode === "waiter" ||
+    roleCode === "local_waiter" ||
+    roleCode === "global_waiter"
+  );
+}
+
+export function canReceiveOrderNotificationEvent(
+  event: OrderNotificationEvent,
+  isWaiter: boolean,
+) {
+  return !isWaiter || event === "ready";
+}
+
+export function canReceiveBusinessOrderNotification(
+  orderType: string,
+  isGlobalWaiter: boolean,
+  hasLocalBusinessOrderAccess: boolean,
+) {
+  return (
+    !isGlobalWaiter ||
+    hasLocalBusinessOrderAccess ||
+    orderType === "comedor"
+  );
 }
 
 export function getOrderNotificationDestination(
