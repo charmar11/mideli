@@ -2,6 +2,8 @@ import "server-only";
 
 import {
   addressQueryCandidates,
+  extractAddressCoordinates,
+  extractColonyFromAddressText,
   extractColonyFromResult,
   selectConfidentAddressResult,
   selectReverseGeocodingResult,
@@ -13,6 +15,71 @@ import {
 } from "./google-route-distance";
 
 type Coordinates = GoogleRouteCoordinates;
+
+const GOOGLE_MAPS_LINK_HOSTS = new Set([
+  "google.com",
+  "www.google.com",
+  "maps.google.com",
+  "maps.app.goo.gl",
+  "goo.gl",
+]);
+
+function parseGoogleMapsUrl(value: string) {
+  try {
+    const url = new URL(value.trim().replace(/[),.;]+$/, ""));
+    if (
+      url.protocol !== "https:" ||
+      !GOOGLE_MAPS_LINK_HOSTS.has(url.hostname.toLowerCase()) ||
+      url.username ||
+      url.password ||
+      (url.port && url.port !== "443")
+    ) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+async function coordinatesFromGoogleMapsShortLink(value: string): Promise<Coordinates | null> {
+  const initial = parseGoogleMapsUrl(value);
+  if (!initial) return null;
+  const host = initial.hostname.toLowerCase();
+  const isShortLink = host === "maps.app.goo.gl" ||
+    (host === "goo.gl" && initial.pathname.toLowerCase().startsWith("/maps/"));
+  if (!isShortLink) return null;
+
+  let current = initial;
+  const timeout = AbortSignal.timeout(6000);
+  for (let redirectCount = 0; redirectCount < 5; redirectCount += 1) {
+    const parsedCoordinates = extractAddressCoordinates(current.toString());
+    if (parsedCoordinates) return parsedCoordinates;
+
+    const response = await fetch(current, {
+      method: "GET",
+      redirect: "manual",
+      signal: timeout,
+      cache: "no-store",
+      headers: { Accept: "text/html" },
+    });
+    if (response.status < 300 || response.status >= 400) break;
+    const location = response.headers.get("location");
+    if (!location) break;
+
+    let redirectedUrl: string;
+    try {
+      redirectedUrl = new URL(location, current).toString();
+    } catch {
+      throw new Error("google_maps_link_unresolved");
+    }
+    const next = parseGoogleMapsUrl(redirectedUrl);
+    if (!next) throw new Error("google_maps_link_unresolved");
+    current = next;
+  }
+
+  const resolved = extractAddressCoordinates(current.toString());
+  if (resolved) return resolved;
+  throw new Error("google_maps_link_unresolved");
+}
 
 export type GeocodedDestination = Coordinates & {
   formattedAddress: string;
@@ -43,16 +110,6 @@ function apiKey() {
   const value = process.env.GOOGLE_MAPS_SERVER_API_KEY?.trim();
   if (!value) throw new Error("google_maps_not_configured");
   return value;
-}
-
-function sharedCoordinates(value: string): Coordinates | null {
-  const match = value.match(/(?:q=|geo:|ubicacion compartida:\s*)(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/i);
-  if (!match) return null;
-  const latitude = Number(match[1]);
-  const longitude = Number(match[2]);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
-  return { latitude, longitude };
 }
 
 async function geocodingRequest(parameters: URLSearchParams) {
@@ -185,8 +242,8 @@ export async function searchGooglePlaces(
   sessionToken: string,
   options?: { localityHint?: string; origin?: Coordinates | null }
 ) {
-  const value = query.trim();
-  if (value.length < 3 || !sessionToken.trim()) return [];
+  const value = query.trim().slice(0, 240);
+  if (value.length < 3 || !sessionToken.trim() || sessionToken.length > 160) return [];
   return placesAutocompleteRequest(
     value,
     sessionToken.trim(),
@@ -197,8 +254,11 @@ export async function searchGooglePlaces(
 
 export async function resolveGooglePlaceDestination(
   placeId: string,
-  sessionToken = ""
+  sessionToken = "",
+  typedAddress = "",
+  fallbackColony = ""
 ) {
+  if (!placeId.trim() || placeId.length > 256) throw new Error("google_place_id_invalid");
   const parameters = new URLSearchParams({ languageCode: "es", regionCode: "MX" });
   if (sessionToken.trim()) parameters.set("sessionToken", sessionToken.trim());
   const response = await fetch(
@@ -217,7 +277,11 @@ export async function resolveGooglePlaceDestination(
   const place = (await response.json()) as GooglePlaceSearchResult;
   const results = placeToGeocodingResult(place);
   if (!results[0]) throw new Error("address_coordinates_missing");
-  return destinationWithColony(results[0]);
+  const selected = typedAddress.trim()
+    ? selectConfidentAddressResult(typedAddress, results)
+    : results[0];
+  const explicitColony = extractColonyFromAddressText(typedAddress) || fallbackColony.trim();
+  return destinationWithColony(selected, undefined, explicitColony, typedAddress);
 }
 
 function colonyFromResults(results: GoogleGeocodingResult[]) {
@@ -248,9 +312,12 @@ function destinationFromResult(
 
 async function destinationWithColony(
   result: GoogleGeocodingResult,
-  coordinates?: Coordinates
+  coordinates?: Coordinates,
+  fallbackColony = "",
+  searchAddress = "",
+  localityHint = "Ciudad Obregón, Sonora, México"
 ) {
-  const destination = destinationFromResult(result, coordinates);
+  const destination = destinationFromResult(result, coordinates, fallbackColony);
   if (destination.colony) return destination;
 
   try {
@@ -259,21 +326,51 @@ async function destinationWithColony(
         latlng: `${destination.latitude},${destination.longitude}`,
       })
     );
-    return destinationFromResult(
+    const reverseDestination = destinationFromResult(
       result,
       coordinates,
       colonyFromResults(reverseResults)
     );
+    if (reverseDestination.colony) return reverseDestination;
   } catch {
-    return destination;
+    // Continue to the text search fallback below. Reverse geocoding can fail
+    // or omit political components for private/new subdivisions.
   }
+
+  if (searchAddress.trim().length >= 3) {
+    try {
+      const placeResults = await placesSearchRequest(
+        searchAddress,
+        localityHint
+      );
+      if (placeResults.length > 0) {
+        const confidentPlace = selectConfidentAddressResult(searchAddress, placeResults);
+        const withoutPostalCode = searchAddress.replace(/\b(?:c\.?\s*p\.?|cp)\s*\d{5}\b/gi, "");
+        const expectsStreetNumber = /\b\d{1,6}[a-z]?\b/i.test(withoutPostalCode);
+        const hasStreetAddressType = confidentPlace.types?.some((type) =>
+          ["street_address", "premise", "subpremise"].includes(type)
+        );
+        if (expectsStreetNumber && !hasStreetAddressType) return destination;
+        const placeColony = extractColonyFromResult(confidentPlace);
+        if (placeColony) {
+          return destinationFromResult(result, coordinates, placeColony);
+        }
+      }
+    } catch {
+      // A missing colony remains explicit to the operator; never guess one.
+    }
+  }
+  return destination;
 }
 
 export async function geocodeDestination(
   value: string,
-  localityHint = "Ciudad Obregón, Sonora, México"
+  localityHint = "Ciudad Obregón, Sonora, México",
+  fallbackColony = ""
 ): Promise<GeocodedDestination> {
-  const coordinates = sharedCoordinates(value);
+  const coordinates = extractAddressCoordinates(value) ??
+    await coordinatesFromGoogleMapsShortLink(value);
+  const explicitColony = extractColonyFromAddressText(value) || fallbackColony.trim();
   if (coordinates) {
     const parameters = new URLSearchParams({
       latlng: `${coordinates.latitude},${coordinates.longitude}`,
@@ -282,7 +379,7 @@ export async function geocodeDestination(
     return destinationFromResult(
       selectReverseGeocodingResult(results),
       coordinates,
-      colonyFromResults(results)
+      colonyFromResults(results) || explicitColony
     );
   }
 
@@ -294,7 +391,13 @@ export async function geocodeDestination(
       : `${candidate}, ${localityHint}`;
     try {
       const results = await geocodingRequest(new URLSearchParams({ address }));
-      return destinationWithColony(selectConfidentAddressResult(value, results));
+      return destinationWithColony(
+        selectConfidentAddressResult(value, results),
+        undefined,
+        explicitColony,
+        value,
+        localityHint
+      );
     } catch (error) {
       const reason = error instanceof Error ? error.message : "";
       if (
@@ -313,7 +416,13 @@ export async function geocodeDestination(
   try {
     const places = await placesSearchRequest(value, localityHint);
     if (places.length > 0) {
-      return destinationWithColony(selectConfidentAddressResult(value, places));
+      return destinationWithColony(
+        selectConfidentAddressResult(value, places),
+        undefined,
+        explicitColony,
+        value,
+        localityHint
+      );
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "";

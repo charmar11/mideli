@@ -16,6 +16,49 @@ export type DeliverySurchargeRule = {
   isActive?: boolean;
 };
 
+export const UNREGISTERED_DELIVERY_COLONY = "Sin colonia registrada";
+
+export type DeliveryColonyPricing =
+  | { status: "identified"; colony: string; colonySearchText: string }
+  | { status: "confirmation_required" }
+  | {
+      status: "unregistered";
+      colony: "";
+      colonySearchText: "";
+      displayColony: typeof UNREGISTERED_DELIVERY_COLONY;
+    };
+
+/**
+ * A missing colony blocks automatic pricing by default. If staff explicitly
+ * confirms that the area has no registered colony, use distance pricing only
+ * and do not infer a zone surcharge from arbitrary address text.
+ */
+export function resolveDeliveryColonyPricing(input: {
+  colony: string;
+  address: string;
+  allowUnregisteredColony: boolean;
+}): DeliveryColonyPricing {
+  const colony = input.colony.trim();
+  if (colony) {
+    return {
+      status: "identified",
+      colony,
+      colonySearchText: input.address,
+    };
+  }
+
+  if (!input.allowUnregisteredColony) {
+    return { status: "confirmation_required" };
+  }
+
+  return {
+    status: "unregistered",
+    colony: "",
+    colonySearchText: "",
+    displayColony: UNREGISTERED_DELIVERY_COLONY,
+  };
+}
+
 export type DeliveryPriceResult =
   | {
       status: "quoted";

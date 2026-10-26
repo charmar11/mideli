@@ -1,4 +1,4 @@
-import { normalizeText } from "./normalize";
+import { normalizeAddressForComparison, normalizeText } from "./normalize";
 
 export type GoogleAddressComponent = {
   long_name?: string;
@@ -39,19 +39,21 @@ const NAMED_PLACE_TYPES = new Set([
 ]);
 
 const COLONY_COMPONENT_TYPES = [
-  "sublocality_level_1",
   "neighborhood",
+  "sublocality_level_1",
   "sublocality",
   "sublocality_level_2",
   "sublocality_level_3",
   "sublocality_level_4",
   "sublocality_level_5",
+];
+
+const BROADER_ADMINISTRATIVE_AREA_TYPES = [
   "administrative_area_level_3",
   "administrative_area_level_4",
   "administrative_area_level_5",
   "administrative_area_level_6",
   "administrative_area_level_7",
-  "premise",
 ];
 
 const NON_COLONY_NAMES = new Set([
@@ -71,27 +73,85 @@ function isUsableColonyName(value: string) {
 }
 
 const LABELED_COLONY_PATTERN =
-  /\b(?:col(?:onia)?|fracc(?:ionamiento)?|residencial(?:\s+privad[oa])?|privada|coto|condominio|conjunto\s+(?:habitacional|residencial)|unidad\s+habitacional|barrio|sector|secci[oó]n|zona|ejido|comunidad|rancho|hacienda|villa|poblado|localidad|quintas?)\.?\s*[:\-]?\s+([^,;|]+)/i;
+  /\b(?:col(?:onia)?|frac{1,2}(?:ionamiento)?|residencial(?:\s+privad[oa])?|privada|coto|condominio|conjunto\s+(?:habitacional|residencial)|unidad\s+habitacional|barrio|sector|secci[oó]n|zona|ejido|comunidad|rancho|hacienda|villa|poblado|localidad|quintas?)\.?\s*[:\-]?\s+([^,;|]+)/i;
+
+const LABELED_COLONY_PREFIX =
+  /^(?:col(?:onia)?|frac{1,2}(?:ionamiento)?|residencial(?:\s+privad[oa])?|privada|coto|condominio|conjunto\s+(?:habitacional|residencial)|unidad\s+habitacional|barrio|sector|secci[oó]n|zona|ejido|comunidad|rancho|hacienda|villa|poblado|localidad|quintas?)\.?\s*[:\-]?\s+/i;
 
 function cleanColonyName(value: string) {
   return value
     .trim()
-    .replace(/^(?:col(?:onia)?|fracc(?:ionamiento)?|residencial(?:\s+privad[oa])?|privada|coto|condominio|conjunto\s+(?:habitacional|residencial)|unidad\s+habitacional|barrio|sector|secci[oó]n|zona|ejido|comunidad|rancho|hacienda|villa|poblado|localidad|quintas?)\.?\s*[:\-]?\s+/i, "")
+    .replace(LABELED_COLONY_PREFIX, "")
     .trim();
 }
 
+/**
+ * Returns only an explicitly labeled colony/area from the address entered by
+ * staff. Google may omit a subdivision from address_components, so this is a
+ * safe fallback that does not guess from an unlabeled comma-separated part.
+ */
+export function extractColonyFromAddressText(value: string) {
+  const labeledColony = value.match(LABELED_COLONY_PATTERN)?.[1]?.trim() ?? "";
+  const cleaned = cleanColonyName(labeledColony).replace(/\s+/g, " ");
+  if (!cleaned || cleaned.length > 120 || !isUsableColonyName(cleaned)) return "";
+  return cleaned;
+}
+
+export type AddressCoordinates = { latitude: number; longitude: number };
+
+/** Extracts coordinates from common Google Maps links or a plain decimal pair. */
+export function extractAddressCoordinates(value: string): AddressCoordinates | null {
+  let decoded = value;
+  try {
+    decoded = decodeURIComponent(value.replace(/\+/g, "%20"));
+  } catch {
+    // Keep the original text if it contains malformed URL encoding.
+  }
+
+  const decimal = "(-?\\d{1,3}\\.\\d+)";
+  const patterns = [
+    new RegExp(`(?:[?&](?:q|query|ll)=|geo:|ubicaci[oó]n compartida\\s*:\\s*)${decimal}[,\\s]+${decimal}`, "i"),
+    new RegExp(`@${decimal},\\s*${decimal}`, "i"),
+    new RegExp(`!3d${decimal}!4d${decimal}`, "i"),
+    new RegExp(`^\\s*${decimal},\\s*${decimal}\\s*$`, "i"),
+  ];
+
+  for (const pattern of patterns) {
+    const match = decoded.match(pattern);
+    if (!match) continue;
+    const latitude = Number(match[1]);
+    const longitude = Number(match[2]);
+    if (
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 && latitude <= 90 &&
+      longitude >= -180 && longitude <= 180
+    ) {
+      return { latitude, longitude };
+    }
+  }
+  return null;
+}
+
 export function extractColonyFromResult(result: GoogleGeocodingResult) {
+  const labeledAddressColony = extractColonyFromAddressText(result.formatted_address ?? "");
+  if (labeledAddressColony) return labeledAddressColony;
+
+  const neighborhood = result.address_components?.find((item) =>
+    item.types?.includes("neighborhood")
+  )?.long_name;
+  if (neighborhood && isUsableColonyName(neighborhood)) return neighborhood.trim();
+
+  const formattedAddressColony = extractColonyFromFormattedAddress(result);
+  if (formattedAddressColony) return formattedAddressColony;
+
   for (const type of COLONY_COMPONENT_TYPES) {
     const value = result.address_components?.find((item) => item.types?.includes(type))?.long_name;
     const cleanedValue = value ? cleanColonyName(value) : "";
     if (cleanedValue && isUsableColonyName(cleanedValue)) return cleanedValue;
   }
 
-  const labeledColony = (result.formatted_address ?? "").match(LABELED_COLONY_PATTERN)?.[1]?.trim();
-  const cleanedLabeledColony = labeledColony ? cleanColonyName(labeledColony) : "";
-  return cleanedLabeledColony && isUsableColonyName(cleanedLabeledColony)
-    ? cleanedLabeledColony
-    : "";
+  return "";
 }
 
 export function normalizeAddressQuery(value: string) {
@@ -122,9 +182,79 @@ function component(
   return result.address_components?.find((item) => item.types?.includes(type));
 }
 
+function componentNames(result: GoogleGeocodingResult, types: string[]) {
+  return new Set(
+    (result.address_components ?? [])
+      .filter((item) => item.types?.some((type) => types.includes(type)))
+      .flatMap((item) => [item.long_name, item.short_name])
+      .filter((value): value is string => Boolean(value?.trim()))
+      .map((value) => normalizeText(value))
+  );
+}
+
+function isAdministrativeAddressPart(value: string, result: GoogleGeocodingResult) {
+  const withoutPostalCode = value.replace(/\b\d{5}\b/g, " ").trim();
+  const normalized = normalizeText(withoutPostalCode);
+  if (!normalized || NON_COLONY_NAMES.has(normalized)) return true;
+
+  const knownAdministrativeNames = componentNames(result, [
+    "locality",
+    "postal_town",
+    "administrative_area_level_1",
+    "administrative_area_level_2",
+    "country",
+  ]);
+  if (knownAdministrativeNames.has(normalized)) return true;
+
+  return [...knownAdministrativeNames].some((name) =>
+    name.length >= 4 && normalized.includes(name)
+  );
+}
+
+function extractColonyFromFormattedAddress(result: GoogleGeocodingResult) {
+  const parts = (result.formatted_address ?? "")
+    .split(",")
+    .slice(1)
+    .map((part) => part.trim())
+    .filter((part) => part && !isAdministrativeAddressPart(part, result));
+  if (!parts.length) return "";
+
+  const broaderAdministrativeNames = componentNames(
+    result,
+    BROADER_ADMINISTRATIVE_AREA_TYPES
+  );
+  const specificParts = parts.filter(
+    (part) => !broaderAdministrativeNames.has(normalizeText(part))
+  );
+
+  // Google may include an administrative subdivision (for example, Fundo
+  // Legal) after the actual neighborhood in the formatted address. Prefer
+  // the first non-administrative segment; retain a sole segment as a fallback
+  // for areas Google only exposes at administrative_area_level_3.
+  const selected = specificParts[0] ?? (parts.length === 1 ? parts[0] : "");
+  const cleaned = selected.replace(/\b\d{5}\b/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned.length <= 120 && isUsableColonyName(cleaned) ? cleaned : "";
+}
+
 function requestedStreetNumber(value: string) {
   const withoutPostalCode = value.replace(/\b(?:c\.?\s*p\.?|cp)\s*\d{5}\b/gi, "");
-  return normalizeText(withoutPostalCode).match(/\b\d{1,6}[a-z]?\b/)?.[0] ?? "";
+  const parts = normalizeAddressQuery(withoutPostalCode).split(",").map((part) => part.trim());
+  const parsedNumber = parts[1]?.match(/^\d{1,6}[a-z]?$/i)?.[0];
+  if (parsedNumber) return normalizeText(parsedNumber);
+  const labeledNumber = withoutPostalCode.match(/(?:#|\bn[oº.]?\s*)(\d{1,6}[a-z]?)\b/i)?.[1];
+  return labeledNumber ? normalizeText(labeledNumber) : "";
+}
+
+function normalizeStreetName(value: string) {
+  return normalizeAddressForComparison(value)
+    .replace(/\b(?:boulevard|blvd|bulevar|carretera|carr|privada|priv|paseo|pso|circuito|cto|cerrada|cda)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function requestedStreetName(value: string) {
+  const street = normalizeAddressQuery(value).split(",")[0] ?? "";
+  return normalizeStreetName(street);
 }
 
 function hasExpectedLocality(result: GoogleGeocodingResult) {
@@ -160,6 +290,7 @@ export function selectConfidentAddressResult(
   results: GoogleGeocodingResult[]
 ) {
   const expectedNumber = requestedStreetNumber(inputAddress);
+  const expectedStreet = requestedStreetName(inputAddress);
 
   const candidates = results.filter((result) => {
     const types = result.types ?? [];
@@ -170,9 +301,10 @@ export function selectConfidentAddressResult(
     ) return false;
 
     if (types.some((type) => ADDRESS_TYPES.has(type))) {
-      if (!expectedNumber || !component(result, "route")?.long_name) return false;
+      const actualStreet = normalizeStreetName(component(result, "route")?.long_name ?? "");
+      if (!expectedNumber || !expectedStreet || !actualStreet) return false;
       const actualNumber = normalizeText(component(result, "street_number")?.long_name ?? "");
-      return actualNumber === expectedNumber;
+      return actualNumber === expectedNumber && actualStreet === expectedStreet;
     }
 
     // Google también devuelve lugares concretos como parques, plazas,
