@@ -1,6 +1,6 @@
 # Rincón 404: contexto acumulado para agentes
 
-Actualizado: 2026-09-29
+Actualizado: 2026-10-10
 
 Este documento resume lo que se ha decidido y construido para Mideli. Sirve como memoria de trabajo para cualquier agente de IA, no solo OpenCode. Antes de modificar algo, confirma los detalles contra el código actual y contra la base de datos cuando el cambio toque Supabase.
 
@@ -215,10 +215,11 @@ El cobro pasó a un libro mayor transaccional (migración `20260801092945_unifie
 
 - Serwist configurado (`src/app/sw.ts`, `src/app/serwist/`, `src/app/manifest.ts`, `pwa-provider.tsx`), iconos en `public/icons/`.
 - Suscripciones push en `push_subscriptions`, control en `push-notification-control.tsx`, lógica en `src/lib/push-notifications.ts`.
-- Desde 2026-08-13 cada dispositivo configura por separado `kitchen_alerts` para pedidos nuevos y `ready_alerts` para pedidos listos. Mesero ofrece ambos temas desde un único control compacto; Cocina conserva el acceso directo a los avisos de pedidos nuevos.
+- Desde 2026-08-13 cada dispositivo configura por separado `kitchen_alerts` para pedidos nuevos y `ready_alerts` para eventos de estado. Meseras locales y globales reciben únicamente el evento `ready`; el personal de cocina y otros rangos autorizados conservan avisos de preparación y listo. Mesero ofrece ambos temas desde un único control compacto; Cocina conserva el acceso directo a los avisos de pedidos nuevos.
 - La Edge Function `send-order-notification` valida JWT y perfil activo, consulta el pedido en servidor y limita destinatarios al negocio exacto según membresías activas, capacidades y preferencia Push del dispositivo. Los permisos de plataforma u organización no se mezclan con permisos de otro negocio.
 - En pedidos multinegocio se emite un aviso por cada pedido persistido con su `business_id`; las capacidades actuales aplican automáticamente a negocios nuevos, sin una lista fija de nombres. El destino al tocar el aviso es Mesero o Cocina según el permiso de la persona.
-- Para eventos multinegocio, publicar un aviso de pedido nuevo requiere permiso para operar pedidos y que la persona sea quien creó la orden; publicar un aviso de pedido listo requiere permiso para actualizar preparación. Los pedidos legacy conservan su validación por rol.
+- Para eventos multinegocio, publicar un aviso de pedido nuevo requiere permiso para operar pedidos y que la persona sea quien creó la orden; publicar avisos de preparación iniciada o pedido listo requiere permiso para actualizar preparación. Los pedidos legacy conservan su validación por rol.
+- Las meseras globales reciben avisos de comedor en negocios sin acceso de pedidos asignado; domicilio y para llevar requieren acceso operativo explícito a ese negocio. Estado e Historial siguen el mismo límite en la lectura de filas.
 - El service worker muestra Push aunque Mesero o Cocina estén visibles; el sonido y las señales locales son complementarios, no reemplazan el aviso del sistema.
 - Avisos locales en `ready-order-notifier.tsx`, `ready-order-audio.ts` y `kitchen-order-audio.ts`, con desbloqueo después de una interacción válida.
 - Los textos de ayuda usan términos genéricos como `dispositivo`, sin marcas.
@@ -370,6 +371,8 @@ Se atendieron los problemas de lentitud percibida del POS con estas decisiones:
 - Las alertas Push de pedido nuevo y pedido listo se solicitan en segundo plano después de persistir o cambiar el pedido. La operación no queda bloqueada por la latencia de una Edge Function secundaria.
 - El POS conserva el catálogo en pantalla cuando una consulta temporal falla, muestra reintento y actualiza categorías y productos abiertos tras cambios Realtime.
 - La gráfica de tendencia de analíticas se carga bajo demanda para reducir el JavaScript inicial de la ruta.
+- En Estado, `fetchActiveOrders` carga órdenes y artículos relacionados en una sola consulta PostgREST usando las FK explícitas; elimina una ronda de red y conserva filtros y normalización del modelo. No cambia el alcance de negocio ni RLS. Tiene pruebas para artículos vacíos, productos eliminados y separación Mideli/Just Dipping. El impacto en latencia real debe observarse después del deploy, sin asumir una cifra de aceleración.
+- Esta optimización quedó desplegada en producción (`dpl_67Gv38V6B9c6awrCXGuqvMV8tGiC`, `READY`, alias `mideli.vercel.app`) el 2026-10-02. Health respondió `ok`; al desplegar sin commit, la versión reportada sigue siendo el SHA base `2b11bea0a00f`. Falta comparar su respuesta real en los equipos del local.
 - El scheduler de WhatsApp corre cada minuto desde Supabase Cron mediante `pg_net` y Vault para liberar pedidos programados y procesar inactividad; la ruta acepta un secreto dedicado y la liberación es idempotente.
 
 Antes de añadir más optimizaciones, medir qué interacción sigue lenta. No reemplazar consultas reales por datos falsos para aparentar velocidad.
@@ -1052,14 +1055,13 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
 - Pasaron `npm run lint` y `npm run build`. Producción quedó `READY` en
   `https://mideli.vercel.app`, deployment `dpl_4npvJMc9GiwaeGpWYzouMbsqyx67`.
 
-## 21. Operación de pedidos por meseras globales (2026-09-28)
+## 21. Operación de pedidos por meseras globales (2026-09-28; regla refinada en §50)
 
-- En Estado, una membresía `global_waiter` con alcance `organization` ve
-  únicamente pedidos de comedor de los otros negocios. Las entregas y pedidos
-  para llevar siguen con el equipo local; una membresía local conserva todos
-  los tipos de pedido de su negocio. La regla usa el alcance/rol recibido del
-  contexto, sin IDs ni excepciones por nombre, por lo que también aplica a
-  negocios futuros.
+- Regla histórica refinada por §50: una membresía `global_waiter` con alcance
+  `organization` ve pedidos de comedor en los negocios de la organización sin
+  acceso de pedidos asignado; al tener permiso operativo explícito por negocio,
+  conserva los tres tipos de servicio allí. El equipo local mantiene su flujo.
+  La regla usa membresías/capacidades, sin IDs ni excepciones por nombre.
 - Los artículos de pedidos activos cargan el nombre mediante la relación con
   `menu_items`, como ya hacía Historial. Al editar, se carga el catálogo del
   negocio de esa orden. Si se quita el último producto, la aplicación muestra
@@ -1218,3 +1220,887 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
 - No se alteraron pedidos ni tickets y no se probó el botón con una sesión de
   empleado real. El archivo histórico sigue pendiente de importar desde
   Firebase.
+
+## 29. Clientes e impresión de tickets por negocio (2026-10-01)
+
+- Se ocultó la central de WhatsApp en la navegación y `/dashboard/whatsapp`
+  redirige al inicio según el permiso actual. El bot, los webhooks y los
+  programadores siguen activos; no se migró ni apagó ninguna automatización.
+- `business_customers`, `business_customer_addresses` y
+  `business_receipt_settings` separan directorios y formatos por negocio. Las
+  acciones de servidor verifican sesión, perfil, negocio, licencia y capacidad;
+  las tablas no dan lectura directa a `authenticated` ni `anon`. Los pedidos
+  mixtos guardan un cliente por negocio.
+- Se copiaron 1 cliente y 5 domicilios del directorio legado de WhatsApp a
+  Mideli, sin duplicados ni cambios a los datos originales. No había pedidos
+  ligados al ID legado de cliente para completar su historial.
+- Historial prepara un ticket por pedido con logo/marca, dirección del negocio,
+  teléfono, pie y ancho 48/58 mm; incluye líneas, modificadores, notas,
+  subtotal, descuento, productos, envío, total del cliente, importe cobrado,
+  saldo y método de pago. Se usa el diálogo de impresión del dispositivo, no
+  una conexión Bluetooth directa.
+- Migraciones aplicadas: `20261002042252_business_customers_and_receipt_printing`,
+  `20261002051941_business_customer_history_backfill` y
+  `20261002053959_customer_rpc_invoker_security`. El RPC de comanda mixta usa
+  permisos del invocador y RLS; la verificación remota confirmó que solo
+  `authenticated` puede ejecutarlo.
+- Verificación final: `npm run lint` y `npm run build` correctos; 69 pruebas
+  Playwright de contexto multinegocio, paginación de Historial y cálculos del
+  ticket pasan en escritorio, tablet y móvil. El SQL pgTAP no se pudo ejecutar
+  localmente porque este entorno no tiene Docker. En Supabase se verificaron
+  esquema, RLS, privilegios y backfill mediante consultas agregadas; el dry-run
+  final no reportó migraciones pendientes.
+- El asesor de Supabase marca como informativa la falta de políticas RLS en las
+  tablas nuevas. Es intencional: no se concedió acceso API a usuarios finales;
+  las acciones autorizadas usan el rol del servidor.
+- Producción `READY`: deployment `dpl_2TtdYDaDNRgeysWyk4vfbr8JKeFC`, alias
+  `https://mideli.vercel.app`. `/api/health` respondió `ok`, versión
+  `2b11bea0a00f` (2026-10-02 UTC).
+- Falta la prueba con impresora física: identificar el modelo y ajustar el
+  ancho en el diálogo del dispositivo. En iPad requiere AirPrint en la misma
+  red; la app no empareja Bluetooth directamente.
+
+### Mejora de Clientes para captura rápida de domicilio (2026-10-01)
+
+- La ficha de cada cliente muestra por defecto resúmenes compactos y desplegables
+  de sus domicilios guardados y sus pedidos recientes. Al desplegar, presenta
+  colonia, referencia, última utilización, destino y estados de pago/operación.
+- Los pedidos recientes descuentan descuentos de transacciones completadas; en
+  domicilio suman el envío al total mostrado al cliente. Comedor y para llevar
+  conservan el total de productos ya descontado.
+- En captura de domicilio, el teléfono es opcional. Desde cuatro dígitos aparece
+  la búsqueda de clientes del negocio actual. Al seleccionar uno, se completan
+  nombre y teléfono y se aplica automáticamente su domicilio principal; si no
+  existe, se usa el más reciente. La colonia, referencia y cotización guardadas
+  también se cargan, pero una dirección no confirmada por Maps vuelve a pedir
+  confirmación antes del envío.
+- Un selector permite cambiar a otra dirección guardada o escribir una nueva.
+  La dirección escrita se guarda en el cliente al enviar correctamente el pedido.
+  En Clientes se pueden agregar domicilios con colonia/fraccionamiento obligatorio
+  y eliminar uno con confirmación. Si se borra el principal, se intenta promover
+  el domicilio restante más usado recientemente; los pedidos anteriores conservan
+  su snapshot de dirección.
+- Los resultados de búsqueda del POS quedan asociados al negocio y teléfono de
+  la consulta vigente para evitar mostrar resultados viejos al cambiar menú.
+- No requirió una migración nueva. El estado remoto confirmó las tres migraciones
+  existentes de clientes/recibos y el esquema de domicilios requerido. No se
+  consultaron ni modificaron registros reales de clientes.
+- Verificación local: lint, build y 666 pruebas Playwright pasaron en los
+  proyectos de escritorio, tablet y móvil. Desplegado a producción por Vercel
+  el 2026-10-01; despliegue `dpl_HdzAdPyQsUjqTS9M1qX6YF1Rj2Cm` quedó `READY`
+  y asociado a `https://mideli.vercel.app`. Se publicó desde el árbol de trabajo
+  vía CLI, sin commit/push; GitHub no contiene necesariamente estos cambios.
+
+## 30. Recuperación y validación de domicilios de Google Maps (2026-10-02)
+
+- En Mesero, la dirección y la colonia explícita viajan juntas a la cotización.
+  Si el personal escribe `Col. ...` o `Fracc. ...` en el mismo campo, el sistema
+  conserva ese dato cuando Geocoding omite la colonia; una dirección de cliente
+  guardada también puede aportar su colonia. No se infiere colonia de segmentos
+  ambiguos.
+- Si la respuesta inicial trae calle y punto, pero no la colonia, se intenta
+  primero geocodificación inversa y luego una búsqueda de texto de Places; esta
+  última sólo se usa en el caso de colonia faltante y se valida contra ciudad,
+  calle y número antes de aceptar el dato.
+- Se pueden procesar coordenadas decimales, enlaces de Maps con `query`, `@lat,lng`
+  o `!3d...!4d...`, y enlaces cortos `maps.app.goo.gl`/`goo.gl/maps`. La expansión
+  de enlaces cortos sólo visita dominios HTTPS allowlist de Google, bloquea otros
+  destinos y limita redirecciones/tiempo. No se consulta una URL arbitraria.
+- Los resultados de Autocomplete se validan al confirmar: localidad Cajeme,
+  coordenadas válidas y, para domicilios numerados, coincidencia exacta de
+  calle y número exterior. Las calles numeradas no confunden el número de calle
+  con el exterior. Cambiar el texto o cliente invalida la cotización anterior; una
+  respuesta tardía no reemplaza un domicilio nuevo. Los errores de red/API ya
+  no dejan el control de cotización cargando indefinidamente.
+- El autocomplete ahora consulta sólo el origen necesario en vez de cargar
+  horarios, tarifas y recargos en cada búsqueda. Cotizar desde Mesero no depende
+  del interruptor de cotizaciones del bot WhatsApp; conserva el motor de precios
+  existente y autoriza el negocio/licencia/capacidad real del operador.
+- Revisión remota de solo lectura (2026-10-02): Maps tiene origen configurado,
+  13 tarifas por distancia y 8 recargos activos; la cotización del canal legado
+  aparece habilitada. No se modificaron tablas ni datos.
+- Límite conocido: Google no garantiza que `address_components` siempre incluya
+  colonia, y una zona privada/nueva puede seguir sin resultados. Mesero permite
+  agregarla como `Col.` o `Fracc.` en el mismo campo; si no hay colonia oficial,
+  ofrece bajo confirmación una tarifa por distancia sin recargo de colonia. No
+  inventa una colonia ni asigna el recargo silenciosamente. Los ajustes de origen,
+  tarifas y recargos aún son globales/legacy de WhatsApp, no por negocio; esta
+  revisión no los migró a configuración independiente por local.
+- Corrección posterior al despliegue: Google puede incluir un municipio o
+  demarcación de nivel administrativo junto a la colonia en la dirección
+  formateada. La extracción ahora prefiere `neighborhood` y segmentos de colonia
+  antes de niveles administrativos amplios, por lo que
+  `Av. Miguel Alemán 162, Centro, Fundo Legal, ...` conserva `Centro` como
+  colonia. Hay una prueba de regresión con esa respuesta y otra que conserva
+  Puente Real cuando Google solo proporciona ese segmento.
+- Si Maps confirma el punto pero no identifica una colonia oficial, Mesero
+  muestra una opción explícita para cotizar con tarifa por distancia y sin
+  recargo de colonia. Esta decisión no es automática: se aclara antes de
+  confirmar y el pedido/ticket conserva “Sin colonia registrada”. El cálculo
+  omite cualquier recargo que pudiera coincidir con palabras ambiguas de la
+  dirección. La excepción solo está disponible en captura manual de Mesero;
+  WhatsApp conserva su política estricta. No cambia el esquema ni los datos
+  existentes.
+- Verificación local previa a publicación: `npm run lint`, `npm run build` y las
+  687 pruebas Playwright completas en escritorio, tablet y móvil pasan. El
+  `db push --linked --dry-run` confirmó que Supabase estaba al día; no se
+  aplicaron migraciones.
+- Publicado a producción el 2026-10-02 vía Vercel CLI desde el árbol de trabajo
+  revisado (sin commit/push), incluyendo la corrección de prioridad de colonia:
+  deployment `dpl_6agLeyYZ6MPvjXkMJFbkoGkoFLqV`,
+  estado `READY`, alias `https://mideli.vercel.app`. `/api/health` respondió
+  HTTP 200 y `ok`, versión `2b11bea0a00f`.
+- Actualización posterior del flujo manual de Mesero (2026-10-02): cuando Maps
+  ubica el punto pero no conoce la colonia, permite optar por la tarifa de
+  distancia sin recargo de colonia. La elección se confirma explícitamente y
+  deja el indicador “Sin colonia registrada” en el pedido y ticket. WhatsApp
+  mantiene la validación estricta. `npm run lint`, `npm run build` y las 60
+  pruebas dirigidas en escritorio, tablet y móvil pasan. Publicado a producción
+  vía Vercel CLI desde el árbol de trabajo (sin commit/push), deployment
+  `dpl_BsHRVs2T9iVny9P5iX8jdy1eEtMn`, estado `READY`, alias
+  `https://mideli.vercel.app`. No se modificaron el esquema ni datos de Supabase.
+
+## 31. Reintento visible de una comanda POS (2026-10-02)
+
+- Cuando la comprobación autenticada confirma que la clave de envío no existe
+  todavía en pedidos, el botón `Completar envío` abre directamente los datos de
+  la comanda para corregir lo que falte y volver a enviarla. Conserva productos,
+  clave idempotente y protecciones para evitar duplicados; no crea un pedido al
+  abrir el formulario.
+- Si la comprobación no está disponible, se mantiene `Revisar envío` y no se
+  permite enviar mientras no haya certeza. No se cambió ninguna función de
+  creación, permiso, tabla ni dato real de Supabase.
+- La prueba del flujo de recuperación pasa en escritorio, tablet y móvil;
+  `npm run lint` y `npm run build` pasan. Publicado a producción con Vercel CLI,
+  deployment `dpl_E9SJeAordaGLnGH8ZDzCWSUcfd5H`, estado `READY`, alias
+  `https://mideli.vercel.app`; `/api/health` respondió HTTP 200 y `ok`.
+
+## 32. Actualización táctil sin controles de recarga (2026-10-02)
+
+- Se quitaron los botones normales de actualización en Historial, Cocina,
+  personal, clientes, negocios, licencias, inventario, caja, equipos y estación
+  de impresión. Historial conserva el título pero ya no ocupa una tarjeta alta
+  con un botón de recarga.
+- En esas superficies se puede deslizar hacia abajo desde el inicio del área
+  desplazable para volver a cargar sus datos. El gesto requiere un arrastre
+  vertical de 72 px; no actualiza si comienza a media lista, es horizontal o
+  empieza en un campo/control. No hay instrucción ni control visual permanente.
+- Cada pantalla llama únicamente su carga existente; no hace una recarga global,
+  no cierra sesión y no altera el carrito ni el pedido en curso. Los botones de
+  reintento que solo aparecen después de un error se conservan.
+- La lógica compartida está en `src/lib/hooks/use-pull-to-refresh.ts`. No hubo
+  cambios de esquema, permisos, consultas de negocio ni datos operativos.
+- Pruebas del umbral, dirección y posición inicial pasan en escritorio, tablet
+  y móvil; `npm run lint` y `npm run build` pasan. Publicado a producción el
+  2026-10-02 por Vercel CLI: `dpl_4wjLsW2VkLDSwN1gqAmQ7FnPqEWp`, estado
+  `READY`, alias `https://mideli.vercel.app`. `/api/health` respondió HTTP 200,
+  versión `2b11bea0a00f`. La prueba del gesto en el hardware físico del local
+  queda pendiente.
+
+## 33. Fallo de envío POS por tipo de pago (2026-10-02)
+
+- Los registros de producción confirmaron HTTP 400 / SQLSTATE `42804` en
+  `create_business_order_with_details`: el `CASE` que asigna
+  `payment_method_requested` mezclaba el enum `public.payment_method` con el
+  texto proveniente de JSON. Esto rechazaba los pedidos de un solo negocio que
+  pasan por ese RPC, incluso si no se seleccionaba domicilio. El flujo de
+  comanda mixta de comedor usa otro RPC.
+- La migración `20261002233708_fix_pos_order_payment_method_enum_cast.sql` ya se
+  aplicó a Supabase producción. Convierte explícitamente el valor recibido al
+  enum antes de la asignación y conserva seguridad `INVOKER`, permisos,
+  idempotencia y escritura atómica. No altera tablas ni pedidos existentes.
+  Es una corrección forward-only: restaurar el cuerpo anterior reintroduciría
+  el fallo, así que cualquier reversión futura debe ser otra migración segura.
+- La verificación remota confirmó que el RPC sigue disponible solo para
+  `authenticated`, conserva sus guardas y reintentos, y que el `CASE` resuelve
+  al tipo `payment_method`. No se insertó un pedido real de prueba. La prueba
+  pgTAP del esquema se amplió con esta regresión, pero no pudo ejecutarse desde
+  la sesión MCP porque pgTAP no está expuesto allí (`plan(integer)` no existe);
+  los mismos puntos se comprobaron con consultas remotas de solo lectura.
+- `npm run lint`, `npm run build` y las 33 pruebas del borrador/reintento POS
+  pasan en los proyectos desktop, tablet y mobile. La salud pública sigue en
+  HTTP 200. No se hizo deploy web porque no hubo cambios de frontend y el árbol
+  local contiene otros cambios pendientes; la corrección del backend ya está
+  activa sin publicar esos cambios.
+
+## 34. Preparación desde Estado sin estación Cocina (2026-10-03)
+
+- `business.update_preparation` autoriza `Pendiente → Preparando → Listo` desde
+  Mesero · Estado. `business.access_kitchen` controla por separado la estación
+  `/dashboard/cocina`. Abrir el KDS no implica poder modificar estados; se
+  necesita el permiso de preparación además.
+- Los negocios nuevos reciben preparación desde Estado para el dueño, pero la
+  pantalla Cocina queda desactivada por defecto. La puede habilitar Rincón 404
+  y luego el dueño puede delegarla a rangos locales. El rango integrado Cocina
+  en negocios nuevos actualiza estados desde Estado sin abrir el KDS.
+- Una migración de compatibilidad preserva KDS para los permisos explícitos
+  existentes de negocios distintos de Just Dipping. Just Dipping conserva el
+  flujo sin KDS y su dueño activo recibe únicamente `business.update_preparation`;
+  la mesera global no recibe permiso de preparación automáticamente.
+- El frontend separa el acceso directo a `/dashboard/cocina`, el destino inicial
+  de cuentas con preparación pero sin KDS, navegación y opciones de impresión.
+  En KDS se ocultan los controles de estado si la cuenta solo tiene acceso de
+  lectura a esa pantalla. La autorización de cambios sigue protegida por la
+  función de estado/RLS de Supabase ya existente.
+- Migraciones nuevas: `20261003021649_separate_kitchen_screen_access.sql`,
+  `20261003021652_backfill_status_workflow_for_just_dipping.sql` y
+  `20261003022543_preserve_existing_kitchen_screen_permissions.sql`. El dry-run
+  mostró únicamente estas tres migraciones y quedaron aplicadas en Supabase;
+  la lista remota confirma sus tres versiones.
+- Verificación en una copia de trabajo aislada: lint y build correctos; 54
+  pruebas Playwright de selección de negocio/permisos pasaron en escritorio,
+  tablet y móvil. El deploy de producción `dpl_2F4sDeKv2bZKzan4Jvo1xwLVRFPe`
+  quedó `READY` y se asignó a `https://mideli.vercel.app`; `/api/health`
+  respondió HTTP 200 con `status: ok`.
+- Verificación remota agregada: dueño de Just Dipping con preparación 1 y con
+  pantalla Cocina 0; dueños de Mideli con preparación 1 y Cocina 1; meseras
+  globales con alguno de esos permisos 0 en ambos locales. No se creó un pedido
+  de prueba en producción. El deploy salió desde una copia aislada para no
+  incluir los otros cambios pendientes del árbol local; no se hizo commit/push.
+
+## 35. Reparto manual sin WhatsApp y hora opcional para recoger (2026-10-03)
+
+- Los pedidos creados desde Mesero ya no disparan avisos de estado por WhatsApp.
+  El seguimiento de domicilio se opera desde Estado con transiciones protegidas
+  por el permiso de pedidos del negocio; no requiere el módulo Cocina ni una
+  conversación de WhatsApp. En los pedidos listos de domicilio se conserva el
+  botón manual `Enviar a repartidor`: abre WhatsApp con el negocio, folio,
+  estado actual, domicilio, pago y envío en el texto. No envía nada hasta que
+  la persona confirma el envío. Los avisos automáticos al cliente siguen
+  desactivados; el bot y la integración técnica existente no se borraron.
+- Los pedidos `Para llevar` aceptan una hora opcional del mismo día operativo,
+  interpretada con la zona horaria del negocio. La comanda se crea y queda
+  visible al equipo de inmediato; la hora indica cuándo la solicita el cliente,
+  no cuándo se libera a cocina. Se puede borrar al editar el pedido.
+- Nombre y teléfono del cliente continúan siendo opcionales. No se crean
+  pedidos de prueba en producción para validar estos flujos.
+
+## 36. Publicación acumulada para demostración (2026-10-03)
+
+- Se publicó a producción desde el árbol de trabajo con Vercel CLI. Deploy
+  `dpl_EMRckKxGJKBN5h6LjPEGM5b4S4mV` quedó `READY` y asignado a
+  `https://mideli.vercel.app`. Incluye los cambios de aplicación pendientes del
+  árbol, entre ellos actualización por gesto de deslizar hacia abajo y la
+  eliminación de los bloques grandes de actualización manual.
+- Verificación local: `npm run lint`, `npm run build` y `npm run test:e2e`
+  pasaron; Playwright ejecutó 726 pruebas en escritorio, tablet y móvil.
+- Verificación pública de producción, sin iniciar sesión ni modificar datos:
+  22 pruebas de smoke pasaron en escritorio y móvil; login, redirecciones,
+  diseño móvil, PWA, errores de JavaScript y salud pública fueron comprobados.
+  `/api/health` respondió HTTP 200 (`status: ok`) y la consola del navegador
+  reportó cero errores.
+- La lista de migraciones local y la remota coincidían hasta
+  `20261003022543`; no se aplicó SQL ni se modificaron pedidos, clientes o
+  ventas. El comando `db push --dry-run` no terminó porque se quedó esperando
+  inicializar el rol de inicio de sesión; como no había migraciones pendientes,
+  no bloqueó el deploy.
+- El árbol de trabajo sigue sin commit/push y conserva cambios de código,
+  documentación, pruebas y actualización de Impeccable. Esta publicación de
+  producción no equivale a una prueba autenticada del flujo real, dispositivos,
+  impresora o cuentas del local; esos puntos requieren validación operativa.
+
+## 37. Compartir manualmente pedidos al repartidor (2026-10-03)
+
+- **Histórico; el formato fue reemplazado por §40.** Se restauró en Estado el enlace manual `Enviar a repartidor` para las tarjetas
+  de domicilio en entrega. Abre `wa.me` con un mensaje para revisión/envío manual;
+  el encabezado se construye con el nombre del negocio (por ejemplo,
+  `SALE PEDIDO DE JUST DIPPING`) y el cuerpo incluye folio, estado del reparto,
+  domicilio, colonia, referencia, forma de pago, productos, envío y teléfono
+  cuando está disponible.
+- No reactiva respuestas ni avisos automáticos de WhatsApp al cliente, ni cambia
+  la actualización operativa del estado de entrega. No requiere esquema ni
+  migración de base de datos.
+- Pruebas: `npm run lint`, `npm run build` y las 732 pruebas Playwright pasaron;
+  7 pruebas dirigidas validan mensaje, marca por negocio, estado y enlace.
+- Deploy de producción `dpl_Cgjwvz9DLoTam979rMd6MViYKPYB` quedó `READY` y
+  asociado a `https://mideli.vercel.app`. La página pública abrió, la ruta de
+  salud respondió `status: ok` y Playwright no detectó errores de consola.
+  No se inició sesión ni se abrió WhatsApp real; el dispositivo y el envío
+  final del mensaje requieren una comprobación manual en el teléfono.
+
+## 38. Cobro desde Estado en móvil (2026-10-03)
+
+- La hoja de cobro se renderiza ahora en `#mideli-overlay-root`, fuera del área
+  principal del dashboard que usa `overflow-hidden`. Antes quedaba recortada
+  por el encabezado y la navegación inferior fija: se alcanzaba a ver el saldo,
+  pero no la acción `Continuar` / `Confirmar pago`.
+- El portal vive dentro del límite de marca global para conservar los colores
+  del negocio seleccionado. No modifica permisos, importes, caja ni lógica de
+  registro; tampoco requiere cambios de base de datos.
+- Añadida comprobación de la raíz de diálogos en Playwright. Suite completa:
+  735 pruebas aprobadas en escritorio, tablet y móvil; tras el ajuste final,
+  la prueba enfocada pasó en los tres proyectos y también pasaron lint y build.
+- Deploy `dpl_GKG6E7x9hji8P8q5EhAtXzQdRFHE` quedó `READY` y asociado a
+  `https://mideli.vercel.app`. En navegador público se comprobó que la raíz de
+  overlays está fuera de `main`, conserva el tema, y la salud responde
+  `status: ok`; consola sin errores.
+- No se inició sesión ni se registró un cobro de prueba. El turno real y el
+  teléfono deben confirmar que `Continuar` y `Confirmar pago` quedan a la vista.
+
+## 39. Avisos Push de preparación y alcance de meseras globales (2026-10-03)
+
+- `updateOrderStatus` solicita un Push secundario al entrar a `in_kitchen` y al
+  pasar a `ready`; no retrasa ni revierte la transición si Push falla. Ambos
+  avisos respetan el tema `ready_alerts`, ahora rotulado como preparación y
+  pedidos listos. Se usa el ID de transición de estado para evitar duplicados.
+- `send-order-notification` valida el estado actual, la transición registrada,
+  el permiso `business.update_preparation`, las suscripciones activas y el
+  negocio. La mesera global recibe pedidos de comedor en locales sin acceso de
+  pedidos asignado; los permisos operativos explícitos habilitan los demás
+  servicios del negocio.
+- No se requiere migración. La función quedó activa en Supabase como versión 5.
+  Vercel producción `dpl_97m5JLDw5ejcxAsgnnmpCaXsNbyS` quedó `READY`, alias
+  `https://mideli.vercel.app`; `/api/health` respondió HTTP 200 y `ok`.
+- Antes del cambio, los últimos 24 h de producción mostraban 2 eventos de
+  pedidos nuevos con 6 entregas aceptadas por el proveedor, 1 evento omitido,
+  6 eventos de pedidos listos con 16 entregas aceptadas y 0 fallidas/expiradas.
+  Esto confirma aceptación por Web Push, no que el sistema operativo mostrara
+  cada aviso en pantalla.
+- En preferencias remotas había 5 dispositivos activos: 3 con avisos de pedidos
+  nuevos y 3 con avisos de preparación/listo. Para la membresía global había 0
+  dispositivos con pedidos nuevos y 1 con estado activado; las preferencias se
+  conservaron y no se cambiaron sin consentimiento. Andrea debe activar
+  `Pedidos nuevos` en el menú de notificaciones si quiere recibir también ese
+  tipo de aviso.
+- `npm run lint`, `npm run build` y las 30 pruebas de políticas Playwright en
+  escritorio, tablet y móvil pasan. No se creó un pedido real ni se envió un
+  Push de prueba al personal. Falta confirmar visualmente el aviso en el
+  dispositivo real de Andrea y en una terminal de Cocina.
+
+## 40. Entregas separadas por negocio y mensaje manual para repartidor (2026-10-04)
+
+- Se agregó **Control → Entregas** para configurar por negocio dirección y
+  ubicación de origen, rangos de distancia/tarifas y recargos/alias de colonia.
+  Las acciones validan el permiso de dueño o coordinador en servidor; las filas
+  están separadas por `business_id` y no son accesibles directamente desde el
+  cliente autenticado. El cálculo de Mesero usa la configuración del local
+  activo, no la tarifa global heredada.
+- La migración `20261004024138_business_scoped_delivery_settings.sql` fue
+  aplicada. Mideli y Just Dipping tienen filas independientes, con copia
+  inicial del origen actual, 13 rangos y 8 recargos. Los negocios nuevos
+  reciben sus tarifas como copia independiente y deben confirmar su propio
+  origen antes de cotizar. El bot legado de WhatsApp sigue exclusivo de Mideli.
+- Se conservó la acción manual de compartir al repartidor en Estado. El mensaje
+  identifica el negocio, agrega folio, `De` con dirección y mapa del local,
+  `A` con calle/número/colonia y mapa del destino, el tipo de pago y monto solo
+  si es efectivo. Omite monto de envío, total estimado, teléfono, productos y
+  referencia. No se reactivaron respuestas ni avisos automáticos de WhatsApp.
+- Vercel producción `dpl_4MgmnBg6F4eK3mX5D55VRuTxwSZt` quedó `READY` y alias
+  `https://mideli.vercel.app`. Publicado desde el árbol local con Vercel CLI;
+  el árbol conserva cambios sin commit, así que los metadatos Git del deploy no
+  representan todos los archivos locales que se subieron. Supabase dry-run
+  confirmó que no hay migraciones pendientes.
+- Verificación de esta entrega: lint y build pasan; 11 pruebas de mensaje y
+  ciclo de entrega pasan en escritorio; 30 pruebas de políticas Push pasan en
+  escritorio, tablet y móvil. Impeccable no detecta patrones visuales en los
+  componentes revisados.
+- Auditoría remota de Push de los últimos 7 días: Just Dipping tuvo un evento
+  de pedidos nuevos omitido por no tener dispositivos suscritos al tema Cocina,
+  y un aviso de listo aceptado por Push (0 fallidos/expirados). Mideli registró
+  21 eventos de pedidos nuevos con 64 aceptaciones y 23 de preparación/listo
+  con 69 aceptaciones (0 fallidos/expirados). Hay 5 dispositivos activos en
+  total; 3 tienen `Pedidos nuevos` y 3 `Preparación y listos` habilitados.
+  Andrea/el personal deben activar el tema que les falte desde sus propios
+  dispositivos. Aceptación del proveedor no garantiza que iOS/Android muestre
+  la notificación si el permiso del sistema está desactivado.
+- No se creó pedido real ni se envió Push de prueba al equipo. Falta comprobar
+  el aviso en una terminal de Cocina y en el dispositivo real de Andrea.
+
+## 41. Acceso móvil a configuración de entregas (2026-10-05)
+
+- Causa confirmada: `Entregas` estaba visible en **Más** y el enlace navegaba,
+  pero el proxy de Next.js no incluía `/settings/entregas` en su lista de rutas
+  administrativas permitidas. La ruta se redirigía al inicio, dando la
+  impresión de que el toque no hacía nada.
+- Se conectó la ruta al control de permisos existente: dueño con
+  `business.manage_catalog` y coordinación Rincón 404 con
+  `platform.manage_businesses` pueden abrirla; el resto sigue bloqueado. Las
+  acciones de servidor y la separación de ajustes por `business_id` no
+  cambiaron.
+- Una prueba nueva reprodujo el rechazo para ambas cuentas antes del arreglo;
+  las 12 variantes desktop/tablet/mobile pasan tras corregirlo. `npm run lint`
+  y `npm run build` también pasan.
+- Producción: `dpl_8LUt9PNJJsqJ9wdP9GbUxv6vmWV9`, `READY`, alias
+  `https://mideli.vercel.app`. No se modificó Supabase ni se tocaron tarifas,
+  ubicaciones o pedidos.
+
+## 42. Pedidos manuales de Uber Eats y Didi Food (2026-10-09)
+
+- Es un canal separado del domicilio local, mostrador y método de pago local.
+  Cuando el negocio lo tiene habilitado, Mesero ofrece Domicilio local,
+  Mostrador y las plataformas disponibles en el paso de datos del pedido.
+  Los pedidos de plataforma usan el flujo para llevar, sin dirección, tarifa
+  local, asignación a repartidor propio ni horario de recogida.
+- Rincón 404 habilita el módulo por negocio desde Administración. El valor
+  predeterminado para negocios nuevos es apagado; la migración local enciende
+  solo el negocio `just-dipping` de la organización `rincon-404-food-park`.
+  El dueño configura por canal habilitado el precio opcional por producto y
+  comisión de referencia; la comisión no calcula netos ni modifica caja.
+- Uber Eats exige “pagado en app”. Didi Food permite app o efectivo al entregar.
+  El efectivo real se captura en Estado al entregar al repartidor, nunca se
+  estima antes. La operación transaccional asigna esa cantidad al corte abierto
+  del mismo negocio, una vez, sin crear cobro local. Los pedidos de plataforma
+  se excluyen de saldos de cobro local. El borrado después de entregar se rige
+  por las actualizaciones de las secciones 48 y 49.
+- Historial y ticket muestran plataforma y forma de pago; el ticket distingue
+  el efectivo real de Didi sin declararlo cobro local. La ruta de ajustes es
+  `/settings/plataformas`.
+- Archivos principales: `src/lib/marketplace-orders.ts`,
+  `src/lib/actions/business-marketplace.ts`,
+  `src/components/admin/business-marketplace-settings-manager.tsx`,
+  `src/components/pos/order-details-modal.tsx`,
+  `src/components/dashboard/status-view.tsx` y la migración
+  `20261009221644_just_dipping_marketplace_orders.sql`.
+- Verificación antes de publicar: `npm run lint`, `npm run build` y 783
+  ejecuciones Playwright en escritorio, tablet y móvil pasaron. La prueba pgTAP
+  no se ejecutó: este equipo no tiene Docker/Postgres y producción no tiene
+  instalada la extensión pgTAP.
+- La migración `20261009221644_just_dipping_marketplace_orders.sql` se aplicó
+  a Supabase de producción después de confirmar en dry-run que era la única
+  pendiente. Consultas remotas de solo lectura verificaron 16 condiciones de
+  permisos, RLS, flujo atómico, idempotencia y caja por negocio; todas pasaron.
+  La lista de migraciones quedó sincronizada (`upToDate: true`). No se crearon
+  pedidos, cobros ni movimientos de caja reales.
+- Publicado a producción con Vercel CLI: `dpl_2VLWRDQs4JF1g2SrFrRfu9oJAbat`,
+  estado `READY`, alias `https://mideli.vercel.app`. `/api/health` respondió
+  HTTP 200, `status: ok`, versión `d6182a5da31a`. Se publicó el árbol local
+  aprobado sin commit/push; la versión reportada es el SHA base y no identifica
+  por sí sola los cambios locales incluidos.
+- Para empezar a capturar estas órdenes, el dueño de Just Dipping debe entrar
+  a `/settings/plataformas`, activar Uber Eats y/o Didi Food y guardar sus
+  precios opcionales. El sistema registra manualmente pedidos provenientes de
+  esas plataformas; no se conecta a sus APIs ni recibe pedidos automáticamente.
+
+## 43. Acceso a configuración de plataformas (2026-10-09)
+
+- Causa confirmada: el enlace `/settings/plataformas` se mostraba a dueños y a
+  Rincón 404, pero `canUseAdminRoute` no reconocía esa ruta en el control del
+  proxy. Al tocarla, el proxy redirigía a Inicio.
+- La ruta acepta ahora `business.manage_catalog` para el dueño del negocio y
+  `platform.manage_businesses` para Rincón 404. El personal sin esos permisos
+  continúa bloqueado. No se cambiaron la base, los canales habilitados, precios
+  ni pedidos.
+- Una prueba nueva reprodujo el rechazo previo. Después del cambio pasaron 12
+  variantes de escritorio, tablet y móvil, junto con `npm run lint` y
+  `npm run build`.
+- Vercel producción `dpl_Bsb8Eh37Rw8s7DdpJ8ntTFSHE5ak` quedó `READY` y asignado
+  a `https://mideli.vercel.app`. La pantalla protegida no se probó iniciando
+  sesión con una cuenta real.
+
+## 44. Disponibilidad de productos por plataforma (2026-10-09)
+
+- Plataformas mantiene una casilla independiente por artículo y canal Uber Eats
+  o Didi Food. Los productos nuevos del catálogo aparecen automáticamente
+  desmarcados en ambos hasta que el dueño los habilite.
+- Mesero lista precios solo para productos habilitados. Al dejar vacío el precio
+  usa el del menú; la creación de pedido queda bloqueada si algún artículo no
+  está disponible. Un trigger de base de datos repite la validación para evitar
+  omisiones por una sesión vieja o una llamada directa.
+- Las capturas de Uber Eats y Didi Food se cotejaron con los artículos activos
+  de Just Dipping. Se prepararon precios para 18 artículos de Uber y 9 de Didi;
+  los demás quedaron desactivados. Los canales siguen apagados y no se habilitan
+  hasta que el dueño los active en `/settings/plataformas`.
+- La migración nueva es
+  `supabase/migrations/20261009231817_marketplace_product_availability.sql`,
+  seguida por la carga de precios
+  `supabase/migrations/20261009232342_seed_just_dipping_marketplace_prices.sql`.
+  Conserva los precios personalizados ya existentes y da precio del menú a los
+  productos de canales que ya estuvieran activos antes del cambio.
+- `npm run lint`, `npm run build` y 18 pruebas Playwright de permisos y
+  disponibilidad en desktop/tablet/móvil pasaron. Supabase confirmó los
+  defaults, RLS, función, triggers, 18 productos Uber, 9 Didi y canales apagados.
+  La suite pgTAP no se pudo correr sin Docker/Postgres local; no se crearon
+  comandas reales.
+- Despliegue Vercel producción `dpl_2ZsULYGRuiMBUve6BqHjYneYvmRJ` en estado
+  `READY`, alias `https://mideli.vercel.app`. No se consultó la ruta de salud.
+
+## 45. Selector visual de plataformas en Mesero (2026-10-09)
+
+- En el paso de datos, Mesero distingue `Domicilio local`, `Para llevar` y las
+  plataformas activadas para el negocio. `Para llevar` no aparece en pedidos
+  de comedor o domicilio local.
+- Uber Eats y DiDi Food se identifican con sus logotipos SVG locales y colores
+  de marca. El wordmark de Uber Eats se obtuvo de
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Uber_Eats_2020_logo.svg)
+  (archivo atribuido a Uber Eats); el logotipo blanco de DiDi Food procede de
+  [DiDi Food](https://web.didiglobal.com/images/logos/didi-food-logo-white.svg).
+  La guía oficial de DiDi especifica `#FF7D41` para Naranja DiDi:
+  [Guía para restaurantes](https://web.didiglobal.com/pe/restaurantes/kit-digital/Guia-General-sobre-Redes-Sociales-para-Restaurantes-PE.pdf).
+- No hubo cambios de esquema, permisos ni datos operativos. Las pruebas del
+  selector, disponibilidad y entrega de ambos logos pasaron en tablet y móvil
+  (10 ejecuciones); lint y build también pasaron. El selector se publicó en
+  producción; una regresión relacionada con la selección de plataforma se
+  documenta y corrige en la sección 46.
+
+## 46. Selector de canal para pedidos para llevar (2026-10-09)
+
+- Causa: Mesero representa internamente los pedidos Uber Eats y Didi Food con
+  `orderType: para_llevar`. Ocultar la alternativa directa al elegir plataforma
+  impedía volver al pedido no-plataforma sin salir del modal.
+- La opción ahora se llama `Para llevar` y queda disponible junto con Uber Eats
+  y Didi Food. Se marca seleccionada solo si no hay plataforma; al tocarla,
+  limpia la plataforma en el mismo pedido. Domicilio local no la muestra.
+- Se añadieron pruebas de estado para Uber, Didi, domicilio y pedido directo.
+  Pasaron 12 ejecuciones en tablet y móvil; `npm run lint` y `npm run build`
+  también pasaron. No hubo cambios de base de datos ni de pedidos operativos.
+- Producción Vercel `dpl_GpmNt7wUdTYuF4MGdHGhPQcDaaVL` quedó `READY` y asignada
+  a `https://mideli.vercel.app`.
+
+## 47. Navegación agrupada por tarea (2026-10-09)
+
+- La navegación conserva Mesero, Cocina y Analíticas como accesos directos.
+  Los ajustes se agrupan por tarea: Turno (Caja, Entregas y Clientes), Negocio
+  (Menú, Personal e Inventario) y Configuración (Plataformas, Impresión, Mesas
+  y Negocios). Diagnóstico permanece al final como acceso independiente.
+- En escritorio sólo una categoría desplegable puede estar abierta; al cambiar
+  de ruta se abre la categoría que contiene esa pantalla. La fila de tablet y
+  el cajón Más de móvil conservan las mismas categorías. El cajón abre la
+  primera categoría disponible cuando la pantalla actual no pertenece a una.
+- Los elementos vacíos no aparecen y la organización reutiliza los permisos y
+  destinos existentes; no agrega privilegios ni cambia el acceso al servidor.
+- Se verifica con las pruebas dirigidas de agrupación/permisos y responsive,
+  además de lint y build antes de publicar. No se hace deploy en esta tarea.
+
+## 48. Borrado de pedidos autorizado por negocio (2026-10-09)
+
+- El flujo anterior solo mostraba borrar a la membresía `business_owner`, y la
+  acción moderna del servidor no tenía campo de PIN. El RPC de PIN anterior se
+  había retirado durante la migración multinegocio porque no delimitaba bien el
+  negocio autorizador.
+- Ahora el dueño activo del negocio puede borrar directamente. Personal con
+  `business.operate_orders` puede solicitarlo con el PIN de un dueño activo de
+  ese mismo negocio, configurado en Personal. La consulta de autorizadores solo
+  devuelve ID, nombre y si existe PIN, nunca el hash.
+- Una mesera global conserva el límite de solo comedor en otros locales. Los
+  pedidos de Uber Eats/DiDi Food pueden borrarse con la misma autorización del
+  negocio; se mantienen los bloqueos para turnos cerrados, cobros compartidos y
+  operaciones de caja concurrentes. La protección inicial del efectivo Didi ya
+  entregado fue reemplazada por la regla vigente de la sección 49: se borra la
+  comanda, pero el recibo de caja se conserva de forma independiente.
+- La acción moderna valida y ejecuta el borrado atómico mediante un RPC
+  autenticado. La ruta legacy owner/admin mantiene su comportamiento actual.
+- **Histórico, actualizado en §49.** La migración
+  `20261010003718_allow_marketplace_order_deletion_with_cash_protection.sql`
+  se aplicó con la regla anterior que impedía borrar Didi en efectivo ya
+  entregado. El reemplazo conserva los permisos del negocio y mantiene el
+  importe en la caja mediante un registro de auditoría.
+- Lint, build y 102 pruebas dirigidas de escritorio, tablet y móvil pasaron.
+  Producción Vercel `dpl_47SR1oNXwYQhAfu3t1FANXc2AiH4` quedó `READY` y asociada
+  a `https://mideli.vercel.app`. No se borraron pedidos reales.
+- Just Dipping tenía dueño activo y PIN configurado en la última consulta
+  remota de solo lectura; no se modificó ningún pedido real. La migración nueva
+  es `20261010001844_business_scoped_order_deletion_authorization.sql`.
+- Pruebas: 18 escenarios de `business-context-selection` pasan en escritorio,
+  tablet y móvil (54 ejecuciones); `npm run lint` y `npm run build` pasan.
+  Migración aplicada y confirmada en el historial de
+  Supabase; el `--dry-run` posterior reporta la base al día. Los RPC se
+  verificaron en el catálogo: ejecución anónima denegada y autenticada
+  permitida, con `search_path` vacío. No se ejecutó pgTAP ni se borraron
+  pedidos reales.
+- Deploy de producción `dpl_CTVnF24Jv7RmhhGb4Fgaxs5KtsP2` quedó `READY` y
+  asociado a `https://mideli.vercel.app` el 2026-10-09.
+
+## 49. Borrado de Didi en efectivo con conservación del corte (2026-10-09)
+
+- El dueño puede borrar directamente y el personal conserva el mismo requisito
+  de PIN de un dueño activo de ese negocio. La mesera global sigue limitada a
+  pedidos de comedor en otros locales.
+- Una comanda Didi pagada en efectivo puede borrarse incluso después de quedar
+  entregada y ligada a un corte. Antes de eliminarla, la base archiva folio,
+  monto, turno, fecha y responsables, sin datos personales ni artículos. Los
+  totales del corte abierto y el cierre siguen sumando ese importe; el recibo
+  archivado queda disponible en el detalle devuelto por la función de caja.
+- Si el cierre de caja está en curso, el borrado falla rápidamente para evitar
+  una carrera. Se mantienen los bloqueos de pedidos con pago local en cortes
+  cerrados y de pagos compartidos.
+- La migración `20261010004843_archive_didi_cash_receipts_on_order_deletion.sql`
+  crea el archivo privado y conecta sus recibos con totales, detalle y cierre.
+  La interfaz informa que el efectivo permanece en caja y ya no oculta la opción
+  de borrar por tratarse de un DiDi en efectivo.
+- No se borraron pedidos reales para probar. `npm run lint`, `npm run build` y
+  102 pruebas Playwright dirigidas (escritorio, tablet y móvil) pasaron. La
+  migración se aplicó en Supabase y una consulta de solo lectura confirmó el
+  archivo privado, el bloqueo de acceso directo y la conservación del efectivo
+  en totales y cierre. `supabase db push --dry-run` confirmó que no quedan
+  migraciones pendientes. El deploy de producción
+  `dpl_4yb7DhvJYs4Srym2iCV261wB5gbP` quedó `READY` y asociado a
+  `https://mideli.vercel.app` el 2026-10-09.
+
+## 50. Visibilidad de pedidos para meseras globales por negocio (2026-10-10)
+
+- Una membresía global de organización puede ver pedidos de `comer aquí` en
+  todos los locales activos y con licencia de su organización, aunque no tenga
+  acceso operativo asignado a ese local. Domicilios y pedidos para llevar solo
+  son visibles donde tenga una capacidad de negocio explícita: operar/cobrar
+  pedidos, actualizar preparación o acceder a Cocina. Un negocio propio o
+  autorizado conserva todos sus tipos de servicio.
+- El alcance se valida en RLS para `orders`, `order_items` y
+  `order_status_log`; el filtro de Estado aplica el mismo criterio a filas ya
+  cargadas. La consulta base incluye los negocios de la organización para que
+  RLS pueda entregar solo los pedidos de comedor permitidos. Se conservan el
+  límite del negocio seleccionado y la restricción de licencia.
+- Historial usa la misma lectura protegida. El permiso para borrar pedidos y
+  su autorización con PIN no se modificaron en esta entrega.
+- La migración `20261010010407_global_waiter_order_service_visibility.sql` fue
+  aplicada en producción; el `db push --dry-run` confirmó después que no quedan
+  migraciones pendientes. El catálogo remoto confirmó `SECURITY DEFINER`,
+  `search_path` vacío, ejecución denegada a `anon`, ejecución a
+  `authenticated` y las tres políticas de lectura. Los asesores no señalaron
+  la nueva función; permanecen avisos generales previos del proyecto.
+- `npm run lint`, `npm run build` y 57 pruebas Playwright de contexto en
+  escritorio, tablet y móvil pasaron. Se añadieron regresiones pgTAP para CI;
+  no se ejecutaron localmente porque el entorno no tiene PostgreSQL/Docker.
+  No se crearon pedidos ni se modificaron datos operativos. Falta que Andrea
+  confirme el comportamiento con su sesión real después de actualizar la app.
+- Vercel producción `dpl_Gksri6FgrtVzkxx7UTo8MqmiNX98` quedó `READY` y
+  asociado a `https://mideli.vercel.app`.
+
+## 52. Validación de caja al crear pedidos multinegocio (2026-10-10)
+
+- Mesero comparaba el carrito con `currentCashShift`, estado global que el
+  control Caja carga para el negocio administrativo seleccionado. En una
+  mesera global, el menú de Just Dipping puede ser distinto de ese contexto;
+  si Mideli no tenía turno abierto, el cliente detenía el pedido antes de
+  consultar la caja de Just Dipping.
+- La validación previa ahora consulta el estado de caja por cada
+  `business_id` del carrito mediante `multibusiness_cash_action('current')`.
+  Solo necesita conocer si hay turno abierto; la base de datos conserva la
+  validación transaccional y asigna cada orden al turno del mismo negocio.
+  Una comanda de comedor con varios negocios requiere turno abierto en cada
+  uno. El fallback legado de un solo negocio permanece sin cambios.
+- No hubo cambios de esquema ni de datos operativos. Dos regresiones cubren
+  Just Dipping abierto con Mideli cerrado y una comanda mixta con un solo
+  turno cerrado. Pasaron 63 pruebas de contexto en escritorio, tablet y móvil,
+  `npm run lint` y `npm run build`.
+- Una consulta de solo lectura a producción, durante esta revisión, encontró
+  ambos turnos abiertos; por eso no se reprodujo allí el estado exacto reportado.
+  No se creó ningún pedido ni se modificó caja. El cambio aislado se publicó en
+  Vercel producción como `dpl_5LnHUGbUZfPZMBgtCQyjpFFHNkpC`, estado `READY`,
+  alias `https://mideli.vercel.app`.
+
+## 51. Meseras globales: solo pedidos de comedor (2026-10-10)
+
+- La primera regla permitía que los permisos operativos por negocio mostraran
+  a una mesera global también pedidos de domicilio y para llevar. Andrea tenía
+  esos permisos en Mideli y Just Dipping; por eso veía la cola completa.
+- La regla vigente limita a toda cuenta con rol `global_waiter` a pedidos de
+  `comedor` en Estado e Historial, aunque tenga permisos operativos asignados.
+  Esto excluye domicilio local, para llevar y plataformas Uber/DiDi. Los roles
+  de personal local conservan sus vistas.
+- La restricción se aplica tanto en RLS para pedidos, artículos e historial,
+  como en el filtro de Estado para filas ya cargadas. El permiso de negocio
+  sigue gobernando el uso del menú y cobros; caja continúa por separado.
+- La migración vigente es
+  `20261010011748_restrict_global_waiters_to_dine_in_only.sql`. Una prueba
+  dirigida falló antes del cambio mostrando Uber, DiDi, domicilio y para llevar
+  visibles; tras el cambio pasó en escritorio, tablet y móvil. Pendientes:
+  no quedan cambios requeridos para aplicar en producción.
+- La migración se aplicó en Supabase producción. La comprobación con la cuenta
+  de Andrea y Just Dipping devolvió `comedor=true`, `domicilio=false` y
+  `para_llevar=false`; Uber y DiDi usan `para_llevar`. El historial de
+  migraciones local/remoto quedó sincronizado.
+- Lint, build y las 57 pruebas de contexto de Playwright pasaron en escritorio,
+  tablet y móvil. La producción vigente consulta pedidos bajo RLS y recibe la
+  restricción sin redeploy de Vercel; el árbol de trabajo conserva otras
+  modificaciones sin revisar, así que no se publicó un frontend más amplio.
+  Andrea solo necesita actualizar/reabrir la app para limpiar pedidos que
+  pudieran quedar cargados en memoria.
+
+## 53. Suspensión de licencia en tiempo real (2026-10-10)
+
+- La suspensión o reactivación de la licencia de un negocio publica por un
+  canal privado `business:<id>:license` únicamente el ID del negocio y su
+  disponibilidad. La autorización de lectura del canal reutiliza el permiso
+  multinegocio; no expone notas, vigencias ni información de pagos.
+- Mesero, Estado, Historial, Control y Configuración escuchan cambios para los
+  negocios a los que la cuenta tiene acceso. Cuando cambia la disponibilidad,
+  la sesión se renueva para que el proxy seleccione un negocio aún autorizado
+  o muestre la pantalla bloqueada. La revisión periódica y al recuperar foco
+  permanece como respaldo para expiraciones o desconexiones.
+- En suspensión o vencimiento confirmado, la pantalla muestra de forma breve
+  “Favor de liquidar pagos pendientes.” Las demás causas de acceso bloqueado
+  conservan su explicación específica.
+- La migración `20261010015500_business_license_realtime_notifications.sql`
+  está aplicada en Supabase producción. La verificación remota confirmó RLS,
+  una política de canal privado, tres triggers de disponibilidad y que los
+  clientes autenticados no pueden leer filas de licencia ni invocar el emisor.
+  El dry-run posterior quedó sin migraciones pendientes.
+- Lint, build y 57 pruebas de contexto pasaron en el espacio aislado. No se
+  suspendió un negocio real para simular el evento; la recepción visual no se
+  probó con una cuenta activa del local. Vercel producción quedó `READY` como
+  `dpl_Hk9qQ3Syz28ZBc4Q6diMctMBaaxc`, alias `https://mideli.vercel.app`.
+
+## 54. Analíticas de plataformas y jerarquía visual (2026-10-09)
+
+- Analíticas consultaba cobros de caja (`payment_transactions`) y por eso no
+  representaba los pedidos Uber Eats/DiDi Food, que se guardan como `para_llevar`
+  y se cierran con entrega al repartidor. Se agregó un filtro `Plataformas` y
+  un desglose también visible en `Todos` y `Para llevar`, con pedidos,
+  entregas, valor bruto de tickets, pago en app y efectivo Didi realmente
+  recibido.
+- El efectivo de Didi permanece separado del ingreso/cobro de caja de pedidos
+  locales. Los productos y categorías sí cuentan tickets entregados, sin
+  sumar órdenes pendientes o canceladas. Las consultas conservan el ámbito del
+  negocio activo y usan la fecha de creación del pedido para el periodo.
+- La pantalla muestra ventas, pedidos y ticket promedio arriba; los detalles
+  siguen disponibles agrupados debajo y el control del dueño se conserva. En
+  móvil las métricas usan una disposición compacta. No se eliminaron métricas.
+- Una consulta de solo lectura a producción no encontró pedidos de plataforma
+  almacenados para Just Dipping, así que el resultado con órdenes reales no se
+  pudo confirmar. No se crearon órdenes ni se modificaron datos operativos.
+  Una prueba aislada cubre Uber, DiDi con pago en app, efectivo Didi variable,
+  pedido pendiente y cancelación.
+- Pasaron 24 pruebas Playwright en escritorio, tablet y móvil, `npm run lint`,
+  `npm run build` y el detector visual Impeccable. Vercel producción quedó
+  `READY` como `dpl_E3FYVnGkqkQiVnhS7s5zbig38z3j`, alias
+  `https://mideli.vercel.app`; `/api/health` respondió `200`.
+
+## 55. Tickets compactos para ahorrar papel (2026-10-09)
+
+- Los tickets de pedido impresos desde Historial ya no llevan logos. Usan
+  tipografía monoespaciada pequeña, separaciones y márgenes reducidos; mantienen
+  nombre configurado, datos del negocio, folio, servicio/mesa, cliente,
+  productos, modificadores, notas, subtotal, descuento, total, pago y saldo.
+  Domicilio conserva destino, colonia, referencia, envío y total del cliente;
+  Uber Eats y Didi Food conservan plataforma y su tratamiento de pago.
+- El ancho configurado de 48 o 58 mm sigue siendo independiente por negocio.
+  El margen de impresión baja de 3 a 1 mm. Los comprobantes de cobro también
+  pierden logos, dirección fija exclusiva de Mideli y espacios amplios, y
+  conservan los datos de la transacción y negocio.
+- No cambia la operación de pedidos, pagos, permisos ni Supabase. La impresión
+  continúa usando el diálogo del dispositivo; el ahorro y la legibilidad final
+  dependen del controlador y del modelo de impresora, por lo que falta validar
+  físicamente en el local.
+- Verificación: 18 pruebas dirigidas pasan en escritorio, tablet y móvil;
+  `npm run lint` y `npm run build` pasan. Vercel producción
+  `dpl_AgPsqnm4v6bKKE65eVriHUAsK5rP` quedó `READY` con alias
+  `https://mideli.vercel.app`; `/api/health` respondió HTTP 200 y `status: ok`.
+
+## 56. Rueda del ratón en todas las áreas (2026-10-09)
+
+- La app mantiene el dashboard a la altura de la ventana y desplaza cada panel
+  por separado. Sobre cabeceras y zonas estáticas no había un contenedor que
+  recibiera la rueda; algunos paneles anidados también cortaban la continuidad
+  al llegar a su límite.
+- `src/lib/wheel-scroll-fallback.ts` redirige la rueda a la región desplazable
+  visible más cercana. Se monta desde `src/app/layout.tsx`, por lo que cubre el
+  dashboard, Menú y páginas de administración que usan otro layout. Si un panel
+  anidado llegó a su límite, continúa al siguiente contenedor disponible.
+  Respeta controles de formulario, gestos horizontales y zoom; con un diálogo
+  modal activo no mueve el fondo.
+- No cambia el diseño, los gestos táctiles, permisos, pedidos ni datos de
+  Supabase. Cuatro pruebas Playwright (incluida una pantalla de administración
+  fuera del dashboard) pasan en escritorio, tablet y móvil; `npm run lint` y
+  `npm run build` pasan.
+- No se publicó en Vercel en esta revisión: el árbol de trabajo contiene otros
+  cambios pendientes ajenos, y desplegarlos juntos podría alterar producción.
+
+## 57. Mensaje más legible para repartidores (formato anterior; reemplazado por §58)
+
+- **Histórico; el método y la línea de cobro fueron reemplazados por §58.**
+
+- El texto de WhatsApp se genera en `src/lib/delivery-driver-message.ts` para
+  cualquier negocio. Ahora separa cliente, recolección, destino y cobro con
+  espacios en blanco para facilitar la lectura durante la entrega.
+- Si el pedido tiene nombre y/o teléfono, se muestran bajo **Cliente**; el
+  teléfono usa el formato de lectura de la app. Como ambos campos son
+  opcionales, se omite el bloque cuando faltan los dos.
+- Se conservan los dos enlaces de Maps y los datos opcionales del cliente.
+- El formato de cobro anterior ya no es vigente; consultar §58. Los datos del
+  cliente y mapas descritos aquí se conservan.
+
+## 58. Pago requerido en domicilios locales y mensaje de cobro al repartidor (2026-10-09)
+
+- En un domicilio local, Mesero exige elegir **Efectivo** o **Transferencia**
+  antes de enviar o cobrar/enviar. No preselecciona un método. Uber Eats, Didi
+  Food, comedor y para llevar no usan este requisito.
+- El borrador local puede restaurar únicamente el enum del método; no guarda
+  nombre, teléfono ni domicilio.
+- El botón manual **Enviar a repartidor** sigue disponible. En efectivo, el
+  mensaje muestra `Productos: $X + envío`, donde X es `orders.total` (productos)
+  del mismo pedido. No muestra efectivo entregado, cambio, ni suma de envío. En
+  transferencia solo aparece el método, sin monto ni `+ envío`.
+- Se mantiene `payment_method_requested`; no se requiere una migración. Los
+  avisos automáticos de WhatsApp, caja y registro de cobros no cambian.
+- Pasaron las 879 pruebas Playwright completas en escritorio, tablet y móvil,
+  `npm run lint` y `npm run build`. El listado de solo lectura de migraciones
+  mostró el esquema local y remoto sincronizados. No se envió un WhatsApp real.
+- Publicado en Vercel producción como `dpl_3A5uR7iXfAicwCBoNhmWxsCCoTi9`,
+  `READY`, con alias `https://mideli.vercel.app`. La comprobación fue mediante
+  metadatos de Vercel; no se consultó la ruta pública de salud.
+
+## 59. Persistencia y recuperación de sesión (2026-10-09)
+
+- La sesión de Supabase ya se persistía en el navegador. Ahora las opciones de
+  cookie están explícitas y compartidas entre cliente, servidor y proxy: ruta
+  `/`, `SameSite=Lax`, duración de 400 días y `Secure` en producción.
+- Si una ruta protegida conserva la cookie pero el proxy no puede verificar
+  temporalmente sus claims, mantiene accesible `/reconectando` en vez de
+  mandarla inmediatamente a login. Esa pantalla intenta renovar la sesión con
+  `auth.refreshSession()` al entrar, cada cinco segundos y al recuperar red;
+  el botón de regreso a login ya no ejecuta `signOut`.
+- Esto conserva sesiones válidas ante fallos recuperables, pero no anula cierre
+  de sesión explícito, revocación del refresh token, perfil desactivado ni
+  límites que establezca Supabase Auth; esas situaciones aún requieren volver
+  a iniciar sesión.
+- Pruebas: 894 Playwright pasan en escritorio/tablet/móvil; la prueba dirigida
+  de recuperación pasa (5 casos). `npm run lint` y `npm run build` pasan. No se
+  probó con las credenciales de una mesera en un dispositivo real ni se
+  modificó configuración o datos de Supabase.
+- Publicado en Vercel producción como `dpl_6pZu8PN1jbs9yeUfdiRy2epv7Xre`,
+  `READY`, con alias `https://mideli.vercel.app`; se confirmó el estado mediante
+  metadatos del despliegue.
+
+## 60. Canales de plataforma aislados por negocio en Mesero (2026-10-09)
+
+- La configuración remota se verificó en solo lectura: Mideli tiene los pedidos
+  de plataformas apagados y no tiene filas de configuración; Just Dipping tiene
+  Uber Eats y Didi Food activados. Los precios y comisiones se mantienen
+  vinculados a `business_id`; la comisión es de referencia y no altera el cobro.
+- En Mesero, al cambiar el menú, se asignaba la clave del negocio nuevo a un
+  estado que todavía conservaba canales, precios y disponibilidad del anterior.
+  El selector podía mostrar temporalmente ambos canales mientras cargaba el
+  nuevo negocio. Además, un carrito de otro negocio podía conservar esos canales
+  aunque el menú activo ya fuera distinto.
+- La carga ahora limpia los datos anteriores, y el POS solo usa canales cuando
+  la configuración vigente terminó de cargar y el menú activo coincide con el
+  único negocio de los productos. Si no coinciden, conserva el carrito, oculta
+  plataformas y explica que se debe volver al menú de ese negocio.
+- Verificación: 24 ejecuciones de pruebas de modalidades y 108 pruebas de
+  contexto, disponibilidad y borrador pasaron en escritorio, tablet y móvil;
+  `npm run lint` y `npm run build` pasaron. La consulta de producción fue de
+  solo lectura y no se crearon pedidos ni se modificaron datos.
+- No se desplegó este cambio. Hace falta publicar explícitamente para que llegue
+  a `https://mideli.vercel.app`.
+
+## 61. Push de negocio a meseras solo al quedar listo (2026-10-09)
+
+- La función `send-order-notification` ahora identifica los rangos `waiter`,
+  `local_waiter` y `global_waiter` por la membresía del negocio (y el rol de
+  perfil para pedidos legacy). Esos destinatarios no reciben Push al registrar
+  un pedido ni al iniciar preparación; sí pueden recibirlo al pasar a `ready`,
+  dentro de los límites vigentes de negocio y servicio.
+- Cocina y los demás rangos autorizados conservan los avisos que ya recibían.
+  No cambia `ready_alerts`, sus preferencias por dispositivo ni el sonido/toast
+  local, que ya se dispara únicamente cuando un pedido aparece como listo.
+- No requiere migración ni modifica pedidos, suscripciones o preferencias
+  guardadas. La regresión de política pasó en escritorio, tablet y móvil (18
+  casos); `npm run lint`, `npm run build` y `git diff --check` pasaron.
+- No se desplegó la Edge Function y no se envió un Push real. El comportamiento
+  en producción permanece igual hasta publicar `send-order-notification` en
+  Supabase.
+
+## 62. Agrupar pedidos activos y cobrar por mesa desde Estado (2026-10-09)
+
+- En Estado, los pedidos de comedor se agrupan por visita física (`table_visit_id`)
+  dentro de cada etapa existente. Pedidos legacy usan `table_id`, o zona y número
+  como último recurso. Domicilio y para llevar conservan tarjetas individuales.
+- La mesa puede contener cuentas de varios negocios. Cada botón abre el modal de
+  cobro actual para un solo negocio y su caja. La cuenta reúne pedidos con saldo
+  de la misma visita y `business_account_id`, incluso si alguno está en otra
+  etapa; no combina visitas distintas, negocios, efectivo ni cortes.
+- El modal identifica mesa y negocio. No hay cambios de esquema ni se crean
+  movimientos al agrupar la vista.
+- Verificación: 18 pruebas dirigidas pasaron en escritorio, tablet y móvil;
+  `npm run lint` y `npm run build` pasan. No se hicieron cobros reales.
+- Este cambio aún no se desplegó a producción.

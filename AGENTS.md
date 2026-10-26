@@ -113,7 +113,15 @@ Los cambios sin commit son trabajo en curso. No los trates como una versión est
 - La última comprobación documentada encontró a Mideli y Just Dipping activos
   en la arquitectura multinegocio de Rincón 404 Food Park. Revisa el estado
   remoto cuando la tarea dependa de actividad o licencia actual. WhatsApp
-  permanece exclusivo de Mideli.
+  permanece exclusivo de Mideli. La bandeja se oculta al personal desde
+  2026-10-01; el webhook, el bot y las tareas programadas siguen intactos, por
+  lo que ocultar la pantalla no desactiva el canal.
+- Los clientes operativos y tickets impresos se separan por `business_id`.
+  Los clientes históricos de WhatsApp se conservan en sus tablas legacy y se
+  copian al directorio operativo de Mideli sin borrar sus relaciones originales.
+  La impresión de tickets usa el diálogo del dispositivo; no empareja Bluetooth
+  directamente. Confirma compatibilidad de la impresora física, especialmente
+  AirPrint para iPad, antes de afirmar que funciona en el local.
 - El catálogo y los combos de Just Dipping están importados. Sus tickets
   históricos de Firebase siguen pendientes de importación según la última
   verificación documentada; no contarlos como ventas operativas.

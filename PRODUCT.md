@@ -9,18 +9,18 @@ Rincón 404 Food Park.
 
 **Principales:** meseros en servicio real, personal de caja y cocina. Usan Mideli bajo presión de turno para tomar pedidos, modificarlos, enviarlos a cocina, seguir estados y cobrar.
 
-**Administrativos:** owner y admin. Gestionan menú, categorías, imágenes, mesas, usuarios, caja, inventario, impresión, WhatsApp y analíticas.
+**Administrativos:** owner y admin. Gestionan menú, categorías, imágenes, mesas, usuarios, caja, clientes, impresión, inventario y analíticas.
 
 **Supervisor:** puede operar POS y KDS, pero no administrar configuración.
 
-No existe usuario comensal dentro de la aplicación. WhatsApp sí es un canal externo para que el cliente converse con el bot o sea atendido por el equipo.
+No existe usuario comensal dentro de la aplicación. La integración técnica de WhatsApp sigue ligada a Mideli, pero su pantalla operativa está oculta mientras se prioriza el multinegocio.
 
 ## Propósito
 
 La aplicación coordina los turnos de negocios independientes en Ciudad
 Obregón, Sonora: capturar pedidos correctamente, prepararlos, entregarlos y
-cobrarlos en el negocio correspondiente. Mideli conserva Cocina y WhatsApp;
-Just Dipping opera con su propio catálogo y estados.
+cobrarlos en el negocio correspondiente. Mideli conserva Cocina; Just Dipping
+opera con su propio catálogo y estados.
 
 **Éxito:** pedidos correctos y rápidos, estados visibles, cobros auditables y suficiente contexto para resolver excepciones durante el turno.
 
@@ -32,14 +32,16 @@ Just Dipping opera con su propio catálogo y estados.
 - KDS con estados, tiempos, prioridad, sonido y avisos.
 - Cobro completo, parcial, combinado y dividido, con propina, descuentos autorizados y cuentas pendientes.
 - Historial de ventas con dirección, ubicación, tipo de servicio, cobro y seguimiento del pedido.
+- Directorio de clientes y domicilios separado por negocio, con pedidos recientes.
+- Impresión manual de tickets desde Historial, con identidad, dirección, contacto y rollo configurables por negocio.
 - Turnos de caja, movimientos, conteo ciego, cortes, correcciones y auditoría.
 - Menú editable con categorías ordenables, productos, precios, estado, variaciones e imágenes.
 - Inventario por insumos, recetas, compras, lotes, conteos y mermas.
 - Estación de impresión automática para tickets de cocina de 48 mm.
-- PWA con notificaciones por dispositivo para pedidos nuevos y pedidos listos.
+- PWA con notificaciones por dispositivo para pedidos nuevos, inicio de preparación y pedidos listos.
 - Licencias manuales independientes por negocio; la cuenta Rincón 404 gestiona vigencias y el control técnico global queda separado.
 - Analíticas, control diario y rentabilidad estimada por receta.
-- WhatsApp con bot, catálogo, carrito, variaciones, domicilio, cliente por teléfono, direcciones guardadas, notas, confirmación, relevo humano, clientes, limpieza conversacional y avisos de estado.
+- Integración técnica de WhatsApp exclusiva de Mideli. La bandeja y su acceso para el personal están ocultos; el webhook y el bot no se desactivaron ni modificaron.
 
 ## Flujos críticos
 
@@ -64,7 +66,15 @@ salientes mientras Mideli no tenga acceso operativo.
 7. El personal entrega o sirve.
 8. Se registra el cobro y queda en historial.
 
-### Pedido de WhatsApp
+### Integración heredada de WhatsApp
+
+La ruta `/dashboard/whatsapp` no aparece en la navegación y se redirige a una
+vista permitida. El webhook, el bot y sus tareas siguen existiendo sin cambios;
+por eso esta interfaz no debe considerarse una pausa técnica del canal. El
+equipo no debe depender de la atención humana por WhatsApp mientras su bandeja
+esté oculta.
+
+### Pedido de WhatsApp (flujo técnico heredado)
 
 1. Meta entrega el mensaje al webhook.
 2. El motor serializa el procesamiento por conversación.
@@ -73,6 +83,26 @@ salientes mientras Mideli no tenga acceso operativo.
 5. El pedido se crea con canal WhatsApp e idempotencia.
 6. Si el bot no puede continuar, la conversación pasa a atención humana con su contexto.
 7. El equipo puede cargar el pedido en Mesero, editarlo y enviarlo a cocina.
+
+### Clientes e impresión por negocio
+
+Cada negocio tiene su propio directorio de clientes, búsquedas por teléfono,
+domicilios guardados y pedidos recientes. Una persona que compra en dos locales
+puede tener un registro independiente en cada uno; no se cruzan teléfonos,
+direcciones ni historial. Los clientes existentes del directorio de WhatsApp
+se conservan en Mideli, sin modificar las tablas que usa esa integración.
+
+Desde Historial se imprime el ticket del pedido. El logo usa la identidad visual
+del negocio y se pueden configurar el nombre impreso, dirección, teléfono,
+leyenda final y papel de 48 o 58 mm desde `/settings/impresion`. En domicilio,
+el ticket distingue subtotal, descuento, productos, colonia, destino, tarifa
+externa del repartidor, total del cliente, cobros del local y saldo.
+
+La app abre el diálogo de impresión del dispositivo, no empareja Bluetooth.
+Para iPad, la impresora debe admitir AirPrint y compartir la misma red Wi‑Fi;
+Android puede requerir el servicio de impresión o la app del fabricante. La
+compatibilidad final depende del modelo de impresora y se debe probar en el
+local.
 
 ### Domicilio
 
@@ -101,7 +131,7 @@ servidor y RLS, no solamente en la navegación.
 - Las operaciones financieras requieren validación del servidor.
 - No se confirma un cobro, corrección o cierre de caja sin conexión con el servidor.
 - La contingencia completa sin internet todavía está pendiente.
-- PWA, impresora, push, WhatsApp real y flujos financieros requieren validación en hardware y cuentas reales.
+- PWA, impresora, push, WhatsApp real y flujos financieros requieren validación en hardware y cuentas reales. La impresión de tickets necesita confirmar el modelo físico y el diálogo del sistema en el dispositivo.
 
 ## Estado multinegocio y límites
 
@@ -123,13 +153,14 @@ verificación documentada.
 - `/login`: acceso del personal.
 - `/dashboard/mesero`: POS.
 - `/dashboard/cocina`: KDS.
-- `/dashboard/whatsapp`: central de servicio.
+- `/dashboard/whatsapp`: ruta técnica heredada; no visible para el personal en esta etapa.
 - `/dashboard/analiticas`: control y métricas.
 - `/menu`: menú y categorías.
 - `/settings/mesas`: plano.
 - `/settings/inventario`: inventario.
 - `/settings/caja`: caja.
 - `/settings/impresion`: impresión.
+- `/settings/clientes`: directorio del negocio seleccionado.
 - `/settings/diagnostico`: diagnósticos.
 - `/settings/negocios`: administración de negocios y personal global.
 - `/settings/licencias`: control de vigencias por negocio, exclusivo de la cuenta Rincón 404.

@@ -1,7 +1,7 @@
 # Índice del proyecto
 
 Este índice es la puerta de entrada para cualquier IA o persona que necesite
-entender Rincón 404. Revisado el 2026-10-01 contra la estructura local. Las
+entender Rincón 404. Revisado el 2026-10-02 contra la estructura local. Las
 afirmaciones sobre producción son fotografías fechadas, no sustituyen una
 comprobación nueva.
 
@@ -30,12 +30,17 @@ las actualizaciones posteriores antes de actuar.
 |---|---|
 | Inicio de sesión, permisos, negocio seleccionado | `src/proxy.ts`, `src/app/dashboard/layout.tsx`, `src/lib/business-capabilities.ts` |
 | Menú de negocios, productos, combos y comanda | `src/components/dashboard/mesero-view.tsx`, `src/components/pos/`, `src/lib/stores/cart-store.ts`, `src/lib/stores/catalog-store.ts` |
-| Crear, editar, recuperar y ver pedidos | `src/lib/stores/order-store.ts`, `src/lib/actions/pos-order-recovery.ts`, `src/components/dashboard/status-view.tsx`, `src/components/dashboard/sales-history.tsx`; Historial pagina por fecha e ID en lotes de 100 |
+| Crear, editar, recuperar y ver pedidos; hora opcional para recoger el mismo día; borrar con PIN del dueño por negocio | `src/lib/stores/order-store.ts`, `src/lib/order-scheduling.ts`, `src/lib/actions/pos-order-recovery.ts`, `src/lib/actions/sales.ts`, `src/components/dashboard/mesero-view.tsx`, `src/components/dashboard/status-view.tsx`, `src/components/dashboard/sales-history.tsx`, `supabase/migrations/20261010001844_business_scoped_order_deletion_authorization.sql`; Historial pagina por fecha e ID en lotes de 100 |
+| Seguimiento de repartos desde Estado: aviso manual para WhatsApp con cliente, contacto y direcciones en bloques legibles | `src/lib/actions/delivery-status.ts`, `src/lib/delivery-driver-message.ts`, `src/components/dashboard/status-view.tsx` |
+| Origen, tarifas por distancia y recargos por colonia separados por negocio | `src/app/settings/entregas/page.tsx`, `src/components/admin/business-delivery-settings-manager.tsx`, `src/lib/actions/business-delivery-settings.ts`, `src/lib/business-delivery.server.ts` |
+| Directorio de clientes por negocio, domicilios y pedidos recientes; selección desde captura de domicilio | `src/app/settings/clientes/page.tsx`, `src/components/admin/business-customers-manager.tsx`, `src/components/pos/order-details-modal.tsx`, `src/lib/actions/business-customers.ts` |
+| Ticket por negocio desde Historial | `src/components/dashboard/sales-history.tsx`, `src/components/printing/order-receipt-ticket.tsx`, `src/lib/actions/business-receipts.ts` |
+| Desplazamiento por rueda en áreas estáticas y actualización táctil por gesto | `src/lib/wheel-scroll-fallback.ts`, `src/components/wheel-scroll-fallback.tsx`, `src/app/layout.tsx`, `src/lib/hooks/use-pull-to-refresh.ts` |
 | Cocina y avisos de pedidos | `src/components/dashboard/cocina-view.tsx`, `supabase/functions/send-order-notification/`, `src/app/sw.ts` |
 | Cobros y caja por negocio | `src/components/payments/`, `src/components/cash/cash-shift-control.tsx`, `src/lib/stores/cash-shift-store.ts` |
 | Personal, negocios y licencias | `src/app/settings/`, `src/lib/actions/businesses.ts`, `src/lib/actions/business-licenses.ts` |
 | Inventario | `src/components/admin/inventory/`, `src/lib/stores/inventory-store.ts` |
-| WhatsApp de Mideli | `src/app/api/integraciones/whatsapp/meta/route.ts`, `src/lib/whatsapp/` |
+| WhatsApp técnico de Mideli (bandeja oculta al personal) | `src/app/api/integraciones/whatsapp/meta/route.ts`, `src/lib/whatsapp/` |
 | Esquema, políticas y funciones SQL | `supabase/migrations/`, `supabase/tests/` |
 | Pruebas de interfaz y flujos | `tests/e2e/`, `playwright.config.ts` |
 

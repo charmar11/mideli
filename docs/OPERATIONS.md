@@ -133,11 +133,23 @@ Antes de usar Meta en producción, comprobar proveedor, firma del webhook, plant
 
 ## Notificaciones PWA
 
-Cada dispositivo configura por separado avisos de pedidos nuevos y pedidos
-listos. Para depurarlos, revisar permiso del navegador, instalación PWA,
-suscripción, negocio, capacidades del destinatario, service worker activo y
-entrega de la Edge Function. Push puede mostrarse incluso con Cocina o Mesero
-visibles; la señal local y el sonido son complementarios.
+Cada dispositivo configura por separado avisos de pedidos nuevos y avisos de
+preparación iniciada/pedido listo. Para depurarlos, revisar permiso del
+navegador, instalación PWA, suscripción, negocio, capacidades del destinatario,
+service worker activo y entrega de la Edge Function. Push puede mostrarse
+incluso con Cocina o Mesero visibles; la señal local y el sonido son
+complementarios. Las meseras globales solo reciben avisos de comedor en otros
+locales; domicilios y pedidos para llevar se notifican al personal de ese
+negocio.
+
+## Canales de venta por plataforma
+
+En `/settings/plataformas`, el dueño elige qué productos ofrece cada negocio en
+Uber Eats y Didi Food y, si aplica, define un precio distinto. Un producto nuevo
+del menú aparece automáticamente con disponibilidad apagada para ambos canales;
+el dueño debe marcarlo por separado. Los canales también se activan allí y
+permanecen desactivados hasta que el negocio los encienda. Mesero y la base de
+datos rechazan artículos no habilitados para el canal seleccionado.
 
 ## Diagnóstico de un pedido
 

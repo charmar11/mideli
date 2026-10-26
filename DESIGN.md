@@ -38,6 +38,11 @@ typography:
     fontSize: "11px"
   meta:
     fontSize: "12px"
+  thermalReceipt:
+    fontFamily: "JetBrains Mono, ui-monospace, monospace"
+    detailFontSize: "8px"
+    emphasisFontSize: "9px"
+    businessNameFontSize: "10px"
 rounded:
   md: "8px"
   lg: "12px"
@@ -113,6 +118,12 @@ Operación primero: mismos flujos, targets grandes, menos fricción. La personal
 ## Typography
 
 Pacifico is reserved for the wordmark. Sora bold is UI and headings. Karla is body copy. JetBrains Mono is used for prices, timers, order numbers and inventory counts.
+
+### Tickets térmicos
+
+El formato impreso usa JetBrains Mono a 8 px para datos, 9 px para folio y
+totales, y 10 px para el nombre del negocio. Esta escala compacta es exclusiva
+del papel térmico; no se usa en pantallas.
 
 ## Layout
 
