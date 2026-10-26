@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw, WifiOff } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -10,35 +10,72 @@ const RETRY_SECONDS = 5;
 export function SessionRecoveryView() {
   const router = useRouter();
   const [seconds, setSeconds] = useState(RETRY_SECONDS);
-  const [signingOut, setSigningOut] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
+  const recoveryInFlight = useRef(false);
+  const secondsRef = useRef(RETRY_SECONDS);
 
-  const retry = useCallback(() => {
-    setSeconds(RETRY_SECONDS);
-    router.refresh();
+  const recoverSession = useCallback(async () => {
+    if (recoveryInFlight.current) return;
+
+    recoveryInFlight.current = true;
+
+    try {
+      const { data, error } = await createClient().auth.refreshSession();
+
+      if (error || !data.session) {
+        setRecoveryMessage(
+          "No se pudo renovar todavía. Conservamos tu sesión y seguiremos intentando.",
+        );
+        return;
+      }
+
+      setRecoveryMessage("Sesión recuperada. Volviendo a la pantalla anterior.");
+      router.refresh();
+    } catch {
+      setRecoveryMessage(
+        "No se pudo renovar todavía. Conservamos tu sesión y seguiremos intentando.",
+      );
+    } finally {
+      recoveryInFlight.current = false;
+      setRecovering(false);
+    }
   }, [router]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setSeconds((current) => {
-        if (current <= 1) {
-          router.refresh();
-          return RETRY_SECONDS;
-        }
+  const retry = useCallback(() => {
+    if (recoveryInFlight.current) return;
+    secondsRef.current = RETRY_SECONDS;
+    setSeconds(RETRY_SECONDS);
+    setRecovering(true);
+    void recoverSession();
+  }, [recoverSession]);
 
-        return current - 1;
-      });
+  useEffect(() => {
+    const initialAttempt = window.setTimeout(() => {
+      setRecovering(true);
+      void recoverSession();
+    }, 0);
+
+    const timer = window.setInterval(() => {
+      const next = secondsRef.current <= 1 ? RETRY_SECONDS : secondsRef.current - 1;
+      secondsRef.current = next;
+      setSeconds(next);
+
+      if (next === RETRY_SECONDS && !recoveryInFlight.current) {
+        setRecovering(true);
+        void recoverSession();
+      }
     }, 1_000);
 
     window.addEventListener("online", retry);
     return () => {
+      window.clearTimeout(initialAttempt);
       window.clearInterval(timer);
       window.removeEventListener("online", retry);
     };
-  }, [retry, router]);
+  }, [recoverSession, retry]);
 
-  async function returnToLogin() {
-    setSigningOut(true);
-    await createClient().auth.signOut();
+  function returnToLogin() {
     window.location.replace("/login");
   }
 
@@ -52,9 +89,14 @@ export function SessionRecoveryView() {
           Recuperando la conexión
         </h1>
         <p className="mt-2 font-body text-base leading-relaxed text-muted-foreground">
-          Tu sesión sigue abierta. El sistema volverá a intentarlo en {seconds} s sin
-          borrar tu acceso ni el trabajo del turno.
+          Estamos intentando renovar tu acceso sin cerrar la sesión ni borrar la
+          comanda. Próximo intento en {seconds} s.
         </p>
+        {recoveryMessage ? (
+          <p role="status" className="mt-3 font-body text-sm text-muted-foreground">
+            {recoveryMessage}
+          </p>
+        ) : null}
 
         <div className="mt-6 grid gap-3">
           <button
@@ -63,15 +105,14 @@ export function SessionRecoveryView() {
             className="action-warning inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 font-heading text-sm font-bold"
           >
             <RefreshCw aria-hidden size={18} />
-            Intentar ahora
+            {recovering ? "Renovando sesión…" : "Intentar ahora"}
           </button>
           <button
             type="button"
-            disabled={signingOut}
             onClick={returnToLogin}
-            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border bg-background px-4 font-heading text-sm font-bold text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border bg-background px-4 font-heading text-sm font-bold text-muted-foreground transition-colors hover:text-foreground"
           >
-            {signingOut ? "Cerrando sesión..." : "Cerrar sesión y volver al acceso"}
+            Volver al acceso
           </button>
         </div>
       </section>

@@ -1,6 +1,9 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { SELECTED_BUSINESS_COOKIE } from "@/lib/multibusiness/constants";
+import { canUseAdminRoute } from "@/lib/multibusiness/admin-route-access";
+import { resolveAuthSessionGuard } from "@/lib/auth-session-guard";
+import { SUPABASE_SESSION_COOKIE_OPTIONS } from "@/lib/supabase/cookie-options";
 import {
   canSelectBusinessContext,
   resolveBusinessContextSelection,
@@ -14,7 +17,6 @@ const USER_NAME_HEADER = "x-mideli-user-name";
 const USER_ID_HEADER = "x-mideli-user-id";
 const CAPABILITIES_HEADER = "x-mideli-capabilities";
 const MULTIBUSINESS_CONTEXT_HEADER = "x-mideli-multibusiness-context";
-const WHATSAPP_ACCESS_HEADER = "x-mideli-whatsapp-access";
 const SESSION_RECOVERY_ROUTE = "/reconectando";
 const SETUP_CAPABILITIES = new Set([
   "business.manage_catalog",
@@ -50,8 +52,11 @@ function getScopedHome(
   ) {
     return "/dashboard/mesero";
   }
-  if (hasCapability(capabilities, "business.update_preparation")) {
+  if (hasCapability(capabilities, "business.access_kitchen")) {
     return "/dashboard/cocina";
+  }
+  if (hasCapability(capabilities, "business.update_preparation")) {
+    return "/dashboard/mesero";
   }
   if (hasCapability(capabilities, "business.manage_cash")) {
     return "/settings/caja";
@@ -117,71 +122,12 @@ function canUseKitchen(role: string) {
   return isAdminRole(role) || role === "kitchen" || role === "supervisor";
 }
 
-function canUseWhatsapp(role: string) {
-  return isAdminRole(role) || role === "waiter" || role === "supervisor";
-}
-
 function canUseInventory(role: string) {
   return isAdminRole(role);
 }
 
 function hasCapability(capabilities: string[], capability: string) {
   return capabilities.includes(capability);
-}
-
-function canUseMideliWhatsapp(
-  role: string,
-  capabilities: string[],
-  mideliBusinessVisible: boolean
-) {
-  if (!mideliBusinessVisible) return false;
-  if (role === "waiter" || role === "supervisor") return true;
-  return (
-    hasCapability(capabilities, "business.operate_orders") ||
-    hasCapability(capabilities, "organization.operate_orders")
-  );
-}
-
-function canUseAdminRoute(
-  pathname: string,
-  role: string,
-  capabilities: string[],
-  multibusinessContextAvailable: boolean
-) {
-  if (pathname.startsWith("/settings/negocios")) {
-    return hasCapability(capabilities, "platform.manage_businesses");
-  }
-  if (pathname.startsWith("/settings/licencias")) {
-    return hasCapability(capabilities, "platform.manage_business_licenses");
-  }
-  if (isAdminRole(role) && !multibusinessContextAvailable) return true;
-  if (pathname.startsWith("/menu")) {
-    return hasCapability(capabilities, "business.manage_catalog");
-  }
-  if (pathname.startsWith("/settings/mesas")) {
-    return hasCapability(capabilities, "organization.manage_tables");
-  }
-  if (pathname.startsWith("/settings/caja")) {
-    return hasCapability(capabilities, "business.manage_cash");
-  }
-  if (pathname.startsWith("/settings/impresion")) {
-    return hasCapability(capabilities, "business.manage_catalog");
-  }
-  if (pathname.startsWith("/settings/diagnostico")) {
-    return (
-      isAdminRole(role) &&
-      (hasCapability(capabilities, "platform.manage_businesses") ||
-        hasCapability(capabilities, "business.manage_catalog") ||
-        hasCapability(capabilities, "business.manage_cash"))
-    );
-  }
-  if (pathname === "/settings") {
-    return (
-      hasCapability(capabilities, "business.manage_staff") ||
-      hasCapability(capabilities, "organization.manage_global_waiters")
-    );
-  }
-  return false;
 }
 
 function resolveScopedCapabilities(
@@ -279,7 +225,6 @@ export async function proxy(request: NextRequest) {
   requestHeaders.delete(USER_ID_HEADER);
   requestHeaders.delete(CAPABILITIES_HEADER);
   requestHeaders.delete(MULTIBUSINESS_CONTEXT_HEADER);
-  requestHeaders.delete(WHATSAPP_ACCESS_HEADER);
 
   let cookiesToSet: Array<{
     name: string;
@@ -308,6 +253,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: SUPABASE_SESSION_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -322,7 +268,7 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  const { data: claimsData } = await supabase.auth.getClaims();
   const claims = claimsData?.claims;
   const userId = claims?.sub;
 
@@ -354,17 +300,18 @@ export async function proxy(request: NextRequest) {
     return redirectWithAuth(`${url.pathname}${url.search}`);
   };
 
-  if (
-    (isProtected || isLicenseBlockedRoute || isSessionRecovery) &&
-    !userId &&
-    claimsError &&
-    hasSupabaseAuthCookie(request) &&
-    !isSessionRecovery
-  ) {
-    return redirectToRecovery();
+  const sessionGuardDecision = resolveAuthSessionGuard({
+    hasSessionCookie: hasSupabaseAuthCookie(request),
+    hasUser: Boolean(userId),
+    isProtectedRoute: isProtected || isLicenseBlockedRoute,
+    isRecoveryRoute: isSessionRecovery,
+  });
+
+  if (sessionGuardDecision === "recover") {
+    return isSessionRecovery ? supabaseResponse : redirectToRecovery();
   }
 
-  if ((isProtected || isLicenseBlockedRoute || isSessionRecovery) && !userId) {
+  if (sessionGuardDecision === "login") {
     return redirectWithAuth("/login");
   }
 
@@ -376,7 +323,6 @@ export async function proxy(request: NextRequest) {
   let effectiveRole = "waiter";
   let multibusinessCapabilities: string[] = [];
   let multibusinessContextAvailable = false;
-  let mideliBusinessVisible = false;
   let scopedContexts: BusinessContextRow[] = [];
   let hasLicensedBusinessContext = false;
   let hasDraftSetupContext = false;
@@ -460,12 +406,6 @@ export async function proxy(request: NextRequest) {
       hasGlobalWaiterContext = scopedContexts.some((context) =>
         context.capability_codes.includes("organization.manage_global_waiters"),
       );
-      mideliBusinessVisible = scopedContexts.some(
-        (context) =>
-          context.business_slug === "mideli" &&
-          context.business_lifecycle_status === "active" &&
-          context.business_license_available === true
-      );
       const selection = resolveScopedCapabilities(request, scopedContexts);
       multibusinessCapabilities = selection.capabilities;
       const selectedContext = scopedContexts.find(
@@ -507,16 +447,6 @@ export async function proxy(request: NextRequest) {
     }
     if (multibusinessContextAvailable) {
       requestHeaders.set(MULTIBUSINESS_CONTEXT_HEADER, "available");
-      requestHeaders.set(
-        WHATSAPP_ACCESS_HEADER,
-        canUseMideliWhatsapp(
-          effectiveRole,
-          multibusinessCapabilities,
-          mideliBusinessVisible
-        )
-          ? "true"
-          : "false"
-      );
     }
     if (multibusinessCapabilities.length > 0) {
       requestHeaders.set(
@@ -559,6 +489,16 @@ export async function proxy(request: NextRequest) {
   }
 
   if (profile) {
+    if (isWhatsappRoute) {
+      return redirectWithAuth(
+        getScopedHome(
+          effectiveRole,
+          multibusinessCapabilities,
+          multibusinessContextAvailable
+        )
+      );
+    }
+
     if (
       isAdminRoute &&
       !canUseAdminRoute(
@@ -618,6 +558,7 @@ export async function proxy(request: NextRequest) {
       !(
         (!multibusinessContextAvailable && canUsePos(effectiveRole)) ||
         hasCapability(multibusinessCapabilities, "business.operate_orders") ||
+        hasCapability(multibusinessCapabilities, "business.update_preparation") ||
         hasCapability(multibusinessCapabilities, "organization.operate_orders")
       )
     ) {
@@ -634,7 +575,7 @@ export async function proxy(request: NextRequest) {
       isKitchenRoute &&
       !(
         (!multibusinessContextAvailable && canUseKitchen(effectiveRole)) ||
-        hasCapability(multibusinessCapabilities, "business.update_preparation")
+        hasCapability(multibusinessCapabilities, "business.access_kitchen")
       )
     ) {
       return redirectWithAuth(
@@ -646,26 +587,6 @@ export async function proxy(request: NextRequest) {
       );
     }
 
-    if (
-      isWhatsappRoute &&
-      !(
-        multibusinessContextAvailable
-          ? canUseMideliWhatsapp(
-              effectiveRole,
-              multibusinessCapabilities,
-              mideliBusinessVisible
-            )
-          : canUseWhatsapp(effectiveRole)
-      )
-    ) {
-      return redirectWithAuth(
-        getScopedHome(
-          effectiveRole,
-          multibusinessCapabilities,
-          multibusinessContextAvailable
-        )
-      );
-    }
   }
 
   if (isAuth && userId && request.nextUrl.searchParams.get("reason") === "scope") {

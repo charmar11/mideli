@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { SUPABASE_SESSION_COOKIE_OPTIONS } from '@/lib/supabase/cookie-options'
 
 let browserClient: ReturnType<typeof createBrowserClient> | undefined
 
@@ -16,6 +17,7 @@ export function createClient() {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        cookieOptions: SUPABASE_SESSION_COOKIE_OPTIONS,
         auth: {
           autoRefreshToken: true,
           detectSessionInUrl: true,
