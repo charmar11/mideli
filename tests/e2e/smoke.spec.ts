@@ -23,6 +23,16 @@ test("el formulario de acceso no muestra el sufijo interno", async ({ page }) =>
   await expect(page.locator("body")).not.toContainText("@mideli");
 });
 
+test("la capa global de diálogos conserva el tema del negocio", async ({ page }) => {
+  await page.goto("/login");
+
+  const overlayRoot = page.locator("#mideli-overlay-root");
+  await expect(overlayRoot).toHaveCount(1);
+  await expect(overlayRoot).toHaveCSS("display", "contents");
+  await expect(overlayRoot.locator("xpath=..")).toHaveAttribute("data-business-theme", "platform");
+  expect(await overlayRoot.evaluate((node) => node.closest(".mideli-dashboard-main"))).toBeNull();
+});
+
 test("la contraseña se puede mostrar y volver a ocultar", async ({ page }) => {
   await page.goto("/login");
 

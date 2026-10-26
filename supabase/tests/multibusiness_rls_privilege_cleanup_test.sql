@@ -117,9 +117,9 @@ SELECT ok(
      WHERE schemaname = 'public'
        AND tablename = 'orders'
        AND policyname = 'orders_viewed_by_business_membership'
-       AND qual ILIKE '%multibusiness_can_view_business%'
+       AND qual ILIKE '%multibusiness_can_view_order%'
   ),
-  'orders keep business-scoped visibility'
+  'orders keep service-type and business-scoped visibility'
 );
 SELECT ok(
   EXISTS (

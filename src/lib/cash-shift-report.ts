@@ -62,6 +62,7 @@ export function buildCashShiftShareText(shift: CashShiftDetail) {
     `Cobrado: ${money(shift.collected_total)}`,
     "",
     `Efectivo: ${money(shift.cash_total)}`,
+    `Efectivo recibido de Didi Food: ${money(shift.marketplace_cash_total ?? 0)}`,
     `Tarjeta: ${money(shift.card_total)}`,
     `Transferencia: ${money(shift.transfer_total)}`,
     "",

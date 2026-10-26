@@ -16,8 +16,13 @@ export const BUSINESS_OWNER_CAPABILITIES = [
   },
   {
     code: "business.update_preparation",
-    label: "Cocina",
-    description: "Preparación y estados de los pedidos",
+    label: "Avanzar pedidos desde Estado",
+    description: "Iniciar preparación y marcar pedidos listos desde Mesero · Estado",
+  },
+  {
+    code: "business.access_kitchen",
+    label: "Pantalla Cocina",
+    description: "Mostrar la estación de cocina separada (KDS)",
   },
   {
     code: "business.charge_orders",
@@ -41,3 +46,9 @@ export type BusinessOwnerCapabilityCode =
 
 export const BUSINESS_OWNER_CAPABILITY_CODES: BusinessOwnerCapabilityCode[] =
   BUSINESS_OWNER_CAPABILITIES.map((capability) => capability.code);
+
+/** New businesses can advance orders from Estado; a dedicated KDS is optional. */
+export const DEFAULT_BUSINESS_OWNER_CAPABILITY_CODES =
+  BUSINESS_OWNER_CAPABILITY_CODES.filter(
+    (code) => code !== "business.access_kitchen",
+  );

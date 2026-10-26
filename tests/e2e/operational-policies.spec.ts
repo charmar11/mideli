@@ -5,8 +5,11 @@ import {
 } from "@/lib/push-notification-policy";
 import {
   canSendBusinessOrderNotification,
+  canReceiveOrderNotificationEvent,
+  canReceiveBusinessOrderNotification,
   capabilityBelongsToBusiness,
   getOrderNotificationDestination,
+  isWaiterNotificationRole,
   membershipBelongsToBusiness,
 } from "../../supabase/functions/_shared/order-notification-policy";
 import {
@@ -18,6 +21,16 @@ import {
   buildCashCloseBreakdown,
   validateOpeningFloatCorrection,
 } from "@/lib/cash-close";
+import {
+  countsTowardLocalPendingBalance,
+  hasRecordedMarketplaceCashReceipt,
+  isLocalDeliveryOrder,
+  isMarketplaceOrderSelection,
+  marketplaceCashDifference,
+  marketplacePaymentLabel,
+  parseMarketplaceCashAmount,
+  shouldCollectMarketplaceCash,
+} from "@/lib/marketplace-orders";
 
 test.describe("políticas de notificaciones", () => {
   test("cada tema usa una preferencia independiente", () => {
@@ -76,8 +89,30 @@ test.describe("políticas de notificaciones", () => {
       ),
     ).toBe(true);
     expect(canSendBusinessOrderNotification("new_order", ["organization.operate_orders"])).toBe(true);
+    expect(canSendBusinessOrderNotification("in_preparation", ["business.operate_orders"])).toBe(false);
+    expect(canSendBusinessOrderNotification("in_preparation", ["business.update_preparation"])).toBe(true);
     expect(canSendBusinessOrderNotification("ready", ["business.operate_orders"])).toBe(false);
     expect(canSendBusinessOrderNotification("ready", ["business.update_preparation"])).toBe(true);
+  });
+
+  test("la mesera global solo recibe avisos de comedor en negocios ajenos", () => {
+    expect(canReceiveBusinessOrderNotification("comedor", true, false)).toBe(true);
+    expect(canReceiveBusinessOrderNotification("domicilio", true, false)).toBe(false);
+    expect(canReceiveBusinessOrderNotification("para_llevar", true, false)).toBe(false);
+    expect(canReceiveBusinessOrderNotification("domicilio", true, true)).toBe(true);
+    expect(canReceiveBusinessOrderNotification("domicilio", false, false)).toBe(true);
+  });
+
+  test("las meseras solo reciben Push cuando el pedido queda listo", () => {
+    expect(isWaiterNotificationRole("global_waiter")).toBe(true);
+    expect(isWaiterNotificationRole("local_waiter")).toBe(true);
+    expect(isWaiterNotificationRole("business_owner")).toBe(false);
+    expect(canReceiveOrderNotificationEvent("new_order", true)).toBe(false);
+    expect(canReceiveOrderNotificationEvent("in_preparation", true)).toBe(false);
+    expect(canReceiveOrderNotificationEvent("ready", true)).toBe(true);
+    expect(canReceiveOrderNotificationEvent("new_order", false)).toBe(true);
+    expect(canReceiveOrderNotificationEvent("in_preparation", false)).toBe(true);
+    expect(canReceiveOrderNotificationEvent("ready", false)).toBe(true);
   });
 
   test("el aviso abre la pantalla que la persona tiene permiso para usar", () => {
@@ -87,6 +122,14 @@ test.describe("políticas de notificaciones", () => {
     expect(
       getOrderNotificationDestination("new_order", "business-1", ["business.update_preparation"], "order-1"),
     ).toBe("/dashboard/cocina?order=order-1");
+    expect(
+      getOrderNotificationDestination(
+        "in_preparation",
+        "business-1",
+        ["organization.operate_orders"],
+        "order-1",
+      ),
+    ).toBe("/dashboard/mesero?mode=status&order=order-1");
   });
 });
 
@@ -114,21 +157,95 @@ test("el desglose de caja incluye el fondo inicial", () => {
   const breakdown = buildCashCloseBreakdown({
     openingFloat: 1000,
     cashTotal: 700,
+    marketplaceCashTotal: 125,
     fundInTotal: 200,
     withdrawalTotal: 100,
     expenseTotal: 50,
     correctionTotal: 30,
   });
 
-  expect(breakdown.expectedCash).toBe(1780);
+  expect(breakdown.expectedCash).toBe(1905);
   expect(breakdown.lines.map((line) => line.label)).toEqual([
     "Fondo inicial",
     "Ventas en efectivo",
+    "Efectivo recibido de Didi Food",
     "Entradas",
     "Retiros",
     "Gastos",
     "Correcciones",
   ]);
+});
+
+test("Uber sólo admite pago en app y Didi permite app o efectivo", () => {
+  expect(isMarketplaceOrderSelection({ platform: "uber_eats", paymentMode: "app" })).toBe(true);
+  expect(isMarketplaceOrderSelection({ platform: "uber_eats", paymentMode: "cash" })).toBe(false);
+  expect(isMarketplaceOrderSelection({ platform: "didi_food", paymentMode: "app" })).toBe(true);
+  expect(isMarketplaceOrderSelection({ platform: "didi_food", paymentMode: "cash" })).toBe(true);
+  expect(marketplacePaymentLabel("uber_eats", "app")).toBe("Pagado en la app");
+  expect(marketplacePaymentLabel("didi_food", "cash")).toBe("Efectivo al repartidor");
+});
+
+test("sólo se solicita efectivo real al entregar un Didi pagado al repartidor", () => {
+  expect(shouldCollectMarketplaceCash({ marketplace_platform: "didi_food", marketplace_payment_mode: "cash", marketplace_handed_off_at: null })).toBe(true);
+  expect(shouldCollectMarketplaceCash({ marketplace_platform: "didi_food", marketplace_payment_mode: "cash", marketplace_handed_off_at: "2026-10-09T12:00:00Z" })).toBe(false);
+  expect(shouldCollectMarketplaceCash({ marketplace_platform: "didi_food", marketplace_payment_mode: "app", marketplace_handed_off_at: null })).toBe(false);
+  expect(shouldCollectMarketplaceCash({ marketplace_platform: "uber_eats", marketplace_payment_mode: "app", marketplace_handed_off_at: null })).toBe(false);
+});
+
+test("el efectivo de Didi queda identificado para conservarlo en caja al borrar la comanda", () => {
+  expect(
+    hasRecordedMarketplaceCashReceipt({
+      marketplace_platform: "didi_food",
+      marketplace_payment_mode: "cash",
+      marketplace_handed_off_at: "2026-10-09T12:00:00Z",
+      marketplace_cash_received: 180,
+      marketplace_cash_shift_id: "shift-1",
+    }),
+  ).toBe(true);
+  expect(
+    hasRecordedMarketplaceCashReceipt({
+      marketplace_platform: "didi_food",
+      marketplace_payment_mode: "app",
+      marketplace_handed_off_at: "2026-10-09T12:00:00Z",
+      marketplace_cash_received: null,
+      marketplace_cash_shift_id: null,
+    }),
+  ).toBe(false);
+  expect(
+    hasRecordedMarketplaceCashReceipt({
+      marketplace_platform: "didi_food",
+      marketplace_payment_mode: "cash",
+      marketplace_handed_off_at: null,
+      marketplace_cash_received: null,
+      marketplace_cash_shift_id: null,
+    }),
+  ).toBe(false);
+});
+
+test("el efectivo de plataforma no se confunde con domicilio local", () => {
+  expect(isLocalDeliveryOrder({
+    type: "para_llevar",
+    marketplace_platform: "didi_food",
+  })).toBe(false);
+  expect(isLocalDeliveryOrder({
+    type: "domicilio",
+    marketplace_platform: null,
+  })).toBe(true);
+});
+
+test("un pedido de plataforma no se trata como saldo pendiente de cobro local", () => {
+  expect(countsTowardLocalPendingBalance({ marketplace_platform: "uber_eats" })).toBe(false);
+  expect(countsTowardLocalPendingBalance({ marketplace_platform: "didi_food" })).toBe(false);
+  expect(countsTowardLocalPendingBalance({ marketplace_platform: null })).toBe(true);
+});
+
+test("el efectivo de Didi exige un peso entero válido y muestra diferencia contra el ticket", () => {
+  expect(parseMarketplaceCashAmount("")).toMatchObject({ amount: null });
+  expect(parseMarketplaceCashAmount("100.5")).toMatchObject({ amount: null });
+  expect(parseMarketplaceCashAmount("1000001")).toMatchObject({ amount: null });
+  expect(parseMarketplaceCashAmount("0")).toEqual({ amount: 0, error: null });
+  expect(parseMarketplaceCashAmount("275")).toEqual({ amount: 275, error: null });
+  expect(marketplaceCashDifference(300, 275)).toBe(-25);
 });
 
 test("el conteo ciego muestra el fondo sin revelar el efectivo esperado", () => {

@@ -30,26 +30,45 @@ import {
 } from "@/components/pos";
 import { OrderDetailsModal } from "@/components/pos/order-details-modal";
 import type { MenuItem, SelectedModifier } from "@/types/database";
+import {
+  getMarketplaceConfigBusinessId,
+  isMarketplacePosConfigReady,
+  type MarketplaceProductAvailability,
+} from "@/lib/marketplace-orders";
+import {
+  getBusinessMarketplacePosConfigAction,
+  type MarketplaceOrderSelection,
+  type MarketplacePlatform,
+} from "@/lib/actions/business-marketplace";
 import { ReadyOrderNotifier } from "./ready-order-notifier";
 import { PushNotificationSettings } from "./push-notification-control";
 import { useDashboardUserId } from "./dashboard-user-context";
 import { CashShiftControl } from "@/components/cash/cash-shift-control";
 import {
-  ensurePosCustomerAction,
   getWhatsappPosDraftAction,
 } from "@/lib/actions/whatsapp";
-import { getCashAccessibleBusinessContexts } from "@/lib/multibusiness/business-context-selection";
+import {
+  savePosBusinessCustomerAction,
+  searchPosBusinessCustomersAction,
+} from "@/lib/actions/business-customers";
+import {
+  getBusinessesMissingOpenCashShift,
+  getCashAccessibleBusinessContexts,
+} from "@/lib/multibusiness/business-context-selection";
 import {
   quoteManualDeliveryAction,
   quoteManualDeliveryPlaceAction,
   searchManualDeliveryPlacesAction,
 } from "@/lib/actions/delivery";
-import type {
-  PosCustomerMatch,
-  WhatsappCustomerAddress,
-  WhatsappPosDraft,
-} from "@/lib/whatsapp/admin-types";
-import { searchPosCustomersByPhoneAction } from "@/lib/actions/whatsapp";
+import { UNREGISTERED_DELIVERY_COLONY } from "@/lib/whatsapp/delivery-pricing";
+import type { BusinessCustomerAddress, BusinessCustomerMatch } from "@/types/business-customers";
+import { getPreferredBusinessCustomerAddress } from "@/lib/business-customer-presentation";
+import { createTodayOrderSchedule } from "@/lib/order-scheduling";
+import {
+  hasRequiredLocalDeliveryPayment,
+  isLocalDeliveryPaymentMethod,
+} from "@/lib/local-delivery-payment";
+import type { WhatsappPosDraft } from "@/lib/whatsapp/admin-types";
 import { checkPosOrderAttemptAction } from "@/lib/actions/pos-order-recovery";
 import { distanceMetersToKilometers, normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 import {
@@ -58,7 +77,11 @@ import {
   savePosCartDraft,
   type PosCartDraft,
 } from "@/lib/pos-cart-draft";
-import { isPosCreationKey } from "@/lib/pos-order-recovery";
+import {
+  getPendingPosRecoveryAction,
+  isPosCreationKey,
+  type PendingPosRecoveryState,
+} from "@/lib/pos-order-recovery";
 
 const StatusView = dynamic(
   () => import("./status-view").then((module) => module.StatusView),
@@ -108,7 +131,14 @@ const PaymentFlow = dynamic(
   { ssr: false }
 );
 
-type PendingPosRecoveryState = "checking" | "retry" | "unavailable" | null;
+type PendingColonyRetry =
+  | { kind: "address"; address: string; colony: string }
+  | {
+      kind: "place";
+      placeId: string;
+      typedAddress: string;
+      fallbackColony: string;
+    };
 
 function getDraftBusinessIds(
   draft: PosCartDraft,
@@ -135,11 +165,15 @@ export function MeseroView() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [whatsappStatusOptIn, setWhatsappStatusOptIn] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [customerIdBusinessId, setCustomerIdBusinessId] = useState<string | null>(null);
+  const [legacyWhatsappCustomerId, setLegacyWhatsappCustomerId] = useState<string | null>(null);
   const [whatsappConversationId, setWhatsappConversationId] = useState<string | null>(null);
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [scheduledForLabel, setScheduledForLabel] = useState<string | null>(null);
   const [kitchenReleaseAt, setKitchenReleaseAt] = useState<string | null>(null);
-  const [customerMatches, setCustomerMatches] = useState<PosCustomerMatch[]>([]);
+  const [customerMatches, setCustomerMatches] = useState<BusinessCustomerMatch[]>([]);
+  const [customerMatchesBusinessId, setCustomerMatchesBusinessId] = useState<string | null>(null);
+  const [customerMatchesPhone, setCustomerMatchesPhone] = useState("");
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryColony, setDeliveryColony] = useState("");
@@ -147,6 +181,8 @@ export function MeseroView() {
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryDistanceKm, setDeliveryDistanceKm] = useState<number | null>(null);
   const [deliveryConfirmed, setDeliveryConfirmed] = useState(false);
+  const [deliveryColonyMissing, setDeliveryColonyMissing] = useState(false);
+  const [pendingColonyRetry, setPendingColonyRetry] = useState<PendingColonyRetry | null>(null);
   const [deliveryCoordinates, setDeliveryCoordinates] = useState({ latitude: null as number | null, longitude: null as number | null });
   const [deliveryQuoteLoading, setDeliveryQuoteLoading] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -159,6 +195,14 @@ export function MeseroView() {
   const [variationItem, setVariationItem] = useState<MenuItem | null>(null);
   const [comboItem, setComboItem] = useState<MenuItem | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [marketplaceSelection, setMarketplaceSelection] = useState<MarketplaceOrderSelection | null>(null);
+  const [marketplaceConfig, setMarketplaceConfig] = useState<{
+    key: string;
+    loading: boolean;
+    platforms: MarketplacePlatform[];
+    prices: Record<string, Partial<Record<MarketplacePlatform, number>>>;
+    availability: MarketplaceProductAvailability;
+  }>({ key: "", loading: false, platforms: [], prices: {}, availability: {} });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
   const [deliveryPaymentMethod, setDeliveryPaymentMethod] = useState<"efectivo" | "tarjeta" | "transferencia" | null>(null);
@@ -174,6 +218,7 @@ export function MeseroView() {
   const draftPersistenceModeRef = useRef<"manual" | "external">("manual");
   const pendingCreationKeyRef = useRef<string | null>(null);
   const recoveryCheckInFlightRef = useRef(false);
+  const deliveryQuoteRequestIdRef = useRef(0);
   const draftDetailsRef = useRef<Omit<PosCartDraft, "items">>({
     orderType,
     tableId,
@@ -182,6 +227,10 @@ export function MeseroView() {
     scheduledFor,
     scheduledForLabel,
     kitchenReleaseAt,
+    marketplace: marketplaceSelection,
+    deliveryPaymentMethod: isLocalDeliveryPaymentMethod(deliveryPaymentMethod)
+      ? deliveryPaymentMethod
+      : null,
   });
   const addedFeedbackTimerRef = useRef<number | null>(null);
 
@@ -207,8 +256,12 @@ export function MeseroView() {
   const fetchActiveOrders = useOrderStore((state) => state.fetchActiveOrders);
   const subscribeToOrders = useOrderStore((state) => state.subscribeToOrders);
   const setMenuItemsMap = useOrderStore((state) => state.setMenuItemsMap);
+  const menuItemsBusinessMap = useOrderStore((state) => state.menuItemsBusinessMap);
   const activeOrders = useOrderStore((state) => state.activeOrders);
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
+  const checkCurrentShiftForBusiness = useCashShiftStore(
+    (state) => state.checkCurrentShiftForBusiness,
+  );
   const selectedBusinessId = useBusinessContextStore(
     (state) => state.selectedBusinessId
   );
@@ -218,6 +271,42 @@ export function MeseroView() {
   );
   const cashBusinesses = getCashAccessibleBusinessContexts(businessContexts);
   const activeMenuBusinessId = catalogBusinessId ?? selectedBusinessId;
+  const marketplaceItemIds = [...new Set(items.map((item) => item.menu_item_id))].sort();
+  const marketplaceBusinessIds = [...new Set(items.map(
+    (item) => item.business_id ?? menuItemsBusinessMap.get(item.menu_item_id) ?? activeMenuBusinessId,
+  ).filter((id): id is string => Boolean(id)))];
+  const marketplaceBusinessId = getMarketplaceConfigBusinessId(
+    activeMenuBusinessId,
+    marketplaceBusinessIds,
+  );
+  const marketplaceConfigKey = marketplaceBusinessId
+    ? `${marketplaceBusinessId}:${marketplaceItemIds.join(",")}`
+    : "";
+  const marketplaceConfigReady = isMarketplacePosConfigReady(
+    marketplaceConfig.key,
+    marketplaceConfigKey,
+    marketplaceConfig.loading,
+  );
+  const activeMarketplaceSelection = marketplaceConfigReady &&
+    marketplaceSelection &&
+    marketplaceConfig.platforms.includes(marketplaceSelection.platform)
+      ? marketplaceSelection
+      : null;
+  const marketplaceScopeMismatch = Boolean(
+    activeMenuBusinessId &&
+    marketplaceBusinessIds.length === 1 &&
+    marketplaceBusinessIds[0] !== activeMenuBusinessId,
+  );
+  const marketplaceConfigLoading = Boolean(
+    detailsOpen && !editingOrderId && marketplaceBusinessId &&
+    (marketplaceConfig.key !== marketplaceConfigKey || marketplaceConfig.loading),
+  );
+  const customerPhoneDigits = customerPhone.replace(/\D/g, "");
+  const visibleCustomerMatches =
+    customerMatchesBusinessId === activeMenuBusinessId &&
+    customerMatchesPhone === customerPhoneDigits
+      ? customerMatches
+      : [];
   const editingOrderBusinessId = editingOrderId
     ? activeOrders.find((order) => order.id === editingOrderId)?.business_id ??
       catalogBusinessId
@@ -225,10 +314,51 @@ export function MeseroView() {
   const editingBusinessName = businessContexts.find(
     (business) => business.business_id === editingOrderBusinessId
   )?.business_display_name;
+  const activeBusinessTimeZone = businessContexts.find(
+    (business) => business.business_id === (editingOrderBusinessId ?? activeMenuBusinessId)
+  )?.business_timezone ?? "America/Hermosillo";
 
   const cartItemCount = getItemCount();
   const cartTotal = getTotal();
   const readyCount = activeOrders.filter((o) => o.status === "ready").length;
+
+  useEffect(() => {
+    if (!detailsOpen || editingOrderId || !marketplaceBusinessId || marketplaceItemIds.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => {
+        if (cancelled) return null;
+        setMarketplaceConfig({
+          key: marketplaceConfigKey,
+          loading: true,
+          platforms: [],
+          prices: {},
+          availability: {},
+        });
+        return getBusinessMarketplacePosConfigAction(marketplaceBusinessId, marketplaceItemIds);
+      })
+      .then((result) => {
+        if (cancelled || !result) return;
+        setMarketplaceConfig({
+          key: marketplaceConfigKey,
+          loading: false,
+          platforms: result.success ? result.data?.platforms ?? [] : [],
+          prices: result.success ? result.data?.prices ?? {} : {},
+          availability: result.success ? result.data?.availability ?? {} : {},
+        });
+        setMarketplaceSelection((current) =>
+          current && !result.data?.platforms.includes(current.platform) ? null : current,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setMarketplaceConfig({ key: marketplaceConfigKey, loading: false, platforms: [], prices: {}, availability: {} });
+      });
+    return () => { cancelled = true; };
+  // Item IDs are serialized so the effect refreshes if the cart content changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailsOpen, editingOrderId, marketplaceBusinessId, marketplaceConfigKey]);
 
   const checkPendingPosOrder = useCallback(async () => {
     if (
@@ -302,15 +432,18 @@ export function MeseroView() {
       clearPosCartDraft(userId);
       pendingCreationKeyRef.current = null;
       setPendingCreationKey(null);
-      setRecoveryState(null);
-      clear();
-      setOrderType("comedor");
+        setRecoveryState(null);
+        clear();
+        setOrderType("comedor");
+        setMarketplaceSelection(null);
       setTableId("");
       setTableNumber("");
       setOrderNotes("");
       setCustomerName("");
       setCustomerPhone("");
       setCustomerId(null);
+      setCustomerIdBusinessId(null);
+      setLegacyWhatsappCustomerId(null);
       setWhatsappStatusOptIn(false);
       setScheduledFor(null);
       setScheduledForLabel(null);
@@ -346,64 +479,255 @@ export function MeseroView() {
 
   async function handleQuoteDelivery() {
     if (deliveryAddress.trim().length < 8 || deliveryQuoteLoading) return;
+    const requestId = ++deliveryQuoteRequestIdRef.current;
+    const pending: PendingColonyRetry = {
+      kind: "address",
+      address: deliveryAddress,
+      colony: deliveryColony,
+    };
+    setPendingColonyRetry(pending);
+    setDeliveryColonyMissing(false);
     setDeliveryQuoteLoading(true);
-    const result = await quoteManualDeliveryAction(deliveryAddress, deliveryColony);
-    setDeliveryQuoteLoading(false);
-    if (!result.success) {
-      setDeliveryConfirmed(false);
-      setDeliveryFee(0);
-      setDeliveryDistanceKm(null);
-      toast.error(result.error);
-      return;
-    }
-    setDeliveryAddress(result.quote.formattedAddress);
-    setDeliveryColony(result.quote.colony);
-    setDeliveryFee(result.quote.totalFee);
-    setDeliveryDistanceKm(Math.round((result.quote.distanceMeters / 1000) * 10) / 10);
-    setDeliveryCoordinates({ latitude: result.quote.latitude, longitude: result.quote.longitude });
-    setDeliveryConfirmed(true);
-    toast.success(`Domicilio confirmado · ${Math.round(result.quote.distanceMeters / 100) / 10} km · $${result.quote.totalFee}`);
-  }
-
-  async function handleSelectDeliveryPlace(placeId: string, sessionToken: string) {
-    setDeliveryQuoteLoading(true);
-    const result = await quoteManualDeliveryPlaceAction(placeId, sessionToken);
-    setDeliveryQuoteLoading(false);
-    if (!result.success) {
+    try {
+      const result = await quoteManualDeliveryAction(
+        activeMenuBusinessId ?? "",
+        deliveryAddress,
+        deliveryColony
+      );
+      if (requestId !== deliveryQuoteRequestIdRef.current) return;
+      if (!result.success) {
+        setDeliveryConfirmed(false);
+        setDeliveryFee(0);
+        setDeliveryDistanceKm(null);
+        setDeliveryCoordinates({ latitude: null, longitude: null });
+        setDeliveryColonyMissing(result.reason === "colony_missing");
+        if (result.reason !== "colony_missing") setPendingColonyRetry(null);
+        toast.error(result.error);
+        return;
+      }
+      setDeliveryAddress(result.quote.formattedAddress);
+      setDeliveryColony(result.quote.colony);
+      setDeliveryFee(result.quote.totalFee);
+      setDeliveryDistanceKm(Math.round((result.quote.distanceMeters / 1000) * 10) / 10);
+      setDeliveryCoordinates({ latitude: result.quote.latitude, longitude: result.quote.longitude });
+      setDeliveryConfirmed(true);
+      setDeliveryColonyMissing(false);
+      setPendingColonyRetry(null);
+      toast.success(`Domicilio confirmado · ${Math.round(result.quote.distanceMeters / 100) / 10} km · $${result.quote.totalFee}`);
+    } catch {
+      if (requestId !== deliveryQuoteRequestIdRef.current) return;
       setDeliveryConfirmed(false);
       setDeliveryFee(0);
       setDeliveryDistanceKm(null);
       setDeliveryCoordinates({ latitude: null, longitude: null });
-      toast.error(result.error);
-      return;
+      setDeliveryColonyMissing(false);
+      setPendingColonyRetry(null);
+      toast.error("Se perdió la conexión con Maps. Revisa la dirección e intenta de nuevo.");
+    } finally {
+      if (requestId === deliveryQuoteRequestIdRef.current) setDeliveryQuoteLoading(false);
     }
-    setDeliveryAddress(result.quote.formattedAddress);
-    setDeliveryColony(result.quote.colony);
-    setDeliveryFee(result.quote.totalFee);
-    setDeliveryDistanceKm(Math.round((result.quote.distanceMeters / 1000) * 10) / 10);
-    setDeliveryCoordinates({ latitude: result.quote.latitude, longitude: result.quote.longitude });
-    setDeliveryConfirmed(true);
-    toast.success(`Ubicación confirmada · ${Math.round(result.quote.distanceMeters / 100) / 10} km · $${result.quote.totalFee}`);
+  }
+
+  async function handleSelectDeliveryPlace(
+    placeId: string,
+    sessionToken: string,
+    typedAddress: string,
+    fallbackColony: string
+  ) {
+    const requestId = ++deliveryQuoteRequestIdRef.current;
+    const pending: PendingColonyRetry = {
+      kind: "place",
+      placeId,
+      typedAddress,
+      fallbackColony,
+    };
+    setPendingColonyRetry(pending);
+    setDeliveryColonyMissing(false);
+    setDeliveryQuoteLoading(true);
+    try {
+      const result = await quoteManualDeliveryPlaceAction(
+        activeMenuBusinessId ?? "",
+        placeId,
+        sessionToken,
+        typedAddress,
+        fallbackColony
+      );
+      if (requestId !== deliveryQuoteRequestIdRef.current) return;
+      if (!result.success) {
+        setDeliveryConfirmed(false);
+        setDeliveryFee(0);
+        setDeliveryDistanceKm(null);
+        setDeliveryCoordinates({ latitude: null, longitude: null });
+        setDeliveryColonyMissing(result.reason === "colony_missing");
+        if (result.reason !== "colony_missing") setPendingColonyRetry(null);
+        toast.error(result.error);
+        return;
+      }
+      setDeliveryAddress(result.quote.formattedAddress);
+      setDeliveryColony(result.quote.colony);
+      setDeliveryFee(result.quote.totalFee);
+      setDeliveryDistanceKm(Math.round((result.quote.distanceMeters / 1000) * 10) / 10);
+      setDeliveryCoordinates({ latitude: result.quote.latitude, longitude: result.quote.longitude });
+      setDeliveryConfirmed(true);
+      setDeliveryColonyMissing(false);
+      setPendingColonyRetry(null);
+      toast.success(`Ubicación confirmada · ${Math.round(result.quote.distanceMeters / 100) / 10} km · $${result.quote.totalFee}`);
+    } catch {
+      if (requestId !== deliveryQuoteRequestIdRef.current) return;
+      setDeliveryConfirmed(false);
+      setDeliveryFee(0);
+      setDeliveryDistanceKm(null);
+      setDeliveryCoordinates({ latitude: null, longitude: null });
+      setDeliveryColonyMissing(false);
+      setPendingColonyRetry(null);
+      toast.error("No se pudo confirmar esta sugerencia de Maps. El domicilio sigue en el campo; prueba otra opción.");
+    } finally {
+      if (requestId === deliveryQuoteRequestIdRef.current) setDeliveryQuoteLoading(false);
+    }
+  }
+
+  async function handleQuoteDeliveryWithoutColony() {
+    if (!deliveryColonyMissing || deliveryQuoteLoading) return;
+    const requestId = ++deliveryQuoteRequestIdRef.current;
+    const pending = pendingColonyRetry;
+    setDeliveryQuoteLoading(true);
+    try {
+      const result = pending?.kind === "place"
+        ? await quoteManualDeliveryPlaceAction(
+            activeMenuBusinessId ?? "",
+            pending.placeId,
+            "",
+            pending.typedAddress,
+            pending.fallbackColony,
+            true
+          )
+        : await quoteManualDeliveryAction(
+            activeMenuBusinessId ?? "",
+            pending?.kind === "address" ? pending.address : deliveryAddress,
+            pending?.kind === "address" ? pending.colony : deliveryColony,
+            true
+          );
+      if (requestId !== deliveryQuoteRequestIdRef.current) return;
+      if (!result.success) {
+        setDeliveryConfirmed(false);
+        setDeliveryFee(0);
+        setDeliveryDistanceKm(null);
+        setDeliveryCoordinates({ latitude: null, longitude: null });
+        setDeliveryColonyMissing(false);
+        setPendingColonyRetry(null);
+        toast.error(result.error);
+        return;
+      }
+
+      setDeliveryAddress(result.quote.formattedAddress);
+      setDeliveryColony(result.quote.colony || UNREGISTERED_DELIVERY_COLONY);
+      setDeliveryFee(result.quote.totalFee);
+      setDeliveryDistanceKm(Math.round((result.quote.distanceMeters / 1000) * 10) / 10);
+      setDeliveryCoordinates({ latitude: result.quote.latitude, longitude: result.quote.longitude });
+      setDeliveryConfirmed(true);
+      setDeliveryColonyMissing(false);
+      setPendingColonyRetry(null);
+      toast.success(result.quote.colonyUnassigned
+        ? `Ubicación confirmada · ${Math.round(result.quote.distanceMeters / 100) / 10} km · $${result.quote.totalFee} por distancia, sin recargo de colonia`
+        : `Ubicación confirmada · ${Math.round(result.quote.distanceMeters / 100) / 10} km · envío $${result.quote.totalFee}`);
+    } catch {
+      if (requestId !== deliveryQuoteRequestIdRef.current) return;
+      setDeliveryConfirmed(false);
+      setDeliveryFee(0);
+      setDeliveryDistanceKm(null);
+      setDeliveryCoordinates({ latitude: null, longitude: null });
+      setDeliveryColonyMissing(false);
+      setPendingColonyRetry(null);
+      toast.error("No se pudo calcular el envío por distancia. Revisa la calle o intenta de nuevo.");
+    } finally {
+      if (requestId === deliveryQuoteRequestIdRef.current) setDeliveryQuoteLoading(false);
+    }
   }
 
   function handleCustomerPhoneChange(value: string) {
     setCustomerPhone(value);
     const digits = value.replace(/\D/g, "");
-    const selected = customerMatches.find((customer) => customer.id === customerId);
-    if (selected && selected.phone !== digits) setCustomerId(null);
+    const selected = visibleCustomerMatches.find((customer) => customer.id === customerId);
+    if (selected && selected.phone !== digits) {
+      setCustomerId(null);
+      setCustomerIdBusinessId(null);
+    }
+    if (legacyWhatsappCustomerId) setLegacyWhatsappCustomerId(null);
     if (digits.length < 4) {
       setCustomerMatches([]);
       setCustomerSearchLoading(false);
     }
   }
 
-  function handleSelectCustomer(customer: PosCustomerMatch) {
-    setCustomerId(customer.id);
-    setCustomerPhone(customer.phone);
-    setCustomerName(customer.displayName);
+  function handlePickupTimeChange(value: string) {
+    if (!value) {
+      setScheduledFor(null);
+      setScheduledForLabel(null);
+      setKitchenReleaseAt(null);
+      return;
+    }
+
+    const result = createTodayOrderSchedule(value, {
+      timeZone: activeBusinessTimeZone,
+    });
+    if (!result.success) {
+      toast.error(result.error);
+      return;
+    }
+    setScheduledFor(result.schedule.scheduledFor);
+    setScheduledForLabel(result.schedule.label);
+    setKitchenReleaseAt(result.schedule.kitchenReleaseAt);
   }
 
-  function handleSelectCustomerAddress(address: WhatsappCustomerAddress) {
+  function handleOrderTypeChange(nextType: "comedor" | "domicilio" | "para_llevar") {
+    setOrderType(nextType);
+    if (nextType !== "domicilio") {
+      setDeliveryPaymentMethod(null);
+      setDeliveryCashTendered(null);
+    }
+    if (nextType !== "para_llevar" && !whatsappConversationId) {
+      setScheduledFor(null);
+      setScheduledForLabel(null);
+      setKitchenReleaseAt(null);
+    }
+    if (nextType !== "para_llevar") setMarketplaceSelection(null);
+  }
+
+  function handleSelectCustomer(customer: BusinessCustomerMatch) {
+    deliveryQuoteRequestIdRef.current += 1;
+    setDeliveryQuoteLoading(false);
+    setCustomerId(customer.id);
+    setCustomerIdBusinessId(activeMenuBusinessId);
+    setLegacyWhatsappCustomerId(null);
+    setCustomerPhone(customer.phone);
+    setCustomerName(customer.displayName);
+    setCustomerMatches([customer]);
+    setCustomerMatchesBusinessId(activeMenuBusinessId);
+    setCustomerMatchesPhone(customer.phone.replace(/\D/g, ""));
+    setCustomerSearchLoading(false);
+    if (orderType === "domicilio") {
+      const preferredAddress = getPreferredBusinessCustomerAddress(customer.addresses);
+      if (preferredAddress) {
+        handleSelectCustomerAddress(preferredAddress);
+      } else {
+        setDeliveryColonyMissing(false);
+        setPendingColonyRetry(null);
+        setDeliveryAddress("");
+        setDeliveryColony("");
+        setDeliveryReference("");
+        setDeliveryFee(0);
+        setDeliveryDistanceKm(null);
+        setDeliveryCoordinates({ latitude: null, longitude: null });
+        setDeliveryConfirmed(false);
+      }
+    }
+  }
+
+  function handleSelectCustomerAddress(address: BusinessCustomerAddress) {
+    deliveryQuoteRequestIdRef.current += 1;
+    setDeliveryQuoteLoading(false);
+    setDeliveryColonyMissing(false);
+    setPendingColonyRetry(null);
     setDeliveryAddress(address.formattedAddress || address.addressText);
     setDeliveryColony(address.colony);
     setDeliveryReference(address.reference);
@@ -416,22 +740,23 @@ export function MeseroView() {
         address.deliveryFee !== null
     );
     setDeliveryDistanceKm(null);
-    toast.success("Domicilio guardado seleccionado");
   }
 
   useEffect(() => {
     const digits = customerPhone.replace(/\D/g, "");
-    if (digits.length < 4) {
+    if (digits.length < 4 || !activeMenuBusinessId) {
       return;
     }
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
       setCustomerSearchLoading(true);
-      void searchPosCustomersByPhoneAction(customerPhone).then((result) => {
+      void searchPosBusinessCustomersAction(activeMenuBusinessId, customerPhone).then((result) => {
         if (cancelled) return;
         setCustomerSearchLoading(false);
         setCustomerMatches(result.success ? result.data : []);
+        setCustomerMatchesBusinessId(activeMenuBusinessId);
+        setCustomerMatchesPhone(customerPhone.replace(/\D/g, ""));
       });
     }, 250);
 
@@ -439,7 +764,7 @@ export function MeseroView() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [customerPhone]);
+  }, [activeMenuBusinessId, customerPhone]);
 
   useEffect(() => {
     const requestedMode = new URLSearchParams(window.location.search).get("mode");
@@ -473,21 +798,29 @@ export function MeseroView() {
     if (draft) {
       setCartItems(draft.items);
       setOrderType(draft.orderType);
+      setMarketplaceSelection(draft.marketplace ?? null);
       setTableId(draft.tableId);
       setTableNumber(draft.tableNumber);
       setOrderNotes(draft.orderNotes);
       setScheduledFor(draft.scheduledFor);
       setScheduledForLabel(draft.scheduledForLabel);
       setKitchenReleaseAt(draft.kitchenReleaseAt);
+      setDeliveryPaymentMethod(
+        draft.orderType === "domicilio" && !draft.marketplace
+          ? draft.deliveryPaymentMethod ?? null
+          : null
+      );
     } else {
       setCartItems([]);
       setOrderType("comedor");
+      setMarketplaceSelection(null);
       setTableId("");
       setTableNumber("");
       setOrderNotes("");
       setScheduledFor(null);
       setScheduledForLabel(null);
       setKitchenReleaseAt(null);
+      setDeliveryPaymentMethod(null);
     }
     setDraftHydratedUserId(userId);
   }, [setCartItems, userId]);
@@ -521,6 +854,10 @@ export function MeseroView() {
       scheduledFor,
       scheduledForLabel,
       kitchenReleaseAt,
+      marketplace: marketplaceSelection,
+      deliveryPaymentMethod: isLocalDeliveryPaymentMethod(deliveryPaymentMethod)
+        ? deliveryPaymentMethod
+        : null,
     };
 
     if (
@@ -540,12 +877,14 @@ export function MeseroView() {
     draftHydratedUserId,
     items,
     kitchenReleaseAt,
+    marketplaceSelection,
     orderNotes,
     orderType,
     scheduledFor,
     scheduledForLabel,
     tableId,
     tableNumber,
+    deliveryPaymentMethod,
     userId,
   ]);
 
@@ -586,7 +925,9 @@ export function MeseroView() {
       );
       setWhatsappConversationId(draft.conversationId);
       setOrderType(draft.orderType ?? "domicilio");
-      setCustomerId(draft.customerId);
+      setCustomerId(null);
+      setCustomerIdBusinessId(null);
+      setLegacyWhatsappCustomerId(draft.customerId);
       setCustomerName(draft.customerName);
       setCustomerPhone(draft.phone);
       setWhatsappStatusOptIn(false);
@@ -746,6 +1087,16 @@ export function MeseroView() {
       recoveryState === "unavailable" ||
       (pendingCreationKeyRef.current !== null && recoveryState !== "retry")
     ) return;
+    if (!hasRequiredLocalDeliveryPayment(
+      orderType,
+      Boolean(activeMarketplaceSelection),
+      deliveryPaymentMethod
+    )) {
+      toast.error("Selecciona cómo pagará el cliente", {
+        description: "Elige Efectivo o Transferencia antes de enviar el domicilio.",
+      });
+      return;
+    }
     if (itemsToSubmit.length === 0) {
       toast.error(
         editingOrderId
@@ -788,19 +1139,10 @@ export function MeseroView() {
         return;
       }
     }
-    if (!currentCashShift) {
-      toast.error("Abre la caja antes de registrar pedidos", {
-        description: "Usa el control Caja en la barra superior.",
-      });
-      return;
-    }
-    if (orderType === "comedor" && !tableId && !tableNumber) {
-      toast.error("Selecciona una mesa en el plano antes de enviar el pedido");
-      return;
-    }
+    const menuBusinessMap = useOrderStore.getState().menuItemsBusinessMap;
     const cartBusinessIds = new Set(
       itemsToSubmit
-        .map((item) => item.business_id)
+        .map((item) => item.business_id ?? menuBusinessMap.get(item.menu_item_id) ?? activeMenuBusinessId)
         .filter((businessId): businessId is string => Boolean(businessId))
     );
     if (cartBusinessIds.size > 1 && orderType !== "comedor") {
@@ -808,6 +1150,84 @@ export function MeseroView() {
         description: "Selecciona una mesa para crear una cuenta separada por negocio.",
       });
       return;
+    }
+    if (orderType === "comedor" && !tableId && !tableNumber) {
+      toast.error("Selecciona una mesa en el plano antes de enviar el pedido");
+      return;
+    }
+
+    const orderBusinessIds = [...cartBusinessIds];
+    if (orderBusinessIds.length > 0) {
+      let cashShiftChecks: Awaited<ReturnType<typeof checkCurrentShiftForBusiness>>[];
+      try {
+        cashShiftChecks = await Promise.all(
+          orderBusinessIds.map((businessId) => checkCurrentShiftForBusiness(businessId)),
+        );
+      } catch {
+        toast.error("No se pudo verificar la caja de este pedido", {
+          description: "Revisa la conexión e inténtalo de nuevo.",
+        });
+        return;
+      }
+
+      const failedCheck = cashShiftChecks.find((check) => check.error);
+      if (failedCheck?.error) {
+        toast.error("No se pudo verificar la caja del negocio", {
+          description: "Revisa tu conexión o pide al responsable que confirme el turno.",
+        });
+        return;
+      }
+
+      const businessesWithoutOpenShift = getBusinessesMissingOpenCashShift(
+        orderBusinessIds,
+        cashShiftChecks.map((check) => check.data),
+      );
+      if (businessesWithoutOpenShift.length > 0) {
+        const businessNames = businessesWithoutOpenShift.map(
+          (businessId) =>
+            businessContexts.find((business) => business.business_id === businessId)
+              ?.business_display_name ?? "el negocio correspondiente",
+        );
+        toast.error(
+          businessesWithoutOpenShift.length === 1
+            ? `La caja de ${businessNames[0]} está cerrada`
+            : "Hay negocios sin caja abierta",
+          { description: "Pide al responsable que abra el turno antes de enviar el pedido." },
+        );
+        return;
+      }
+    } else if (!currentCashShift) {
+      toast.error("Abre la caja antes de registrar pedidos", {
+        description: "Usa el control Caja en la barra superior.",
+      });
+      return;
+    }
+
+    if (marketplaceSelection && !activeMarketplaceSelection) {
+      toast.error("El canal elegido no corresponde al menú activo", {
+        description: "Selecciona el menú del mismo negocio que los productos del pedido o vuelve a Para llevar.",
+      });
+      return;
+    }
+    if (activeMarketplaceSelection) {
+      const selectedBusinessForPlatform = [...cartBusinessIds][0];
+      if (
+        editingOrderId ||
+        orderType !== "para_llevar" ||
+        cartBusinessIds.size !== 1 ||
+        (activeMarketplaceSelection.platform === "uber_eats" && activeMarketplaceSelection.paymentMode !== "app") ||
+        (activeMarketplaceSelection.platform === "didi_food" && !["app", "cash"].includes(activeMarketplaceSelection.paymentMode)) ||
+        marketplaceConfig.key !== marketplaceConfigKey ||
+        !marketplaceConfig.platforms.includes(activeMarketplaceSelection.platform) ||
+        !selectedBusinessForPlatform
+      ) {
+        toast.error("Revisa el canal del pedido y los permisos de plataforma de este negocio.");
+        return;
+      }
+      if (payNow) {
+        toast.error("Los pedidos de plataforma se cobran según el método de la app, no desde la caja local.");
+        return;
+      }
     }
     if (
       orderType === "domicilio" &&
@@ -822,31 +1242,71 @@ export function MeseroView() {
     const persistedCustomerPhone = orderType === "domicilio"
       ? (phoneIsUsable ? customerPhone : "")
       : customerPhone;
+    const orderSchedule = activeMarketplaceSelection
+      ? null
+      :
+      (orderType === "para_llevar" || Boolean(whatsappConversationId)) &&
+      scheduledFor &&
+      kitchenReleaseAt
+        ? { scheduledFor, kitchenReleaseAt }
+        : editingOrderId && !whatsappConversationId
+          ? null
+          : undefined;
     setIsSubmitting(true);
-    let resolvedCustomerId = customerId;
-    if (orderType !== "domicilio" ? phoneDigits.length > 0 : phoneIsUsable) {
-      let customerResult: Awaited<ReturnType<typeof ensurePosCustomerAction>>;
+    const customerBusinessIds = editingOrderId && editingOrderBusinessId
+      ? [editingOrderBusinessId]
+      : cartBusinessIds.size > 0
+        ? [...cartBusinessIds]
+        : activeMenuBusinessId
+          ? [activeMenuBusinessId]
+          : [];
+    const customerIdMatchesOrderBusiness =
+      customerBusinessIds.length === 1 && customerIdBusinessId === customerBusinessIds[0];
+    let resolvedBusinessCustomerId =
+      legacyWhatsappCustomerId || !customerIdMatchesOrderBusiness ? null : customerId;
+    const resolvedBusinessCustomerIds: Record<string, string> = {};
+    const resolvedLegacyCustomerId = legacyWhatsappCustomerId;
+    if (phoneIsUsable && !legacyWhatsappCustomerId && customerBusinessIds.length > 0) {
+      let customerResults: Awaited<ReturnType<typeof savePosBusinessCustomerAction>>[];
       try {
-        customerResult = await ensurePosCustomerAction({
-          customerId,
-          phone: persistedCustomerPhone,
-          displayName: customerName,
-        });
+        customerResults = await Promise.all(customerBusinessIds.map((businessId) =>
+          savePosBusinessCustomerAction({
+            businessId,
+            customerId: customerIdMatchesOrderBusiness ? customerId : null,
+            phone: persistedCustomerPhone,
+            displayName: customerName,
+          })
+        ));
       } catch {
         setIsSubmitting(false);
-        toast.error("No se pudo validar el cliente. La comanda sigue guardada.");
+        toast.error("No se pudo guardar el cliente. La comanda sigue en pantalla.");
         return;
       }
-      if (!customerResult.success) {
+      const failedCustomer = customerResults.find((result) => !result.success);
+      if (failedCustomer) {
         setIsSubmitting(false);
-        toast.error(customerResult.error);
+        toast.error(failedCustomer.error ?? "No se pudo guardar el cliente de cada negocio.");
         return;
       }
-      resolvedCustomerId = customerResult.data.customerId;
-      setCustomerId(resolvedCustomerId);
-    } else {
-      resolvedCustomerId = null;
+      customerBusinessIds.forEach((businessId, index) => {
+        const result = customerResults[index];
+        if (result.success) resolvedBusinessCustomerIds[businessId] = result.data.customerId;
+      });
+      if (customerBusinessIds.length === 1) {
+        resolvedBusinessCustomerId = resolvedBusinessCustomerIds[customerBusinessIds[0]];
+        setCustomerId(resolvedBusinessCustomerId);
+        setCustomerIdBusinessId(customerBusinessIds[0]);
+      } else {
+        resolvedBusinessCustomerId = null;
+        setCustomerId(resolvedBusinessCustomerIds[activeMenuBusinessId ?? ""] ?? null);
+        setCustomerIdBusinessId(
+          resolvedBusinessCustomerIds[activeMenuBusinessId ?? ""] ? activeMenuBusinessId : null
+        );
+      }
+    } else if (!legacyWhatsappCustomerId) {
+      resolvedBusinessCustomerId = null;
       setCustomerId(null);
+      setCustomerIdBusinessId(null);
     }
     let orderNumber = editingOrderNumber;
     let createdOrder: Awaited<ReturnType<typeof createOrder>>["order"] = null;
@@ -878,12 +1338,11 @@ export function MeseroView() {
             }
           : undefined,
         orderNotes,
-        resolvedCustomerId,
+        resolvedLegacyCustomerId,
         persistedCustomerPhone,
         whatsappConversationId,
-        scheduledFor && kitchenReleaseAt
-          ? { scheduledFor, kitchenReleaseAt }
-          : undefined
+        orderSchedule,
+        resolvedBusinessCustomerId
       );
       error = result.error;
     } else {
@@ -904,6 +1363,10 @@ export function MeseroView() {
           scheduledFor,
           scheduledForLabel,
           kitchenReleaseAt,
+          marketplace: activeMarketplaceSelection,
+          deliveryPaymentMethod: isLocalDeliveryPaymentMethod(deliveryPaymentMethod)
+            ? deliveryPaymentMethod
+            : null,
         };
         if (!savePosCartDraft(userId, attemptDraft)) {
           setIsSubmitting(false);
@@ -940,13 +1403,14 @@ export function MeseroView() {
                 longitude: deliveryCoordinates.longitude,
               }
             : undefined,
-          resolvedCustomerId,
+          resolvedLegacyCustomerId,
           persistedCustomerPhone,
           whatsappConversationId,
-          scheduledFor && kitchenReleaseAt
-            ? { scheduledFor, kitchenReleaseAt }
-            : undefined,
-          orderCreationKey,
+        orderSchedule,
+        orderCreationKey,
+        resolvedBusinessCustomerId,
+        resolvedBusinessCustomerIds,
+        activeMarketplaceSelection,
         );
     } catch {
       setIsSubmitting(false);
@@ -1049,6 +1513,8 @@ export function MeseroView() {
     setCustomerPhone("");
     setWhatsappStatusOptIn(false);
     setCustomerId(null);
+    setCustomerIdBusinessId(null);
+    setLegacyWhatsappCustomerId(null);
     setWhatsappConversationId(null);
     setScheduledFor(null);
     setScheduledForLabel(null);
@@ -1060,12 +1526,15 @@ export function MeseroView() {
     setDeliveryFee(0);
     setDeliveryDistanceKm(null);
     setDeliveryConfirmed(false);
+    setDeliveryColonyMissing(false);
+    setPendingColonyRetry(null);
     setDeliveryCoordinates({ latitude: null, longitude: null });
     setEditingOrderId(null);
     setEditingOrderNumber(null);
     setOrderNotes("");
     setDeliveryPaymentMethod(null);
     setDeliveryCashTendered(null);
+    setMarketplaceSelection(null);
     setDetailsOpen(false);
     setCartOpen(false);
     if (!payNow || !createdOrder) setMode("status");
@@ -1073,6 +1542,10 @@ export function MeseroView() {
 
   async function handleEditOrder(order: OrderWithItems) {
     if (pendingCreationKeyRef.current !== null) return;
+    if (order.marketplace_platform) {
+      toast.error("Los pedidos de plataforma no se editan después de enviarlos a preparación.");
+      return;
+    }
     if (
       order.business_id &&
       catalogBusinessId !== order.business_id &&
@@ -1100,12 +1573,21 @@ export function MeseroView() {
     setEditingOrderId(order.id);
     setEditingOrderNumber(order.number);
     setOrderType(order.type);
+    setMarketplaceSelection(null);
     setTableId(order.table_id ?? "");
     setTableNumber(order.table_number ?? "");
     setCustomerName(order.customer_name ?? "");
     setCustomerPhone(order.customer_phone ?? "");
     setWhatsappStatusOptIn(order.whatsapp_status_opt_in ?? false);
-    setCustomerId(order.customer_id ?? null);
+    setCustomerId(order.source_channel === "whatsapp" ? null : order.business_customer_id ?? null);
+    setCustomerIdBusinessId(
+      order.source_channel === "whatsapp" || !order.business_customer_id
+        ? null
+        : order.business_id ?? catalogBusinessId
+    );
+    setLegacyWhatsappCustomerId(
+      order.source_channel === "whatsapp" ? order.customer_id ?? null : null
+    );
     setWhatsappConversationId(
       order.source_channel === "whatsapp" ? order.channel_conversation_id ?? null : null
     );
@@ -1137,12 +1619,18 @@ export function MeseroView() {
     setRecoveryState(draft.creationKey ? "checking" : null);
     setCartItems(draft.items);
     setOrderType(draft.orderType);
+    setMarketplaceSelection(draft.marketplace ?? null);
     setTableId(draft.tableId);
     setTableNumber(draft.tableNumber);
     setOrderNotes(draft.orderNotes);
     setScheduledFor(draft.scheduledFor);
     setScheduledForLabel(draft.scheduledForLabel);
     setKitchenReleaseAt(draft.kitchenReleaseAt);
+    setDeliveryPaymentMethod(
+      draft.orderType === "domicilio" && !draft.marketplace
+        ? draft.deliveryPaymentMethod ?? null
+        : null
+    );
   }
 
   function handleAddOrderForTable(tableIdValue: string, tableNumberValue: string) {
@@ -1152,12 +1640,15 @@ export function MeseroView() {
     setEditingOrderId(null);
     setEditingOrderNumber(null);
     setOrderType("comedor");
+    setMarketplaceSelection(null);
     setTableId(tableIdValue);
     setTableNumber(tableNumberValue);
     setCustomerName("");
     setCustomerPhone("");
     setWhatsappStatusOptIn(false);
     setCustomerId(null);
+    setCustomerIdBusinessId(null);
+    setLegacyWhatsappCustomerId(null);
     setWhatsappConversationId(null);
     setScheduledFor(null);
     setScheduledForLabel(null);
@@ -1169,6 +1660,8 @@ export function MeseroView() {
     setDeliveryFee(0);
     setDeliveryDistanceKm(null);
     setDeliveryConfirmed(false);
+    setDeliveryColonyMissing(false);
+    setPendingColonyRetry(null);
     setDeliveryCoordinates({ latitude: null, longitude: null });
     setOrderNotes("");
     setDeliveryPaymentMethod(null);
@@ -1188,6 +1681,8 @@ export function MeseroView() {
       setCustomerPhone("");
       setWhatsappStatusOptIn(false);
       setCustomerId(null);
+      setCustomerIdBusinessId(null);
+      setLegacyWhatsappCustomerId(null);
       setWhatsappConversationId(null);
       setScheduledFor(null);
       setScheduledForLabel(null);
@@ -1197,6 +1692,8 @@ export function MeseroView() {
       setDeliveryColony("");
       setDeliveryReference("");
       setDeliveryFee(0);
+      setDeliveryColonyMissing(false);
+      setPendingColonyRetry(null);
       setDeliveryConfirmed(false);
       setDeliveryCoordinates({ latitude: null, longitude: null });
       setOrderNotes("");
@@ -1277,6 +1774,7 @@ export function MeseroView() {
     </div>
   );
 
+  const pendingPosRecoveryAction = getPendingPosRecoveryAction(recoveryState);
   const recoveryNotice = pendingCreationKey !== null && recoveryState ? (
     <div
       role="status"
@@ -1300,16 +1798,26 @@ export function MeseroView() {
         {recoveryState === "checking"
           ? "Comprobando si el pedido se envió..."
             : recoveryState === "retry"
-            ? "El pedido no aparece. La comanda se conserva; completa los datos que falten y reintenta sin modificar sus productos."
+            ? "El pedido aún no aparece. Conservamos la comanda sin cambios para evitar duplicados; completa los datos que falten y vuelve a enviarla."
             : "No pudimos confirmar el envío. Conservamos la comanda; comprueba el resultado antes de reintentar."}
       </p>
-      {recoveryState !== "checking" ? (
+      {pendingPosRecoveryAction ? (
         <button
           type="button"
-          onClick={() => void checkPendingPosOrder()}
+          onClick={() => {
+            if (pendingPosRecoveryAction === "continue") {
+              setMode("pos");
+              setCartOpen(false);
+              setDetailsOpen(true);
+              return;
+            }
+            void checkPendingPosOrder();
+          }}
           className="min-h-10 shrink-0 touch-manipulation rounded-lg border border-current/20 px-3 font-heading text-xs font-bold text-foreground hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
         >
-          Revisar envío
+          {pendingPosRecoveryAction === "continue"
+            ? "Completar envío"
+            : "Revisar envío"}
         </button>
       ) : null}
     </div>
@@ -1371,7 +1879,7 @@ export function MeseroView() {
           <div className="hidden shrink-0 xl:flex">
             <CartPanel
               orderType={orderType}
-              onOrderTypeChange={setOrderType}
+              onOrderTypeChange={handleOrderTypeChange}
               tableId={tableId}
               onTableIdChange={(id, label) => {
                 setTableId(id);
@@ -1429,7 +1937,7 @@ export function MeseroView() {
             >
               <CartPanel
                 orderType={orderType}
-                onOrderTypeChange={setOrderType}
+                onOrderTypeChange={handleOrderTypeChange}
                 tableId={tableId}
                 onTableIdChange={(id, label) => {
                   setTableId(id);
@@ -1478,11 +1986,15 @@ export function MeseroView() {
           zones={zones}
           labels={labels}
           customerId={customerId}
-          customerMatches={customerMatches}
+          customerMatches={visibleCustomerMatches}
           customerSearchLoading={customerSearchLoading}
+          customerSearchReady={
+            customerMatchesBusinessId === activeMenuBusinessId &&
+            customerMatchesPhone === customerPhoneDigits &&
+            !customerSearchLoading
+          }
           customerName={customerName}
           customerPhone={customerPhone}
-          whatsappStatusOptIn={whatsappStatusOptIn}
           deliveryAddress={deliveryAddress}
           deliveryColony={deliveryColony}
           deliveryReference={deliveryReference}
@@ -1492,15 +2004,22 @@ export function MeseroView() {
           deliveryLatitude={deliveryCoordinates.latitude}
           deliveryLongitude={deliveryCoordinates.longitude}
           paymentMethod={deliveryPaymentMethod}
-          cashTendered={deliveryCashTendered}
           orderNotes={orderNotes}
           scheduledForLabel={scheduledForLabel}
+          scheduledFor={scheduledFor}
+          businessTimeZone={activeBusinessTimeZone}
           isSubmitting={isSubmitting}
           disableSubmit={
             recoveryState === "checking" || recoveryState === "unavailable"
           }
           recoveryLocked={pendingCreationKey !== null}
           isEditing={Boolean(editingOrderId)}
+          marketplacePlatforms={marketplaceConfigReady ? marketplaceConfig.platforms : []}
+          marketplacePrices={marketplaceConfigReady ? marketplaceConfig.prices : {}}
+          marketplaceAvailability={marketplaceConfigReady ? marketplaceConfig.availability : {}}
+          marketplace={activeMarketplaceSelection}
+          marketplaceConfigLoading={marketplaceConfigLoading}
+          marketplaceScopeMismatch={marketplaceScopeMismatch}
           onClose={() => !isSubmitting && setDetailsOpen(false)}
           onTableIdChange={(id, label) => {
             setTableId(id);
@@ -1508,10 +2027,13 @@ export function MeseroView() {
           }}
           onCustomerNameChange={setCustomerName}
           onCustomerPhoneChange={handleCustomerPhoneChange}
-          onWhatsappStatusOptInChange={setWhatsappStatusOptIn}
           onSelectCustomer={handleSelectCustomer}
           onSelectCustomerAddress={handleSelectCustomerAddress}
           onDeliveryAddressChange={(value) => {
+            deliveryQuoteRequestIdRef.current += 1;
+            setDeliveryQuoteLoading(false);
+            setDeliveryColonyMissing(false);
+            setPendingColonyRetry(null);
             setDeliveryAddress(value);
             setDeliveryColony("");
             setDeliveryConfirmed(false);
@@ -1520,14 +2042,45 @@ export function MeseroView() {
             setDeliveryCoordinates({ latitude: null, longitude: null });
           }}
           onDeliveryReferenceChange={setDeliveryReference}
+          onDeliveryPaymentMethodChange={(method) => {
+            setDeliveryPaymentMethod(method);
+            setDeliveryCashTendered(null);
+          }}
           onOrderNotesChange={setOrderNotes}
+          onPickupTimeChange={handlePickupTimeChange}
           onQuoteDelivery={() => void handleQuoteDelivery()}
-          onSearchDeliveryPlaces={searchManualDeliveryPlacesAction}
+          deliveryColonyMissing={deliveryColonyMissing}
+          onQuoteDeliveryWithoutColony={() => void handleQuoteDeliveryWithoutColony()}
+          onSearchDeliveryPlaces={(input, sessionToken) =>
+            activeMenuBusinessId
+              ? searchManualDeliveryPlacesAction(activeMenuBusinessId, input, sessionToken)
+              : Promise.resolve([])
+          }
           onSelectDeliveryPlace={handleSelectDeliveryPlace}
           deliveryQuoteLoading={deliveryQuoteLoading}
           onSubmit={(allowUnconfirmedDelivery) =>
             void handleSubmitOrder(false, allowUnconfirmedDelivery)
           }
+          onMarketplaceChange={(selection) => {
+            setMarketplaceSelection(selection);
+            if (selection) {
+              setDeliveryPaymentMethod(null);
+              setDeliveryCashTendered(null);
+              setOrderType("para_llevar");
+              setScheduledFor(null);
+              setScheduledForLabel(null);
+              setKitchenReleaseAt(null);
+            }
+          }}
+          onSelectLocalDelivery={() => {
+            setMarketplaceSelection(null);
+            setOrderType("domicilio");
+            setDeliveryPaymentMethod(null);
+            setDeliveryCashTendered(null);
+            setScheduledFor(null);
+            setScheduledForLabel(null);
+            setKitchenReleaseAt(null);
+          }}
           onPayAndSubmit={
             !editingOrderId && orderType !== "comedor"
               ? (allowUnconfirmedDelivery) =>

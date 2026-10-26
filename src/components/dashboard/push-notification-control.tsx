@@ -22,7 +22,7 @@ import {
 import { primeReadyOrderAudio } from "@/lib/ready-order-audio";
 
 const TOPIC_LABEL: Record<PushTopic, string> = {
-  ready: "pedidos listos",
+  ready: "preparación y pedidos listos",
   kitchen: "pedidos nuevos",
   whatsapp_attention: "chats por atender",
 };
@@ -140,7 +140,7 @@ export function PushNotificationControl({
             ? topic === "kitchen"
               ? "Este dispositivo te avisará cuando entre un pedido nuevo."
               : topic === "ready"
-                ? "Este dispositivo te avisará cuando cocina termine un pedido."
+                ? "Este dispositivo te avisará cuando empiece la preparación o el pedido quede listo."
                 : "Este dispositivo te avisará cuando un chat necesite atención humana."
             : "Push está activo. El sonido local se habilita al tocar la pantalla.",
         });

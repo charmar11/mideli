@@ -8,7 +8,10 @@ import type {
   WhatsappDeliverySurcharge,
 } from "@/types/database";
 import { isWhatsappBusinessOpen, type ScheduleException } from "./business-hours";
-import { calculateDeliveryPrice } from "./delivery-pricing";
+import {
+  calculateDeliveryPrice,
+  resolveDeliveryColonyPricing,
+} from "./delivery-pricing";
 import {
   computeDrivingDistance,
   geocodeDestination,
@@ -23,6 +26,13 @@ export type WhatsappOperationsConfig = {
   exceptions: ScheduleException[];
   rates: WhatsappDeliveryRate[];
   surcharges: WhatsappDeliverySurcharge[];
+  persisted: boolean;
+};
+
+export type DeliveryPricingConfig = {
+  settings: Pick<WhatsappChannelSettings, "delivery_quotes_enabled" | "store_latitude" | "store_longitude">;
+  rates: Array<Pick<WhatsappDeliveryRate, "id" | "min_distance_km" | "max_distance_km" | "fee" | "is_active">>;
+  surcharges: Array<Pick<WhatsappDeliverySurcharge, "id" | "colony_name" | "aliases" | "fee" | "is_active">>;
   persisted: boolean;
 };
 
@@ -145,6 +155,26 @@ export async function loadWhatsappOperationsConfig(): Promise<WhatsappOperations
         ? (surcharges.data as WhatsappDeliverySurcharge[])
         : DEFAULT_SURCHARGES,
     persisted,
+  };
+}
+
+/** Lightweight origin lookup for POS autocomplete; avoids loading all WhatsApp settings per keystroke. */
+export async function loadWhatsappStoreOrigin(): Promise<GeocodedDestination | null> {
+  const { data, error } = await createAdminClient()
+    .from("whatsapp_channel_settings")
+    .select("store_latitude,store_longitude,store_address")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw error;
+  if (data?.store_latitude === null || data?.store_latitude === undefined ||
+      data.store_longitude === null || data.store_longitude === undefined) {
+    return null;
+  }
+  return {
+    latitude: Number(data.store_latitude),
+    longitude: Number(data.store_longitude),
+    formattedAddress: data.store_address ?? "",
+    colony: "",
   };
 }
 
@@ -277,22 +307,31 @@ export async function confirmWhatsappDeliveryQuote(input: {
 export async function quoteWhatsappDelivery(input: {
   conversationId: string | null;
   address: string;
-  config: WhatsappOperationsConfig;
+  config?: WhatsappOperationsConfig;
+  deliveryConfig?: DeliveryPricingConfig;
   destination?: GeocodedDestination;
+  /** Staff-entered colony fallback; the WhatsApp flow leaves it unset. */
+  fallbackColony?: string;
+  /** POS delivery remains available independently from the WhatsApp bot toggle. */
+  allowWhenWhatsappQuotesDisabled?: boolean;
+  /** Manual POS-only exception, invoked after staff confirms Maps found no colony. */
+  allowMissingColony?: boolean;
 }): Promise<
   | { status: "quoted"; quote: ConversationDeliveryQuote }
   | { status: "needs_handoff"; reason: string }
 > {
-  const { settings } = input.config;
+  const deliveryConfig = input.deliveryConfig ?? input.config;
+  if (!deliveryConfig) throw new Error("delivery_quote_config_missing");
+  const { settings } = deliveryConfig;
   if (
-    !settings.delivery_quotes_enabled ||
+    (!settings.delivery_quotes_enabled && !input.allowWhenWhatsappQuotesDisabled) ||
     settings.store_latitude === null ||
     settings.store_longitude === null
   ) {
-    const reason = !settings.delivery_quotes_enabled
+    const reason = !settings.delivery_quotes_enabled && !input.allowWhenWhatsappQuotesDisabled
       ? "delivery_quotes_disabled"
       : "store_origin_not_configured";
-    if (input.conversationId && input.config.persisted) {
+    if (input.conversationId && deliveryConfig.persisted) {
       await createAdminClient().from("whatsapp_delivery_quotes").insert({
         conversation_id: input.conversationId,
         input_address: input.address,
@@ -304,9 +343,18 @@ export async function quoteWhatsappDelivery(input: {
   }
 
   try {
-    const destination = input.destination ?? (await geocodeDestination(input.address));
-    if (!destination.colony.trim()) {
-      if (input.conversationId && input.config.persisted) {
+    const destination = input.destination ?? (await geocodeDestination(
+      input.address,
+      undefined,
+      input.fallbackColony
+    ));
+    const colonyPricing = resolveDeliveryColonyPricing({
+      colony: destination.colony,
+      address: input.address,
+      allowUnregisteredColony: input.allowMissingColony === true,
+    });
+    if (colonyPricing.status === "confirmation_required") {
+      if (input.conversationId && deliveryConfig.persisted) {
         await createAdminClient().from("whatsapp_delivery_quotes").insert({
           conversation_id: input.conversationId,
           input_address: input.address,
@@ -326,29 +374,35 @@ export async function quoteWhatsappDelivery(input: {
       },
       destination
     );
+    const maximumDistanceKm = Math.max(
+      0,
+      ...deliveryConfig.rates
+        .filter((rate) => rate.is_active)
+        .map((rate) => Number(rate.max_distance_km)),
+    );
     const price = calculateDeliveryPrice({
       distanceMeters,
-      colony: destination.colony,
-      colonySearchText: input.address,
-      rates: input.config.rates.map((rate) => ({
+      colony: colonyPricing.colony,
+      colonySearchText: colonyPricing.colonySearchText,
+      rates: deliveryConfig.rates.map((rate) => ({
         id: rate.id,
         minDistanceKm: Number(rate.min_distance_km),
         maxDistanceKm: Number(rate.max_distance_km),
         fee: Number(rate.fee),
         isActive: rate.is_active,
       })),
-      surcharges: input.config.surcharges.map((rule) => ({
+      surcharges: deliveryConfig.surcharges.map((rule) => ({
         id: rule.id,
         colonyName: rule.colony_name,
         aliases: rule.aliases,
         fee: Number(rule.fee),
         isActive: rule.is_active,
       })),
-      maximumDistanceKm: 15,
+      maximumDistanceKm,
     });
 
     if (price.status === "needs_handoff") {
-      if (input.conversationId && input.config.persisted) {
+    if (input.conversationId && deliveryConfig.persisted) {
         await createAdminClient().from("whatsapp_delivery_quotes").insert({
           conversation_id: input.conversationId,
           input_address: input.address,
@@ -365,7 +419,7 @@ export async function quoteWhatsappDelivery(input: {
     }
 
     let quoteId: string | null = null;
-    if (input.conversationId && input.config.persisted) {
+      if (input.conversationId && deliveryConfig.persisted) {
       const inserted = await createAdminClient()
         .from("whatsapp_delivery_quotes")
         .insert({
@@ -392,18 +446,23 @@ export async function quoteWhatsappDelivery(input: {
       quote: {
         id: quoteId,
         formattedAddress: destination.formattedAddress,
-        colony: price.colony,
+        colony: price.colony || (
+          colonyPricing.status === "unregistered"
+            ? colonyPricing.displayColony
+            : ""
+        ),
         latitude: destination.latitude,
         longitude: destination.longitude,
         distanceMeters,
         baseFee: price.baseFee,
         surcharge: price.surcharge,
         totalFee: price.totalFee,
+        ...(colonyPricing.status === "unregistered" ? { colonyUnassigned: true } : {}),
       },
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "delivery_quote_failed";
-    if (input.conversationId && input.config.persisted) {
+    if (input.conversationId && deliveryConfig.persisted) {
       await createAdminClient().from("whatsapp_delivery_quotes").insert({
         conversation_id: input.conversationId,
         input_address: input.address,

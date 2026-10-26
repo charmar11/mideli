@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
   BUSINESS_OWNER_CAPABILITY_CODES,
+  DEFAULT_BUSINESS_OWNER_CAPABILITY_CODES,
   type BusinessOwnerCapabilityCode,
 } from "@/lib/business-capabilities";
 import { getBusinessBrandColors, isHexColor } from "@/lib/business-branding";
@@ -28,6 +29,7 @@ export interface ManagedBusiness {
   brand_primary_color: string | null;
   brand_accent_color: string | null;
   lifecycle_status: BusinessLifecycleStatus;
+  marketplace_orders_enabled: boolean;
   created_at: string;
   updated_at: string;
   owner_name: string | null;
@@ -115,7 +117,7 @@ function parseBusinessOwnerCapabilities(value: unknown): {
 } {
   const requested = Array.isArray(value)
     ? value.filter((code): code is string => typeof code === "string")
-    : [...BUSINESS_OWNER_CAPABILITY_CODES];
+    : [...DEFAULT_BUSINESS_OWNER_CAPABILITY_CODES];
   const uniqueCodes = [...new Set(requested)];
   const unknownCode = uniqueCodes.find(
     (code) => !BUSINESS_OWNER_CAPABILITY_CODES.includes(code as BusinessOwnerCapabilityCode),
@@ -227,7 +229,7 @@ export async function listManagedBusinessesAction(): Promise<{
       admin
         .from("businesses")
         .select(
-          "id,organization_id,slug,display_name,timezone,brand_logo_path,brand_primary_color,brand_accent_color,lifecycle_status,created_at,updated_at,organizations(name)"
+          "id,organization_id,slug,display_name,timezone,brand_logo_path,brand_primary_color,brand_accent_color,lifecycle_status,marketplace_orders_enabled,created_at,updated_at,organizations(name)"
         )
         .order("display_name"),
       admin
@@ -317,6 +319,7 @@ export async function listManagedBusinessesAction(): Promise<{
         brand_primary_color: business.brand_primary_color,
         brand_accent_color: business.brand_accent_color,
         lifecycle_status: business.lifecycle_status as BusinessLifecycleStatus,
+        marketplace_orders_enabled: business.marketplace_orders_enabled === true,
         created_at: business.created_at,
         updated_at: business.updated_at,
         owner_name: ownersByBusiness.get(business.id) ?? null,
@@ -714,6 +717,7 @@ export async function updateBusinessDetailsAction(input: {
   timezone: string;
   brandPrimaryColor: string;
   brandAccentColor: string;
+  marketplaceOrdersEnabled: boolean;
 }): Promise<ActionResult> {
   try {
     const { actorId, admin } = await requirePlatformManager();
@@ -742,7 +746,7 @@ export async function updateBusinessDetailsAction(input: {
 
     const { data: current, error: currentError } = await admin
       .from("businesses")
-      .select("id,organization_id,slug,display_name,timezone,brand_primary_color,brand_accent_color,lifecycle_status")
+      .select("id,organization_id,slug,display_name,timezone,brand_primary_color,brand_accent_color,lifecycle_status,marketplace_orders_enabled")
       .eq("id", businessId)
       .maybeSingle();
     if (currentError || !current) {
@@ -772,6 +776,9 @@ export async function updateBusinessDetailsAction(input: {
       current.timezone !== timezone ? "timezone" : null,
       current.brand_primary_color !== brandPrimaryColor ? "brand_primary_color" : null,
       current.brand_accent_color !== brandAccentColor ? "brand_accent_color" : null,
+      current.marketplace_orders_enabled !== input.marketplaceOrdersEnabled
+        ? "marketplace_orders_enabled"
+        : null,
     ].filter((field): field is string => Boolean(field));
 
     if (changedFields.length === 0) {
@@ -786,6 +793,7 @@ export async function updateBusinessDetailsAction(input: {
         timezone,
         brand_primary_color: brandPrimaryColor,
         brand_accent_color: brandAccentColor,
+        marketplace_orders_enabled: input.marketplaceOrdersEnabled,
         updated_at: new Date().toISOString(),
       })
       .eq("id", businessId);

@@ -343,6 +343,7 @@ async function checkBusinessIntegration(): Promise<CheckOutcome> {
     "business.operate_orders",
     "organization.operate_orders",
     "business.update_preparation",
+    "business.access_kitchen",
     "business.charge_orders",
     "organization.charge_orders",
   ].some((capability) => capabilities.has(capability));

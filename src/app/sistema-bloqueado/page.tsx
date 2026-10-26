@@ -68,6 +68,11 @@ export default async function BusinessLicenseBlockedPage() {
   const gate = blockedBusiness
     ? await getBusinessLicenseGateBySlug(blockedBusiness.business_slug)
     : null;
+  const isPaymentBlocked = Boolean(
+    canVerify &&
+      gate?.verified &&
+      (gate.status === "expired" || gate.status === "suspended"),
+  );
   const brandingByBusinessId = new Map(
     ((brandingResult.data ?? []) as Array<{
       business_id: string;
@@ -125,7 +130,11 @@ export default async function BusinessLicenseBlockedPage() {
         </div>
 
         <div className="p-5 sm:p-8">
-          {canVerify && blockedBusiness && gate?.verified ? (
+          {isPaymentBlocked ? (
+            <h2 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Favor de liquidar pagos pendientes.
+            </h2>
+          ) : canVerify && blockedBusiness && gate?.verified ? (
             <>
               <span className="inline-flex items-center gap-2 rounded-full border border-warning/20 bg-warning/10 px-3 py-1.5 font-heading text-xs font-bold text-warning">
                 <CircleAlert size={14} aria-hidden /> Acceso operativo pausado
@@ -171,17 +180,21 @@ export default async function BusinessLicenseBlockedPage() {
             </>
           )}
 
-          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-border bg-background p-4">
-            <ShieldCheck size={18} className="mt-0.5 shrink-0 text-success" aria-hidden />
-            <p className="font-body text-xs leading-5 text-muted-foreground sm:text-sm">
-              Los datos históricos del negocio se conservan. Esta pantalla sólo bloquea la operación mientras se valida o renueva el acceso.
-            </p>
-          </div>
+          {!isPaymentBlocked && (
+            <div className="mt-6 flex items-start gap-3 rounded-2xl border border-border bg-background p-4">
+              <ShieldCheck size={18} className="mt-0.5 shrink-0 text-success" aria-hidden />
+              <p className="font-body text-xs leading-5 text-muted-foreground sm:text-sm">
+                Los datos históricos del negocio se conservan. Esta pantalla sólo bloquea la operación mientras se valida o renueva el acceso.
+              </p>
+            </div>
+          )}
 
           <LicenseBlockedActions />
-          <p className="mt-4 text-center font-body text-xs leading-5 text-muted-foreground">
-            Si necesitas ayuda, contacta al responsable de Rincón 404.
-          </p>
+          {!isPaymentBlocked && (
+            <p className="mt-4 text-center font-body text-xs leading-5 text-muted-foreground">
+              Si necesitas ayuda, contacta al responsable de Rincón 404.
+            </p>
+          )}
         </div>
       </section>
     </main>

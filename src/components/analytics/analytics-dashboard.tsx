@@ -3,11 +3,13 @@
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
+import type { ReactNode } from "react";
 import {
   Ban,
   BadgePercent,
   Banknote,
   Bike,
+  ChevronDown,
   CircleDollarSign,
   Download,
   HandPlatter,
@@ -17,13 +19,13 @@ import {
   ReceiptText,
   ShoppingBag,
   Split,
+  Store,
   TrendingDown,
   TrendingUp,
   UtensilsCrossed,
   WalletCards,
 } from "lucide-react";
 import { DateRangePicker } from "@/components/analytics/date-range-picker";
-import { OwnerDailyControl } from "@/components/analytics/owner-daily-control";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type {
@@ -33,9 +35,7 @@ import type {
   RankedBreakdown,
   SimpleBreakdown,
 } from "@/lib/actions/analytics";
-import { periodLabel } from "@/lib/analytics/period";
 import { cn } from "@/lib/utils";
-import type { OwnerOperationalData } from "@/lib/owner-report/types";
 
 const AnalyticsTrendChart = dynamic(
   () =>
@@ -61,6 +61,7 @@ const SERVICE_FILTERS: Array<{
   { id: "comedor", label: "Comedor", icon: UtensilsCrossed },
   { id: "domicilio", label: "Domicilio", icon: Bike },
   { id: "para_llevar", label: "Para llevar", icon: ShoppingBag },
+  { id: "plataformas", label: "Plataformas", icon: Store },
 ];
 
 const currency = new Intl.NumberFormat("es-MX", {
@@ -141,6 +142,107 @@ function MetricRow({
         {comparison ? <ChangeBadge metric={comparison} /> : null}
       </span>
     </div>
+  );
+}
+
+function SummaryMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  comparison,
+}: {
+  icon: typeof ReceiptText;
+  label: string;
+  value: string;
+  detail: string;
+  comparison?: ComparisonMetric;
+}) {
+  return (
+    <div className="min-w-0 px-0 py-3 sm:px-4 sm:first:pl-0 sm:last:pr-0">
+      <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+        <Icon size={15} className="shrink-0" />
+        <span className="truncate font-heading text-xs font-bold">{label}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="font-data text-2xl font-bold leading-none tabular-nums text-cream">
+          {value}
+        </span>
+        {comparison ? <ChangeBadge metric={comparison} /> : null}
+      </div>
+      <p className="mt-1.5 truncate font-body text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function MarketplaceBreakdown({ data }: { data: AnalyticsData }) {
+  const showMarketplace =
+    data.service === "todos" ||
+    data.service === "para_llevar" ||
+    data.service === "plataformas";
+  const hasMarketplaceOrders =
+    data.marketplace.orders.current > 0 || data.marketplace.orders.previous > 0;
+
+  if (!showMarketplace || (!hasMarketplaceOrders && data.service !== "plataformas")) {
+    return null;
+  }
+
+  return (
+    <section aria-labelledby="analytics-marketplace-title">
+      <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <h2 id="analytics-marketplace-title" className="font-heading text-base font-bold">
+          Pedidos de plataformas
+        </h2>
+        <p className="font-body text-xs text-muted-foreground">
+          Importes separados de caja; el valor de tickets no descuenta comisiones.
+        </p>
+      </div>
+      {data.marketplace.platforms.length > 0 ? (
+        <div className="divide-y divide-border border-y border-border">
+          {data.marketplace.platforms.map((platform) => (
+            <div
+              key={platform.platform}
+              className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            >
+              <div className="min-w-0">
+                <p className="font-heading text-sm font-bold">
+                  {platform.platform === "uber_eats" ? "Uber Eats" : "DiDi Food"}
+                </p>
+                <p className="mt-0.5 font-body text-xs text-muted-foreground">
+                  {number.format(platform.orders)} {platform.orders === 1 ? "pedido" : "pedidos"}
+                  {platform.pendingHandoffOrders > 0
+                    ? ` · ${number.format(platform.pendingHandoffOrders)} por entregar`
+                    : ""}
+                  {platform.cancelledOrders > 0
+                    ? ` · ${number.format(platform.cancelledOrders)} cancelados`
+                    : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-x-5 gap-y-1 sm:justify-end">
+                <p className="font-body text-xs text-muted-foreground">
+                  Entregados: <span className="font-data font-bold text-cream">{number.format(platform.handedOffOrders)}</span>
+                  <span className="ml-1 text-cream">· {currency.format(platform.handedOffValue)}</span>
+                </p>
+                {platform.appValue > 0 ? (
+                  <p className="font-body text-xs text-muted-foreground">
+                    Pagado en app: <span className="font-data font-bold text-cream">{currency.format(platform.appValue)}</span>
+                  </p>
+                ) : null}
+                {platform.cashReceived > 0 ? (
+                  <p className="font-body text-xs text-muted-foreground">
+                    Efectivo Didi en caja: <span className="font-data font-bold text-cream">{currency.format(platform.cashReceived)}</span>
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="border-y border-border py-5 font-body text-sm text-muted-foreground">
+          No hay pedidos de Uber Eats ni DiDi Food en este periodo.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -269,6 +371,17 @@ function downloadCsv(data: AnalyticsData) {
     ["Pagos combinados", data.summary.combinedPayments, ""],
     ["Pagos anulados", data.summary.voidedPayments, ""],
     [],
+    ["Pedidos de plataforma", "Pedidos", "Entregados", "Cancelados", "Valor de tickets entregados", "Pagado en app", "Efectivo Didi recibido"],
+    ...data.marketplace.platforms.map((item) => [
+      item.platform === "uber_eats" ? "Uber Eats" : "DiDi Food",
+      item.orders,
+      item.handedOffOrders,
+      item.cancelledOrders,
+      item.handedOffValue,
+      item.appValue,
+      item.cashReceived,
+    ]),
+    [],
     ["Productos", "Unidades", "Venta", "Participación"],
     ...data.topProducts.map((item) => [
       item.label,
@@ -297,17 +410,15 @@ function downloadCsv(data: AnalyticsData) {
 
 export function AnalyticsDashboard({
   data,
-  ownerControl,
-  ownerReportEmailEnabled,
+  ownerControlContent,
 }: {
   data: AnalyticsData;
-  ownerControl: OwnerOperationalData;
-  ownerReportEmailEnabled: boolean;
+  ownerControlContent: ReactNode;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isFiltering, startFilterTransition] = useTransition();
-  const previousLabel = periodLabel(data.previousPeriod);
+  const platformMode = data.service === "plataformas";
 
   function setService(service: AnalyticsServiceFilter) {
     const params = new URLSearchParams(searchParams.toString());
@@ -327,7 +438,9 @@ export function AnalyticsDashboard({
               Pulso del negocio
             </h1>
             <p className="mt-1 text-pretty font-body text-sm text-muted-foreground">
-              Ventas cobradas, cuentas abiertas y el movimiento del periodo.
+              {platformMode
+                ? "Pedidos y entregas de Uber Eats y DiDi Food."
+                : "Ventas cobradas, cuentas abiertas y el movimiento del periodo."}
             </p>
           </div>
           <div className="analytics-header-controls">
@@ -366,212 +479,305 @@ export function AnalyticsDashboard({
           ))}
         </div>
 
-        <OwnerDailyControl
-          analytics={data}
-          operation={ownerControl}
-          emailEnabled={ownerReportEmailEnabled}
-        />
-
-        <section className="analytics-split-grid analytics-split-grid-wide">
-          <Card className="gap-0 rounded-2xl py-0">
-            <CardContent className="p-4 sm:p-5 lg:p-6">
-              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 className="font-heading text-base font-bold">Venta cobrada</h2>
-                  <p className="font-body text-sm text-muted-foreground capitalize">
-                    {periodLabel(data.period)}
-                  </p>
-                </div>
-                <ChangeBadge metric={data.summary.revenue} />
-              </div>
-              <p className="font-data text-4xl font-bold leading-none tracking-[-0.03em] text-gold tabular-nums sm:text-5xl">
-                {currency.format(data.summary.revenue.current)}
-              </p>
-              <p className="mt-2 font-body text-xs text-muted-foreground">
-                Comparado con {currency.format(data.summary.revenue.previous)} en {previousLabel}
-              </p>
-              <div className="mt-7 border-t border-border pt-5">
-                <AnalyticsTrendChart data={data.trend} />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="gap-0 rounded-2xl py-0">
-            <CardContent className="p-4 sm:p-5">
-              <div className="mb-4">
-                <h2 className="font-heading text-lg font-bold">Cierre del periodo</h2>
-                <p className="font-body text-sm text-muted-foreground">
-                  Lo cobrado y lo que todavía requiere atención.
-                </p>
-              </div>
-              <div className="divide-y divide-border">
-                <MetricRow
-                  icon={ReceiptText}
-                  label="Pedidos pagados"
-                  value={number.format(data.summary.paidOrders.current)}
-                  comparison={data.summary.paidOrders}
-                  detail={`Antes: ${number.format(data.summary.paidOrders.previous)}`}
-                />
-                <MetricRow
-                  icon={CircleDollarSign}
-                  label="Ticket promedio"
-                  value={currency.format(data.summary.averageTicket.current)}
-                  comparison={data.summary.averageTicket}
-                  detail={`Antes: ${currency.format(data.summary.averageTicket.previous)}`}
-                />
-                <MetricRow
-                  icon={HandCoins}
-                  label="Propinas"
-                  value={currency.format(data.summary.tipsAmount)}
-                  detail="Separadas de la venta de alimentos"
-                />
-                <MetricRow
-                  icon={BadgePercent}
-                  label="Descuentos autorizados"
-                  value={currency.format(data.summary.discountsAmount)}
-                  detail="Aplicados antes de dividir la cuenta"
-                />
-                <MetricRow
-                  icon={Split}
-                  label="Pagos combinados"
-                  value={number.format(data.summary.combinedPayments)}
-                  detail="Dos o más métodos en el mismo cobro"
-                />
-                <MetricRow
-                  icon={WalletCards}
-                  label="Por cobrar ahora"
-                  value={currency.format(data.summary.pendingAmount)}
-                  detail={`${data.summary.pendingOrders} ${data.summary.pendingOrders === 1 ? "cuenta abierta" : "cuentas abiertas"}`}
-                  tone={data.summary.pendingOrders > 0 ? "warning" : "default"}
-                />
-                <MetricRow
-                  icon={Ban}
-                  label="Cancelaciones"
-                  value={number.format(data.summary.cancelledOrders)}
-                  detail={`${number.format(data.summary.cancellationRate)}% de pedidos cerrados`}
-                  tone={data.summary.cancelledOrders > 0 ? "danger" : "default"}
-                />
-                <MetricRow
-                  icon={Ban}
-                  label="Pagos anulados"
-                  value={number.format(data.summary.voidedPayments)}
-                  detail="No se incluyen en la venta cobrada"
-                  tone={data.summary.voidedPayments > 0 ? "danger" : "default"}
-                />
-              </div>
-            </CardContent>
-          </Card>
+        <section
+          aria-label="Resumen del periodo"
+          className={cn(
+            "grid divide-border overflow-hidden rounded-2xl bg-surface px-4 ring-1 ring-foreground/10 sm:px-5",
+            platformMode
+              ? "grid-cols-2 divide-x divide-y xl:grid-cols-4 xl:divide-y-0"
+              : "grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+          )}
+        >
+          {platformMode ? (
+            <>
+              <SummaryMetric
+                icon={Store}
+                label="Pedidos"
+                value={number.format(data.marketplace.orders.current)}
+                detail={`${data.marketplace.pendingHandoffOrders} por entregar · ${data.marketplace.cancelledOrders} cancelados`}
+                comparison={data.marketplace.orders}
+              />
+              <SummaryMetric
+                icon={ReceiptText}
+                label="Entregados"
+                value={number.format(data.marketplace.handedOffOrders.current)}
+                detail="Confirmados al repartidor"
+                comparison={data.marketplace.handedOffOrders}
+              />
+              <SummaryMetric
+                icon={CircleDollarSign}
+                label="Valor de tickets"
+                value={currency.format(data.marketplace.handedOffValue.current)}
+                detail="Bruto, antes de comisiones"
+                comparison={data.marketplace.handedOffValue}
+              />
+              <SummaryMetric
+                icon={Banknote}
+                label="Efectivo Didi"
+                value={currency.format(data.marketplace.cashReceived.current)}
+                detail="Recibido en caja al entregar"
+                comparison={data.marketplace.cashReceived}
+              />
+            </>
+          ) : (
+            <>
+              <SummaryMetric
+                icon={CircleDollarSign}
+                label="Venta cobrada"
+                value={currency.format(data.summary.revenue.current)}
+                detail="Cobros registrados en caja"
+                comparison={data.summary.revenue}
+              />
+              <SummaryMetric
+                icon={ReceiptText}
+                label="Pedidos pagados"
+                value={number.format(data.summary.paidOrders.current)}
+                detail="En el periodo elegido"
+                comparison={data.summary.paidOrders}
+              />
+              <SummaryMetric
+                icon={HandCoins}
+                label="Ticket promedio"
+                value={currency.format(data.summary.averageTicket.current)}
+                detail="Por cobro completado"
+                comparison={data.summary.averageTicket}
+              />
+            </>
+          )}
         </section>
 
-        <section className="analytics-split-grid analytics-split-grid-content">
-          <Card className="gap-0 rounded-2xl py-0">
-            <CardContent className="p-4 sm:p-5">
-              <div className="mb-3 flex items-end justify-between gap-4">
-                <div>
-                  <h2 className="font-heading text-lg font-bold">Productos que impulsan la venta</h2>
+        <Card className="gap-0 rounded-2xl py-0">
+          <CardContent className="p-4 sm:p-5">
+            <AnalyticsTrendChart
+              data={data.trend}
+              mode={data.service === "plataformas" ? "platforms" : "sales"}
+            />
+          </CardContent>
+        </Card>
+
+        <MarketplaceBreakdown data={data} />
+
+        <details className="group">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 border-y border-border py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
+            <span>
+              <span className="block font-heading text-sm font-bold">Control del dueño</span>
+              <span className="mt-0.5 block font-body text-xs text-muted-foreground">
+                Caja, cocina, inventario, recetas y reporte diario
+              </span>
+            </span>
+            <ChevronDown
+              size={18}
+              className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+              aria-hidden="true"
+            />
+          </summary>
+          <div className="pt-4">{ownerControlContent}</div>
+        </details>
+
+        <details className="group">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 border-y border-border py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
+            <span>
+              <span className="block font-heading text-sm font-bold">
+                {data.service === "plataformas" ? "Productos y categorías" : "Ver más datos del periodo"}
+              </span>
+              <span className="mt-0.5 block font-body text-xs text-muted-foreground">
+                {data.service === "plataformas"
+                  ? "Artículos en pedidos entregados"
+                  : "Desglose financiero, productos, servicios y pagos"}
+              </span>
+            </span>
+            <ChevronDown
+              size={18}
+              className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+              aria-hidden="true"
+            />
+          </summary>
+          <div className="mt-4 space-y-4">
+            {data.service !== "plataformas" ? (
+              <section className="rounded-2xl bg-surface p-4 ring-1 ring-foreground/10 sm:p-5">
+                <div className="mb-2">
+                  <h2 className="font-heading text-base font-bold">Cierre del periodo</h2>
                   <p className="font-body text-sm text-muted-foreground">
-                    Ordenados por dinero cobrado, no solo por unidades.
+                    Cobros de caja y asuntos pendientes.
                   </p>
                 </div>
-                <Package className="shrink-0 text-brand" size={22} />
-              </div>
-              <RankedList
-                items={data.topProducts}
-                emptyText="Los productos aparecerán cuando existan ventas cobradas."
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="gap-0 rounded-2xl py-0">
-            <CardContent className="p-4 sm:p-5">
-              <h2 className="font-heading text-lg font-bold">Lectura rápida</h2>
-              <p className="font-body text-sm text-muted-foreground">
-                Cuatro señales útiles para decidir qué revisar.
-              </p>
-              <div className="mt-5 space-y-3">
-                {data.insights.map((insight) => (
-                  <div
-                    key={insight.id}
-                    className="rounded-xl bg-surface-raised p-4 ring-1 ring-foreground/5"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="font-body text-xs text-muted-foreground">
-                          {insight.title}
-                        </p>
-                        <p
-                          className={cn(
-                            "mt-1 truncate font-heading text-base font-bold",
-                            insight.tone === "brand" && "text-brand",
-                            insight.tone === "gold" && "text-gold",
-                            insight.tone === "success" && "text-success",
-                            insight.tone === "warning" && "text-warning"
-                          )}
-                        >
-                          {insight.value}
-                        </p>
-                      </div>
-                      {insight.id === "pending-balance" ? (
-                        <Banknote size={19} className="shrink-0 text-muted-foreground" />
-                      ) : (
-                        <TrendingUp size={19} className="shrink-0 text-muted-foreground" />
-                      )}
-                    </div>
-                    <p className="mt-2 font-body text-xs text-muted-foreground">
-                      {insight.detail}
-                    </p>
+                <div className="grid divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                  <div className="divide-y divide-border sm:pr-4">
+                    <MetricRow
+                      icon={ReceiptText}
+                      label="Pedidos pagados"
+                      value={number.format(data.summary.paidOrders.current)}
+                      comparison={data.summary.paidOrders}
+                      detail={`Antes: ${number.format(data.summary.paidOrders.previous)}`}
+                    />
+                    <MetricRow
+                      icon={CircleDollarSign}
+                      label="Ticket promedio"
+                      value={currency.format(data.summary.averageTicket.current)}
+                      comparison={data.summary.averageTicket}
+                      detail={`Antes: ${currency.format(data.summary.averageTicket.previous)}`}
+                    />
+                    <MetricRow
+                      icon={HandCoins}
+                      label="Propinas"
+                      value={currency.format(data.summary.tipsAmount)}
+                      detail="Separadas de la venta de alimentos"
+                    />
+                    <MetricRow
+                      icon={BadgePercent}
+                      label="Descuentos autorizados"
+                      value={currency.format(data.summary.discountsAmount)}
+                      detail="Aplicados antes de dividir la cuenta"
+                    />
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-3">
-          <Card className="gap-0 rounded-2xl py-0 lg:col-span-1">
-            <CardContent className="p-4 sm:p-5">
-              <h2 className="font-heading text-lg font-bold">Por categoría</h2>
-              <p className="mb-3 font-body text-sm text-muted-foreground">
-                Qué parte del menú genera valor.
-              </p>
-              <RankedList
-                items={data.categories}
-                limit={6}
-                emptyText="No hay categorías con ventas cobradas."
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="gap-0 rounded-2xl py-0">
-            <CardContent className="p-4 sm:p-5">
-              <div className="mb-5 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="font-heading text-lg font-bold">Tipo de servicio</h2>
-                  <p className="font-body text-sm text-muted-foreground">
-                    Dónde se originó la venta.
-                  </p>
+                  <div className="divide-y divide-border sm:pl-4">
+                    <MetricRow
+                      icon={Split}
+                      label="Pagos combinados"
+                      value={number.format(data.summary.combinedPayments)}
+                      detail="Dos o más métodos en el mismo cobro"
+                    />
+                    <MetricRow
+                      icon={WalletCards}
+                      label="Por cobrar ahora"
+                      value={currency.format(data.summary.pendingAmount)}
+                      detail={`${data.summary.pendingOrders} ${data.summary.pendingOrders === 1 ? "cuenta abierta" : "cuentas abiertas"}`}
+                      tone={data.summary.pendingOrders > 0 ? "warning" : "default"}
+                    />
+                    <MetricRow
+                      icon={Ban}
+                      label="Cancelaciones"
+                      value={number.format(data.summary.cancelledOrders)}
+                      detail={`${number.format(data.summary.cancellationRate)}% de pedidos cerrados`}
+                      tone={data.summary.cancelledOrders > 0 ? "danger" : "default"}
+                    />
+                    <MetricRow
+                      icon={Ban}
+                      label="Pagos anulados"
+                      value={number.format(data.summary.voidedPayments)}
+                      detail="No se incluyen en la venta cobrada"
+                      tone={data.summary.voidedPayments > 0 ? "danger" : "default"}
+                    />
+                  </div>
                 </div>
-                <HandPlatter size={20} className="text-muted-foreground" />
-              </div>
-              <DistributionList items={data.orderTypes} />
-            </CardContent>
-          </Card>
+              </section>
+            ) : null}
 
-          <Card className="gap-0 rounded-2xl py-0">
-            <CardContent className="p-4 sm:p-5">
-              <div className="mb-5 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="font-heading text-lg font-bold">Métodos de pago</h2>
-                  <p className="font-body text-sm text-muted-foreground">
-                    Cómo entró el dinero.
+            <section className="analytics-split-grid analytics-split-grid-content">
+              <Card className="gap-0 rounded-2xl py-0">
+                <CardContent className="p-4 sm:p-5">
+                  <div className="mb-3 flex items-end justify-between gap-4">
+                    <div>
+                      <h2 className="font-heading text-lg font-bold">Productos más vendidos</h2>
+                      <p className="font-body text-sm text-muted-foreground">
+                        Ordenados por unidades y valor en tickets.
+                      </p>
+                    </div>
+                    <Package className="shrink-0 text-brand" size={22} />
+                  </div>
+                  <RankedList
+                    items={data.topProducts}
+                    emptyText={
+                      data.service === "plataformas"
+                        ? "No hay productos de plataforma entregados en este periodo."
+                        : "Los productos aparecerán cuando haya ventas o entregas registradas."
+                    }
+                  />
+                </CardContent>
+              </Card>
+
+              {data.service !== "plataformas" ? (
+                <Card className="gap-0 rounded-2xl py-0">
+                  <CardContent className="p-4 sm:p-5">
+                    <h2 className="font-heading text-lg font-bold">Lectura rápida</h2>
+                    <div className="mt-3 divide-y divide-border">
+                      {data.insights.map((insight) => (
+                        <div key={insight.id} className="py-3 first:pt-0 last:pb-0">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="font-body text-xs text-muted-foreground">
+                                {insight.title}
+                              </p>
+                              <p
+                                className={cn(
+                                  "mt-1 truncate font-heading text-base font-bold",
+                                  insight.tone === "brand" && "text-brand",
+                                  insight.tone === "gold" && "text-gold",
+                                  insight.tone === "success" && "text-success",
+                                  insight.tone === "warning" && "text-warning"
+                                )}
+                              >
+                                {insight.value}
+                              </p>
+                            </div>
+                            {insight.id === "pending-balance" ? (
+                              <Banknote size={19} className="shrink-0 text-muted-foreground" />
+                            ) : (
+                              <TrendingUp size={19} className="shrink-0 text-muted-foreground" />
+                            )}
+                          </div>
+                          <p className="mt-1 font-body text-xs text-muted-foreground">
+                            {insight.detail}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </section>
+
+            <section className={cn("grid gap-4", data.service === "plataformas" ? "lg:grid-cols-1" : "lg:grid-cols-3")}>
+              <Card className="gap-0 rounded-2xl py-0">
+                <CardContent className="p-4 sm:p-5">
+                  <h2 className="font-heading text-lg font-bold">Por categoría</h2>
+                  <p className="mb-3 font-body text-sm text-muted-foreground">
+                    Valor generado por los productos.
                   </p>
-                </div>
-                <WalletCards size={20} className="text-muted-foreground" />
-              </div>
-              <DistributionList items={data.paymentMethods} />
-            </CardContent>
-          </Card>
-        </section>
+                  <RankedList
+                    items={data.categories}
+                    limit={6}
+                    emptyText="No hay ventas registradas por categoría en este periodo."
+                  />
+                </CardContent>
+              </Card>
+
+              {data.service !== "plataformas" ? (
+                <>
+                  <Card className="gap-0 rounded-2xl py-0">
+                    <CardContent className="p-4 sm:p-5">
+                      <div className="mb-5 flex items-start justify-between gap-3">
+                        <div>
+                          <h2 className="font-heading text-lg font-bold">Tipo de servicio</h2>
+                          <p className="font-body text-sm text-muted-foreground">
+                            Cobros registrados en caja.
+                          </p>
+                        </div>
+                        <HandPlatter size={20} className="text-muted-foreground" />
+                      </div>
+                      <DistributionList items={data.orderTypes} />
+                    </CardContent>
+                  </Card>
+
+                  <Card className="gap-0 rounded-2xl py-0">
+                    <CardContent className="p-4 sm:p-5">
+                      <div className="mb-5 flex items-start justify-between gap-3">
+                        <div>
+                          <h2 className="font-heading text-lg font-bold">Métodos de pago</h2>
+                          <p className="font-body text-sm text-muted-foreground">
+                            Dinero recibido en caja.
+                          </p>
+                        </div>
+                        <WalletCards size={20} className="text-muted-foreground" />
+                      </div>
+                      <DistributionList items={data.paymentMethods} />
+                    </CardContent>
+                  </Card>
+                </>
+              ) : null}
+            </section>
+          </div>
+        </details>
       </div>
     </div>
   );

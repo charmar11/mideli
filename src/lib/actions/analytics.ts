@@ -2,8 +2,20 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getSelectedBusinessContext } from "@/lib/server/selected-business";
-import { ANALYTICS_ORDER_SELECT } from "@/lib/analytics/query-select";
+import {
+  countsTowardLocalPendingBalance,
+  type MarketplacePlatform,
+} from "@/lib/marketplace-orders";
+import {
+  ANALYTICS_MARKETPLACE_ORDER_SELECT,
+  ANALYTICS_ORDER_SELECT,
+} from "@/lib/analytics/query-select";
 import { fetchAllRows } from "@/lib/analytics/fetch-all-rows";
+import {
+  summarizeMarketplaceOrders,
+  type MarketplaceAnalyticsOrder,
+  type MarketplacePlatformBreakdown,
+} from "@/lib/analytics/marketplace";
 import {
   addDays,
   getPreviousPeriod,
@@ -17,7 +29,10 @@ export type AnalyticsServiceFilter =
   | "todos"
   | "comedor"
   | "domicilio"
-  | "para_llevar";
+  | "para_llevar"
+  | "plataformas";
+
+type AnalyticsOrderType = Exclude<AnalyticsServiceFilter, "todos" | "plataformas">;
 
 export interface AnalyticsParams {
   period: AnalyticsPeriod;
@@ -82,6 +97,15 @@ export interface AnalyticsData {
   previousPeriod: AnalyticsPeriod;
   service: AnalyticsServiceFilter;
   summary: AnalyticsSummary;
+  marketplace: {
+    orders: ComparisonMetric;
+    handedOffOrders: ComparisonMetric;
+    handedOffValue: ComparisonMetric;
+    cashReceived: ComparisonMetric;
+    pendingHandoffOrders: number;
+    cancelledOrders: number;
+    platforms: MarketplacePlatformBreakdown[];
+  };
   trend: TrendPoint[];
   topProducts: RankedBreakdown[];
   categories: RankedBreakdown[];
@@ -109,7 +133,7 @@ interface PaidOrderItemRow {
 interface PaidOrderRow {
   id: string;
   number: number;
-  type: Exclude<AnalyticsServiceFilter, "todos">;
+  type: AnalyticsOrderType;
   total: number;
   payment_method: "efectivo" | "tarjeta" | "transferencia" | null;
   paid_at: string;
@@ -120,7 +144,8 @@ interface OpenOrderRow {
   id: string;
   total: number;
   paid_amount: number;
-  type: Exclude<AnalyticsServiceFilter, "todos">;
+  type: AnalyticsOrderType;
+  marketplace_platform?: "uber_eats" | "didi_food" | null;
 }
 
 interface PaymentTransactionRow {
@@ -130,12 +155,24 @@ interface PaymentTransactionRow {
   discount_amount: number;
   tip_amount: number;
   total_amount: number;
-  order_type: Exclude<AnalyticsServiceFilter, "todos">;
+  order_type: AnalyticsOrderType;
   created_at: string;
   payment_tenders: Array<{
     method: "efectivo" | "tarjeta" | "transferencia";
     amount: number;
   }>;
+}
+
+interface MarketplaceOrderRow extends MarketplaceAnalyticsOrder {
+  id: string;
+  number: number;
+  type: "para_llevar";
+  created_at: string;
+  order_items: PaidOrderItemRow[];
+}
+
+function emptyRows<T>() {
+  return { data: [] as T[], error: null };
 }
 
 const HERMOSILLO_DATE = new Intl.DateTimeFormat("en-CA", {
@@ -421,11 +458,15 @@ export async function fetchAnalytics({
   const currentEnd = queryTimestamp(period.to, "end");
   const previousStart = queryTimestamp(previousPeriod.from, "start");
   const previousEnd = queryTimestamp(previousPeriod.to, "end");
+  const loadLocalAnalytics = service !== "plataformas";
+  const loadMarketplaceAnalytics =
+    service === "todos" || service === "para_llevar" || service === "plataformas";
 
   let currentQuery = supabase
     .from("orders")
     .select(ANALYTICS_ORDER_SELECT)
     .eq("payment_status", "paid")
+    .is("marketplace_platform", null)
     .gte("paid_at", currentStart)
     .lte("paid_at", currentEnd)
     .order("paid_at", { ascending: true })
@@ -434,12 +475,14 @@ export async function fetchAnalytics({
     .from("orders")
     .select("id, type")
     .eq("status", "cancelled")
+    .is("marketplace_platform", null)
     .gte("created_at", currentStart)
     .lte("created_at", currentEnd)
     .order("id", { ascending: true });
   let openQuery = supabase
     .from("orders")
-    .select("id, total, paid_amount, type")
+    .select("id, total, paid_amount, type, marketplace_platform")
+    .is("marketplace_platform", null)
     .in("status", ["pending", "in_kitchen", "ready", "served"])
     .order("id", { ascending: true });
   let currentPaymentsQuery = supabase
@@ -457,6 +500,22 @@ export async function fetchAnalytics({
     .lte("created_at", previousEnd)
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
+  let marketplaceQuery = supabase
+    .from("orders")
+    .select(ANALYTICS_MARKETPLACE_ORDER_SELECT)
+    .in("marketplace_platform", ["uber_eats", "didi_food"] as MarketplacePlatform[])
+    .gte("created_at", currentStart)
+    .lte("created_at", currentEnd)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  let previousMarketplaceQuery = supabase
+    .from("orders")
+    .select(ANALYTICS_MARKETPLACE_ORDER_SELECT)
+    .in("marketplace_platform", ["uber_eats", "didi_food"] as MarketplacePlatform[])
+    .gte("created_at", previousStart)
+    .lte("created_at", previousEnd)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (businessContext.businessId) {
     currentQuery = currentQuery.eq("business_id", businessContext.businessId);
@@ -470,9 +529,14 @@ export async function fetchAnalytics({
       "business_id",
       businessContext.businessId
     );
+    marketplaceQuery = marketplaceQuery.eq("business_id", businessContext.businessId);
+    previousMarketplaceQuery = previousMarketplaceQuery.eq(
+      "business_id",
+      businessContext.businessId
+    );
   }
 
-  if (service !== "todos") {
+  if (service !== "todos" && service !== "plataformas") {
     currentQuery = currentQuery.eq("type", service);
     cancelledQuery = cancelledQuery.eq("type", service);
     openQuery = openQuery.eq("type", service);
@@ -486,12 +550,30 @@ export async function fetchAnalytics({
     openResult,
     currentPaymentsResult,
     previousPaymentsResult,
+    marketplaceResult,
+    previousMarketplaceResult,
   ] = await Promise.all([
-    fetchAllRows((from, to) => currentQuery.range(from, to)),
-    fetchAllRows((from, to) => cancelledQuery.range(from, to)),
-    fetchAllRows((from, to) => openQuery.range(from, to)),
-    fetchAllRows((from, to) => currentPaymentsQuery.range(from, to)),
-    fetchAllRows((from, to) => previousPaymentsQuery.range(from, to)),
+    loadLocalAnalytics
+      ? fetchAllRows((from, to) => currentQuery.range(from, to))
+      : Promise.resolve(emptyRows<unknown>()),
+    loadLocalAnalytics
+      ? fetchAllRows((from, to) => cancelledQuery.range(from, to))
+      : Promise.resolve(emptyRows<unknown>()),
+    loadLocalAnalytics
+      ? fetchAllRows((from, to) => openQuery.range(from, to))
+      : Promise.resolve(emptyRows<unknown>()),
+    loadLocalAnalytics
+      ? fetchAllRows((from, to) => currentPaymentsQuery.range(from, to))
+      : Promise.resolve(emptyRows<unknown>()),
+    loadLocalAnalytics
+      ? fetchAllRows((from, to) => previousPaymentsQuery.range(from, to))
+      : Promise.resolve(emptyRows<unknown>()),
+    loadMarketplaceAnalytics
+      ? fetchAllRows((from, to) => marketplaceQuery.range(from, to))
+      : Promise.resolve(emptyRows<unknown>()),
+    loadMarketplaceAnalytics
+      ? fetchAllRows((from, to) => previousMarketplaceQuery.range(from, to))
+      : Promise.resolve(emptyRows<unknown>()),
   ]);
 
   const firstError =
@@ -499,17 +581,24 @@ export async function fetchAnalytics({
     cancelledResult.error ??
     openResult.error ??
     currentPaymentsResult.error ??
-    previousPaymentsResult.error;
+    previousPaymentsResult.error ??
+    marketplaceResult.error ??
+    previousMarketplaceResult.error;
   if (firstError) {
     console.error("No se pudieron cargar las analíticas", firstError);
     throw new Error("No se pudieron cargar las analíticas del periodo.");
   }
 
   const orders = (currentResult.data ?? []) as unknown as PaidOrderRow[];
-  const openOrders = (openResult.data ?? []) as OpenOrderRow[];
+  const openOrders = ((openResult.data ?? []) as OpenOrderRow[])
+    .filter(countsTowardLocalPendingBalance);
   const allCurrentPayments = (currentPaymentsResult.data ?? []) as unknown as PaymentTransactionRow[];
   const payments = allCurrentPayments.filter((transaction) => transaction.status === "completed");
   const previousPayments = (previousPaymentsResult.data ?? []) as unknown as PaymentTransactionRow[];
+  const marketplaceOrders = (marketplaceResult.data ?? []) as unknown as MarketplaceOrderRow[];
+  const previousMarketplaceOrders = (previousMarketplaceResult.data ?? []) as unknown as MarketplaceOrderRow[];
+  const marketplaceSummary = summarizeMarketplaceOrders(marketplaceOrders);
+  const previousMarketplaceSummary = summarizeMarketplaceOrders(previousMarketplaceOrders);
   const revenue = payments.reduce(
     (sum, transaction) => sum + transaction.subtotal_amount - transaction.discount_amount,
     0
@@ -528,29 +617,68 @@ export async function fetchAnalytics({
   const averageTicket = payments.length > 0 ? revenue / payments.length : 0;
   const previousAverage =
     previousPayments.length > 0 ? previousRevenue / previousPayments.length : 0;
-  const cancelledOrders = cancelledResult.data?.length ?? 0;
-  const products = buildRankedBreakdown(orders, "product");
-  const categories = buildRankedBreakdown(orders, "category");
+  const cancelledOrders =
+    (cancelledResult.data?.length ?? 0) + marketplaceSummary.totals.cancelledOrders;
+  const deliveredMarketplaceOrders = marketplaceOrders
+    .filter((order) => order.status !== "cancelled" && order.marketplace_handed_off_at)
+    .map((order) => ({
+      id: order.id,
+      number: order.number,
+      type: order.type,
+      total: order.total,
+      payment_method: null,
+      paid_at: order.marketplace_handed_off_at as string,
+      order_items: order.order_items,
+    } satisfies PaidOrderRow));
+  const breakdownOrders = [...orders, ...deliveredMarketplaceOrders];
+  const products = buildRankedBreakdown(breakdownOrders, "product");
+  const categories = buildRankedBreakdown(breakdownOrders, "category");
   const orderTypes = buildTransactionBreakdown(payments, "type");
   const paymentMethods = buildTransactionBreakdown(payments, "payment");
-  const currentTrendOrders = payments.map((transaction) => ({
-    id: transaction.id,
-    number: 0,
-    type: transaction.order_type,
-    total: transaction.subtotal_amount - transaction.discount_amount,
-    payment_method: null,
-    paid_at: transaction.created_at,
-    order_items: [],
-  })) satisfies PaidOrderRow[];
-  const previousTrendOrders = previousPayments.map((transaction) => ({
-    id: transaction.id,
-    number: 0,
-    type: transaction.order_type,
-    total: transaction.subtotal_amount - transaction.discount_amount,
-    payment_method: null,
-    paid_at: transaction.created_at,
-    order_items: [],
-  })) satisfies PaidOrderRow[];
+  const currentTrendOrders = service === "plataformas"
+    ? marketplaceOrders
+        .filter((order) => order.status !== "cancelled")
+        .map((order) => ({
+          id: order.id,
+          number: order.number,
+          type: order.type,
+          total: order.marketplace_handed_off_at ? order.total : 0,
+          payment_method: null,
+          paid_at: order.created_at,
+          order_items: order.order_items,
+        } satisfies PaidOrderRow))
+    : payments.map((transaction) => ({
+        id: transaction.id,
+        number: 0,
+        type: transaction.order_type,
+        total: transaction.subtotal_amount - transaction.discount_amount,
+        payment_method: null,
+        paid_at: transaction.created_at,
+        order_items: [],
+      } satisfies PaidOrderRow));
+  const previousTrendOrders = service === "plataformas"
+    ? previousMarketplaceOrders
+        .filter((order) => order.status !== "cancelled")
+        .map((order) => ({
+          id: order.id,
+          number: order.number,
+          type: order.type,
+          total: order.marketplace_handed_off_at ? order.total : 0,
+          payment_method: null,
+          paid_at: order.created_at,
+          order_items: order.order_items,
+        } satisfies PaidOrderRow))
+    : previousPayments.map((transaction) => ({
+        id: transaction.id,
+        number: 0,
+        type: transaction.order_type,
+        total: transaction.subtotal_amount - transaction.discount_amount,
+        payment_method: null,
+        paid_at: transaction.created_at,
+        order_items: [],
+      } satisfies PaidOrderRow));
+  const cancellationDenominator =
+    orders.length + marketplaceSummary.totals.orders + cancelledOrders;
 
   return {
     period,
@@ -564,13 +692,34 @@ export async function fetchAnalytics({
       pendingAmount,
       cancelledOrders,
       cancellationRate:
-        orders.length + cancelledOrders > 0
-          ? (cancelledOrders / (orders.length + cancelledOrders)) * 100
+        cancellationDenominator > 0
+          ? (cancelledOrders / cancellationDenominator) * 100
           : 0,
       tipsAmount: payments.reduce((sum, transaction) => sum + Number(transaction.tip_amount), 0),
       discountsAmount: payments.reduce((sum, transaction) => sum + Number(transaction.discount_amount), 0),
       combinedPayments: payments.filter((transaction) => (transaction.payment_tenders ?? []).length > 1).length,
       voidedPayments: allCurrentPayments.filter((transaction) => transaction.status === "voided").length,
+    },
+    marketplace: {
+      orders: metric(
+        marketplaceSummary.totals.orders,
+        previousMarketplaceSummary.totals.orders
+      ),
+      handedOffOrders: metric(
+        marketplaceSummary.totals.handedOffOrders,
+        previousMarketplaceSummary.totals.handedOffOrders
+      ),
+      handedOffValue: metric(
+        marketplaceSummary.totals.handedOffValue,
+        previousMarketplaceSummary.totals.handedOffValue
+      ),
+      cashReceived: metric(
+        marketplaceSummary.totals.cashReceived,
+        previousMarketplaceSummary.totals.cashReceived
+      ),
+      pendingHandoffOrders: marketplaceSummary.totals.pendingHandoffOrders,
+      cancelledOrders: marketplaceSummary.totals.cancelledOrders,
+      platforms: marketplaceSummary.platforms,
     },
     trend: buildTrend(currentTrendOrders, previousTrendOrders, period, previousPeriod),
     topProducts: products.slice(0, 8),

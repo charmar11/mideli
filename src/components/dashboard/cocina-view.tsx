@@ -12,7 +12,6 @@ import {
   Flame,
   Maximize2,
   Minimize2,
-  RefreshCw,
   Volume2,
   VolumeX,
   X,
@@ -20,6 +19,7 @@ import {
 import { toast } from "sonner";
 import type { OrderItem } from "@/types/database";
 import type { OrderWithItems } from "@/lib/stores/order-store";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import { PushNotificationControl } from "./push-notification-control";
 import {
   isKitchenOrderAudioEnabled,
@@ -156,7 +156,7 @@ function getUpdateSummary(update: KitchenOrderUpdate): string {
   return parts.join(" · ");
 }
 
-export function CocinaView() {
+export function CocinaView({ canManagePreparation = true }: { canManagePreparation?: boolean }) {
   const {
     activeOrders,
     loading,
@@ -179,6 +179,10 @@ export function CocinaView() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [orderUpdates, setOrderUpdates] = useState<Record<string, KitchenOrderUpdate>>({});
   const [newOrderIds, setNewOrderIds] = useState<string[]>([]);
+  const pullToRefreshRef = usePullToRefresh<HTMLDivElement>(
+    fetchActiveOrders,
+    !loading,
+  );
 
   useEffect(() => {
     const preferenceTimer = window.setTimeout(() => {
@@ -549,15 +553,6 @@ export function CocinaView() {
           <PushNotificationControl topic="kitchen" />
           <button
             type="button"
-            onClick={() => void fetchActiveOrders()}
-            disabled={loading}
-            aria-label="Actualizar pedidos de cocina"
-            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground hover:border-brand/50 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 disabled:cursor-wait disabled:opacity-50"
-          >
-            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-          </button>
-          <button
-            type="button"
             onClick={() => void handleSoundToggle()}
             aria-pressed={soundEnabled && soundReady}
             aria-label={
@@ -585,7 +580,7 @@ export function CocinaView() {
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 min-w-0 flex-1 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto p-4 sm:p-5">
+      <div ref={pullToRefreshRef} className="pos-scroll min-h-0 min-w-0 flex-1 touch-pan-y overscroll-y-contain overflow-x-hidden overflow-y-auto p-4 sm:p-5">
         {lastError ? (
           <div
             role="status"
@@ -635,6 +630,7 @@ export function CocinaView() {
                   }
                   onStartPreparing={handleStartPreparing}
                   onMarkReady={handleMarkReady}
+                  canManagePreparation={canManagePreparation}
                 />
             ))}
           </div>
@@ -729,6 +725,7 @@ interface OrderCardProps {
   onDismissUpdate: () => void;
   onStartPreparing: (id: string) => void;
   onMarkReady: (id: string) => void;
+  canManagePreparation: boolean;
 }
 
 function OrderCard({
@@ -739,6 +736,7 @@ function OrderCard({
   onDismissUpdate,
   onStartPreparing,
   onMarkReady,
+  canManagePreparation,
 }: OrderCardProps) {
   const minutesElapsed = getMinutesElapsed(order.created_at);
   const urgency = getUrgencyLevel(minutesElapsed);
@@ -852,7 +850,7 @@ function OrderCard({
           ))}
         </ul>
 
-        {order.status === "pending" ? (
+        {canManagePreparation && order.status === "pending" ? (
           <button
             type="button"
             onClick={() => onStartPreparing(order.id)}
@@ -863,7 +861,7 @@ function OrderCard({
           </button>
         ) : null}
 
-        {order.status === "in_kitchen" ? (
+        {canManagePreparation && order.status === "in_kitchen" ? (
           <button
             type="button"
             onClick={() => onMarkReady(order.id)}

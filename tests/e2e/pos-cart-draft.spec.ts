@@ -7,6 +7,7 @@ import {
 } from "@/lib/pos-cart-draft";
 import {
   classifyPosOrderRecovery,
+  getPendingPosRecoveryAction,
   isPosCreationKey,
 } from "@/lib/pos-order-recovery";
 
@@ -62,6 +63,8 @@ const draft = {
   scheduledFor: null,
   scheduledForLabel: null,
   kitchenReleaseAt: null,
+  marketplace: null,
+  deliveryPaymentMethod: null,
 };
 
 test("recupera una comanda completa pero separada por cuenta de usuario", () => {
@@ -86,10 +89,36 @@ test("acepta borradores previos que todavía no tenían clave de envío", () => 
   const storage = new MemoryStorage();
   storage.setItem(
     "mideli.pos-cart-draft.v1.waiter-a",
-    JSON.stringify({ ...draft, version: 1 }),
+    JSON.stringify({
+      ...draft,
+      marketplace: undefined,
+      deliveryPaymentMethod: undefined,
+      version: 1,
+    }),
   );
 
   expect(readPosCartDraft("waiter-a", storage)).toEqual(draft);
+});
+
+test("conserva el método de pago local sin guardar datos del cliente", () => {
+  const storage = new MemoryStorage();
+
+  for (const deliveryPaymentMethod of ["efectivo", "transferencia"] as const) {
+    const paymentDraft = { ...draft, deliveryPaymentMethod };
+    expect(savePosCartDraft("waiter-a", paymentDraft, storage)).toBe(true);
+    expect(readPosCartDraft("waiter-a", storage)).toEqual(paymentDraft);
+  }
+});
+
+test("descarta un método de pago desconocido en el borrador", () => {
+  const storage = new MemoryStorage();
+  storage.setItem(
+    "mideli.pos-cart-draft.v1.waiter-a",
+    JSON.stringify({ ...draft, deliveryPaymentMethod: "tarjeta", version: 1 }),
+  );
+
+  expect(readPosCartDraft("waiter-a", storage)).toBeNull();
+  expect(storage.keys()).toHaveLength(0);
 });
 
 test("descarta borradores corruptos sin impedir continuar usando el POS", () => {
@@ -127,7 +156,9 @@ test("la estructura persistida no incluye datos personales ni de entrega", () =>
   expect(Object.keys(value).sort()).toEqual(
     [
       "items",
+      "deliveryPaymentMethod",
       "kitchenReleaseAt",
+      "marketplace",
       "orderNotes",
       "orderType",
       "scheduledFor",
@@ -166,6 +197,13 @@ test("sólo confirma la recuperación si leyó todos los negocios esperados", ()
   ).toBe("unavailable");
   expect(classifyPosOrderRecovery(["business-a"], null)).toBe("not_found");
   expect(classifyPosOrderRecovery(["business-a"], null, true)).toBe("unavailable");
+});
+
+test("cuando no se encuentra el pedido ofrece continuar el reintento, no sólo revisarlo", () => {
+  expect(getPendingPosRecoveryAction("retry")).toBe("continue");
+  expect(getPendingPosRecoveryAction("unavailable")).toBe("check");
+  expect(getPendingPosRecoveryAction("checking")).toBeNull();
+  expect(getPendingPosRecoveryAction(null)).toBeNull();
 });
 
 test("valida que la clave persistida sea un UUID", () => {

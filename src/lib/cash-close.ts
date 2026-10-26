@@ -1,6 +1,7 @@
 type CashCloseBreakdownInput = {
   openingFloat: number;
   cashTotal: number;
+  marketplaceCashTotal?: number;
   fundInTotal: number;
   withdrawalTotal: number;
   expenseTotal: number;
@@ -48,6 +49,7 @@ export function buildCashCloseBreakdown(input: CashCloseBreakdownInput) {
   const lines: CashCloseBreakdownLine[] = [
     { label: "Fondo inicial", amount: input.openingFloat, operation: "add" },
     { label: "Ventas en efectivo", amount: input.cashTotal, operation: "add" },
+    { label: "Efectivo recibido de Didi Food", amount: input.marketplaceCashTotal ?? 0, operation: "add" },
     { label: "Entradas", amount: input.fundInTotal, operation: "add" },
     { label: "Retiros", amount: input.withdrawalTotal, operation: "subtract" },
     { label: "Gastos", amount: input.expenseTotal, operation: "subtract" },

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, CircleAlert, Loader2, RefreshCw, UsersRound } from "lucide-react";
+import { Building2, CircleAlert, Loader2, UsersRound } from "lucide-react";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import {
   listOrganizationBusinessTeamsAction,
   type OrganizationBusinessTeam,
@@ -29,13 +30,15 @@ export function OrganizationBusinessTeams() {
     setLoading(false);
   }
 
+  const pullToRefreshRef = usePullToRefresh<HTMLElement>(loadTeams, !loading);
+
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTeams(), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   return (
-    <section className="space-y-3" aria-labelledby="organization-teams-title">
+    <section ref={pullToRefreshRef} className="space-y-3" aria-labelledby="organization-teams-title">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-data text-[10px] font-bold uppercase tracking-[0.18em] text-brand">
@@ -48,15 +51,6 @@ export function OrganizationBusinessTeams() {
             Coordinación puede revisar quién pertenece a cada equipo y su rango. Sólo el dueño del local puede hacer cambios.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadTeams()}
-          disabled={loading}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-border px-3 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50 sm:self-auto"
-        >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden />
-          Actualizar equipos
-        </button>
       </div>
 
       {loading ? (

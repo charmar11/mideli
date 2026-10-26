@@ -16,6 +16,7 @@ import {
   Clock3,
   MapPin,
   Navigation,
+  LockKeyhole,
   Pencil,
   Phone,
   ReceiptText,
@@ -34,11 +35,18 @@ import { toast } from "sonner";
 import {
   deleteSalesHistoryOrder,
   fetchSalesHistory,
+  listBusinessOrderDeletionAuthorizers,
+  type OrderDeletionAuthorizer,
   type LegacySalesTicket,
   type SalesHistoryOrder,
 } from "@/lib/actions/sales";
+import {
+  getBusinessOrderPrintDataAction,
+  type BusinessOrderPrintData,
+} from "@/lib/actions/business-receipts";
 import type { SalesHistoryCursor } from "@/lib/sales-history-pagination";
 import { getCurrentUserRole } from "@/lib/actions/users";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import {
   PaymentFlow,
   ReceiptDialog,
@@ -57,15 +65,18 @@ import {
 import { useCashShiftStore } from "@/lib/stores";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { PaymentMethodCorrectionDialog } from "@/components/payments/payment-method-correction-dialog";
-import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import { OrderReceiptTicket } from "@/components/printing/order-receipt-ticket";
+import { formatPhoneForDisplay } from "@/lib/phone";
+import { hasRecordedMarketplaceCashReceipt } from "@/lib/marketplace-orders";
 import { DatePeriodPicker } from "@/components/shared/date-period-picker";
 import {
   ALL_BUSINESSES_FILTER,
   BusinessScopeFilter,
 } from "@/components/shared/business-scope-filter";
 import {
-  canDeleteBusinessOrderHistory,
+  canDeleteBusinessOrderHistoryForType,
   getOrderReadableBusinessContexts,
+  requiresBusinessOwnerPinForOrderDeletion,
 } from "@/lib/multibusiness/business-context-selection";
 import {
   getTodayKey,
@@ -234,6 +245,7 @@ function PaymentMethodIcon({
 
 function isPendingPayment(order: SalesHistoryOrder) {
   return (
+    !order.marketplace_platform &&
     order.status !== "cancelled" &&
     order.payment_status !== "paid" &&
     Number(order.paid_amount ?? 0) < order.total
@@ -452,6 +464,7 @@ function OrderDetail({
   onClose,
   onDelete,
   onPay,
+  onPrintOrder,
   onReceipt,
   onCorrectPayment,
 }: {
@@ -460,6 +473,7 @@ function OrderDetail({
   onClose?: () => void;
   onDelete?: () => void;
   onPay?: () => void;
+  onPrintOrder?: () => void;
   onReceipt?: () => void;
   onCorrectPayment?: () => void;
 }) {
@@ -470,26 +484,43 @@ function OrderDetail({
   const mapHref = order.type === "domicilio" ? getDeliveryMapHref(order) : null;
   const distance = formatDistance(order.delivery_distance_meters);
   const requestedPayment = order.payment_method_requested ?? order.payment_method;
+  const paymentSummary = order.marketplace_platform
+    ? order.marketplace_payment_mode === "cash"
+      ? order.marketplace_cash_received === null || order.marketplace_cash_received === undefined
+        ? "Efectivo pendiente de confirmar"
+        : "Efectivo recibido por el local: " + formatMoney(order.marketplace_cash_received)
+      : "Pago procesado en la app · sin cobro local"
+    : order.payment_status === "paid" && order.payment_method
+      ? PAYMENT_LABELS[order.payment_method] + " · pagado"
+      : order.payment_status === "paid"
+        ? "Pago combinado completado"
+        : Number(order.paid_amount ?? 0) > 0
+          ? "Abonado " + formatMoney(Number(order.paid_amount)) + " · saldo " + formatMoney(getProductsBalance(order))
+          : requestedPayment === "transferencia"
+            ? "Transferencia por verificar"
+            : requestedPayment
+              ? PAYMENT_LABELS[requestedPayment] + " · pendiente"
+              : "Pago pendiente";
+  const paymentIsSettled = order.marketplace_platform
+    ? order.marketplace_payment_mode !== "cash" || order.marketplace_cash_received !== null && order.marketplace_cash_received !== undefined
+    : order.payment_status === "paid";
 
   return (
     <div className="flex min-h-0 flex-col">
-      <div className="flex items-start justify-between gap-3 border-b border-border/70 p-5">
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-light text-brand">
-              <ReceiptText size={18} />
-            </span>
-            <p className="font-data text-xl font-bold">Pedido #{order.number}</p>
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-5">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="font-data text-lg font-bold">Pedido #{order.number}</p>
+            {businessName ? (
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-brand-light px-2 py-0.5 font-heading text-[10px] font-bold text-brand">
+                <Building2 size={11} />
+                <span className="truncate">{businessName}</span>
+              </span>
+            ) : null}
           </div>
-          <p className="font-body text-xs text-muted-foreground">
+          <p className="mt-0.5 font-body text-[11px] text-muted-foreground">
             {formatDateTime(order.created_at)}
           </p>
-          {businessName ? (
-            <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-light px-2.5 py-1 font-heading text-[11px] font-bold text-brand">
-              <Building2 size={12} />
-              {businessName}
-            </span>
-          ) : null}
         </div>
         <div className="flex items-center gap-1">
           {onDelete ? (
@@ -515,44 +546,40 @@ function OrderDetail({
         </div>
       </div>
 
-      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain p-5">
-        <div className="mb-5 grid grid-cols-2 gap-2">
-          <div className="rounded-xl border border-border bg-background/60 p-3">
-            <p className="mb-1 font-body text-[11px] uppercase tracking-wider text-muted-foreground">
-              Tipo
-            </p>
-            <div className="flex items-center gap-2 font-heading text-xs font-bold">
-              <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${ORDER_TYPE_VISUALS[order.type].icon}`}>
-                <OrderTypeIcon type={order.type} size={15} />
+        <div className="pos-scroll min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain px-4 py-3 sm:px-5">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-2.5 font-heading text-xs font-bold ${ORDER_TYPE_VISUALS[order.type].icon}`}>
+            <OrderTypeIcon type={order.type} size={14} />
+            {TYPE_LABELS[order.type]}
+          </span>
+          <span className={`inline-flex min-h-8 items-center rounded-full px-2.5 font-heading text-[11px] font-bold ${status.className}`}>
+            {status.label}
+          </span>
+          {order.marketplace_platform ? (
+            <span className="inline-flex min-h-8 items-center rounded-full bg-warning/10 px-2.5 font-heading text-[11px] font-bold text-warning">
+              {order.marketplace_platform === "uber_eats" ? "Uber Eats" : "DiDi Food"}
+              <span className="ml-1 font-body font-medium">
+                {order.marketplace_payment_mode === "cash" ? "· Efectivo" : "· Pago en app"}
               </span>
-              {TYPE_LABELS[order.type]}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-background/60 p-3">
-            <p className="mb-1 font-body text-[11px] uppercase tracking-wider text-muted-foreground">
-              Estado
-            </p>
-            <span className={`inline-flex rounded-full px-2 py-1 font-heading text-[11px] font-bold ${status.className}`}>
-              {status.label}
             </span>
-          </div>
+          ) : null}
         </div>
 
-        <div className="mb-5 rounded-2xl border border-border bg-background/50 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        <section className="mb-3 border-b border-border/70 pb-3">
+          <div className="mb-1.5 flex items-center justify-between gap-3">
             <h3 className="font-heading text-sm font-bold">Artículos</h3>
             <span className="font-body text-xs text-muted-foreground">
               {order.items.reduce((sum, item) => sum + item.quantity, 0)} piezas
             </span>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {order.items.map((item) => {
               const modifiersTotal = item.selected_modifiers.reduce(
                 (sum, modifier) => sum + modifier.price,
                 0
               );
               return (
-                <div key={item.id} className="border-b border-border/60 pb-3 last:border-0 last:pb-0">
+                <div key={item.id} className="border-b border-border/50 pb-2 last:border-0 last:pb-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-body text-sm font-bold">
@@ -583,22 +610,19 @@ function OrderDetail({
               );
             })}
           </div>
-        </div>
+        </section>
 
-        <div className="space-y-4 border-b border-border/70 pb-5">
+        <div className="space-y-3 border-b border-border/70 pb-4">
           {order.customer_name || order.customer_phone ? (
-            <div className="rounded-2xl border border-border bg-background/50 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <UserRound size={16} className="text-brand" />
-                <p className="font-heading text-sm font-bold">Cliente</p>
-              </div>
+            <div className="flex min-h-9 min-w-0 items-center gap-2">
+              <UserRound size={15} className="shrink-0 text-muted-foreground" />
               {order.customer_name ? (
-                <p className="font-heading text-sm font-bold">{order.customer_name}</p>
+                <p className="min-w-0 truncate font-heading text-xs font-semibold">{order.customer_name}</p>
               ) : null}
               {order.customer_phone ? (
                 <a
                   href={`tel:${order.customer_phone}`}
-                  className="mt-1 inline-flex min-h-9 touch-manipulation items-center gap-1.5 rounded-lg font-data text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  className="inline-flex min-h-9 shrink-0 touch-manipulation items-center gap-1 rounded-lg font-data text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                 >
                   <Phone size={13} />
                   {formatPhoneForDisplay(order.customer_phone)}
@@ -608,45 +632,42 @@ function OrderDetail({
           ) : null}
 
           {order.type === "domicilio" ? (
-            <div className="rounded-2xl border border-border bg-background/50 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <MapPin size={16} className="text-brand" />
-                  <p className="font-heading text-sm font-bold">Entrega</p>
-                </div>
+            <div className="rounded-xl bg-background/55 px-3 py-2.5">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 font-heading text-xs font-bold">
+                  <MapPin size={14} className="text-brand" />
+                  Domicilio
+                </span>
                 {deliveryStatus ? (
-                  <span className={`rounded-full px-2 py-1 font-heading text-[10px] font-bold ${deliveryStatus.className}`}>
+                  <span className={`rounded-full px-2 py-0.5 font-heading text-[10px] font-bold ${deliveryStatus.className}`}>
                     {deliveryStatus.label}
                   </span>
                 ) : null}
               </div>
-              <p className="font-body text-sm leading-5 text-foreground">
-                {order.delivery_address || "Domicilio no disponible"}
+              <p className="break-words font-body text-xs leading-5 text-foreground">
+                {order.delivery_address || "Dirección no disponible"}
               </p>
-              <p className={`mt-2 font-heading text-xs font-bold ${order.delivery_colony ? "text-gold" : "text-warning"}`}>
-                🏘️ Colonia: {order.delivery_colony || "⚠️ No registrada"}
+              <p className={`mt-0.5 font-heading text-[11px] font-semibold ${order.delivery_colony ? "text-gold" : "text-warning"}`}>
+                Colonia: {order.delivery_colony || "No registrada"}
               </p>
-              {order.delivery_reference ? (
-                <p className="mt-2 rounded-xl bg-surface-raised px-3 py-2 font-body text-xs leading-5 text-muted-foreground">
-                  Referencia: {order.delivery_reference}
-                </p>
-              ) : null}
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-body text-xs text-muted-foreground">
-                <span>Envío externo {formatMoney(orderExternalDeliveryFee(order))} · lo cobra el repartidor</span>
-                {distance ? <span>{distance}</span> : null}
+              <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                <span className="font-body text-[11px] text-muted-foreground">
+                  Envío {formatMoney(orderExternalDeliveryFee(order))} · lo cobra el repartidor
+                  {distance ? ` · ${distance}` : ""}
+                </span>
+                {mapHref ? (
+                  <a
+                    href={mapHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-9 touch-manipulation items-center gap-1.5 rounded-lg bg-brand-light px-2.5 font-heading text-[11px] font-bold text-brand hover:bg-brand/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
+                  >
+                    <Navigation size={13} />
+                    Abrir mapa
+                    <ExternalLink size={12} />
+                  </a>
+                ) : null}
               </div>
-              {mapHref ? (
-                <a
-                  href={mapHref}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-3 inline-flex min-h-10 touch-manipulation items-center gap-2 rounded-xl bg-brand-light px-3 font-heading text-xs font-bold text-brand hover:bg-brand/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98]"
-                >
-                  <Navigation size={15} />
-                  Abrir ubicación
-                  <ExternalLink size={13} />
-                </a>
-              ) : null}
             </div>
           ) : order.table_number ? (
             <div className="flex items-center gap-2 font-body text-sm text-muted-foreground">
@@ -655,37 +676,66 @@ function OrderDetail({
             </div>
           ) : null}
 
-          {order.type === "domicilio" ? (
-            <div className="rounded-2xl border border-border bg-background/50 p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <Clock3 size={16} className="text-brand" />
-                <p className="font-heading text-sm font-bold">Seguimiento</p>
-              </div>
-              <div className="space-y-2">
-                <ProgressStep label="Pedido registrado" active />
-                <ProgressStep label="Estado actual" active={order.status !== "pending"} current={order.status === "in_kitchen" || order.status === "ready"} />
-                <ProgressStep label={deliveryStatus?.label ?? "Entrega pendiente"} active={order.delivery_status === "driver_on_way" || order.delivery_status === "customer_received"} current={order.delivery_status === "driver_on_way"} />
-              </div>
-              <p className="mt-3 font-body text-[11px] text-muted-foreground">
-                Última actualización: {formatDateTime(order.updated_at)}
-              </p>
+          <details key={order.id} className="group border-t border-border/60 pt-1">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg font-heading text-xs font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
+              <span>Más información del pedido</span>
+              <ChevronDown size={16} className="shrink-0 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="space-y-3 pb-3 pt-1">
+              {order.type === "domicilio" ? (
+                <section className="space-y-2">
+                  <div className="flex items-center gap-1.5 font-heading text-xs font-bold">
+                    <Clock3 size={14} className="text-brand" />
+                    Seguimiento
+                  </div>
+                  <div className="grid gap-1.5 pl-0.5">
+                    <ProgressStep label="Pedido registrado" active />
+                    <ProgressStep label="Estado actual" active={order.status !== "pending"} current={order.status === "in_kitchen" || order.status === "ready"} />
+                    <ProgressStep label={deliveryStatus?.label ?? "Entrega pendiente"} active={order.delivery_status === "driver_on_way" || order.delivery_status === "customer_received"} current={order.delivery_status === "driver_on_way"} />
+                  </div>
+                  <p className="font-body text-[11px] text-muted-foreground">
+                    Última actualización: {formatDateTime(order.updated_at)}
+                  </p>
+                </section>
+              ) : null}
+              {order.delivery_reference ? (
+                <p className="font-body text-xs leading-5 text-muted-foreground">
+                  Referencia: {order.delivery_reference}
+                </p>
+              ) : null}
+              {order.created_by_name ? (
+                <p className="flex items-center gap-1.5 font-body text-xs text-muted-foreground">
+                  <FileText size={14} className="text-brand" />
+                  Registrado por {order.created_by_name}
+                </p>
+              ) : null}
+              {order.notes ? (
+                <p className="rounded-lg bg-surface-raised px-3 py-2 font-body text-xs leading-5 text-muted-foreground">
+                  Nota: {order.notes}
+                </p>
+              ) : null}
             </div>
-          ) : null}
-
-          {order.created_by_name ? (
-            <div className="flex items-center gap-2 font-body text-sm text-muted-foreground">
-              <FileText size={15} className="text-brand" />
-              Registrado por {order.created_by_name}
-            </div>
-          ) : null}
-          {order.notes ? (
-            <p className="rounded-xl bg-surface-raised px-3 py-2 font-body text-xs text-muted-foreground">
-              Nota del pedido: {order.notes}
-            </p>
-          ) : null}
+          </details>
         </div>
 
-        <div className="space-y-3 pt-5">
+        <div className="space-y-3 border-t border-border/70 pt-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-heading text-xs font-bold">Cobro del negocio</p>
+              <p className={`mt-0.5 truncate font-body text-[11px] ${paymentIsSettled ? "text-success" : "text-warning"}`}>
+                {paymentSummary}
+              </p>
+            </div>
+            <span className="shrink-0 font-data text-xl font-bold text-brand">
+              {formatMoney(orderProductsTotal(order))}
+            </span>
+          </div>
+          <details key={order.id} className="group border-t border-border/50 pt-1">
+            <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-lg font-heading text-xs font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
+              <span>Ver desglose e información de pago</span>
+              <ChevronDown size={15} className="shrink-0 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="space-y-3 pb-2 pt-1">
           <div className="flex items-center justify-between font-body text-sm text-muted-foreground">
             <span>Productos{businessName ? ` para ${businessName}` : ""}</span>
             <span>{formatMoney(orderProductsTotal(order))}</span>
@@ -702,11 +752,20 @@ function OrderDetail({
               </div>
             </>
           ) : null}
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-heading text-base font-bold">Cobro del negocio</span>
-            <span className="font-data text-2xl font-bold text-brand">{formatMoney(orderProductsTotal(order))}</span>
-          </div>
-          <div className="flex items-center gap-2 font-body text-xs text-muted-foreground">
+          {order.marketplace_platform ? (
+            <div className="rounded-xl border border-warning/20 bg-warning/5 px-3 py-2 font-body text-xs text-muted-foreground">
+              {order.marketplace_payment_mode === "cash"
+                ? order.marketplace_cash_received === null || order.marketplace_cash_received === undefined
+                  ? "Efectivo del repartidor pendiente de confirmar"
+                  : `Efectivo recibido por el local: ${formatMoney(order.marketplace_cash_received)}`
+                : "Pago procesado en la aplicación de la plataforma. No genera cobro local."}
+              {hasRecordedMarketplaceCashReceipt(order) ? (
+                <p className="mt-2 border-t border-warning/15 pt-2 text-warning">
+                  Si borras esta comanda, el registro del efectivo se conservará en el corte de caja.
+                </p>
+              ) : null}
+            </div>
+          ) : <div className="flex items-center gap-2 font-body text-xs text-muted-foreground">
             {order.payment_status === "paid" && order.payment_method ? (
               <>
                 <PaymentMethodIcon method={order.payment_method} size={15} className="text-success" />
@@ -730,7 +789,7 @@ function OrderDetail({
                   : "Pago pendiente"}
               </>
             )}
-          </div>
+          </div>}
           {requestedPayment === "efectivo" && order.requested_cash_tendered ? (
             <div className="rounded-xl bg-warning-light/50 px-3 py-2 font-body text-xs text-muted-foreground">
               Paga con {formatMoney(order.requested_cash_tendered)}
@@ -738,6 +797,18 @@ function OrderDetail({
                 ? ` · Cambio ${formatMoney(order.change_given)}`
                 : ""}
             </div>
+          ) : null}
+            </div>
+          </details>
+          {onPrintOrder ? (
+            <button
+              type="button"
+              onClick={onPrintOrder}
+              className="mt-3 inline-flex h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-surface-raised px-3 font-heading text-xs font-bold text-foreground hover:bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98]"
+            >
+              <Printer size={16} />
+              Imprimir pedido
+            </button>
           ) : null}
           {onPay && isPendingPayment(order) ? (
             <button
@@ -801,11 +872,17 @@ export function SalesHistory() {
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<SalesHistoryOrder | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletionAuthorizers, setDeletionAuthorizers] = useState<OrderDeletionAuthorizer[]>([]);
+  const [deletionAuthorizerId, setDeletionAuthorizerId] = useState("");
+  const [deletionPin, setDeletionPin] = useState("");
+  const [loadingDeletionAuthorizers, setLoadingDeletionAuthorizers] = useState(false);
+  const [deletionAuthorizationError, setDeletionAuthorizationError] = useState<string | null>(null);
   const [paymentOrders, setPaymentOrders] = useState<SalesHistoryOrder[] | null>(null);
   const [ticketChoices, setTicketChoices] = useState<TicketChoice[]>([]);
   const [ticketOrder, setTicketOrder] = useState<SalesHistoryOrder | null>(null);
   const [ticketIntent, setTicketIntent] = useState<"view" | "correct">("view");
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
+  const [orderPrintData, setOrderPrintData] = useState<BusinessOrderPrintData | null>(null);
   const [ticketLoading, setTicketLoading] = useState(false);
   const [correctionTicket, setCorrectionTicket] = useState<{
     id: string;
@@ -817,6 +894,7 @@ export function SalesHistory() {
   const [expandedPendingAccount, setExpandedPendingAccount] = useState<string | null>(null);
   const historyRequestId = useRef(0);
   const loadingMoreLock = useRef(false);
+  const orderPrintPending = useRef(false);
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
   const fetchCurrentShiftForBusiness = useCashShiftStore(
     (state) => state.fetchCurrentShiftForBusiness
@@ -847,6 +925,34 @@ export function SalesHistory() {
       ),
     [businesses]
   );
+
+  useEffect(() => {
+    if (!orderPrintData || !orderPrintPending.current) return;
+    orderPrintPending.current = false;
+    const clearTicket = () => setOrderPrintData(null);
+    window.addEventListener("afterprint", clearTicket);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const ticket = document.querySelector(".order-ticket-print-root");
+        const imageLoads = ticket
+          ? Array.from(ticket.querySelectorAll("img"), (image) =>
+              image.decode().catch(() => undefined)
+            )
+          : [];
+        await Promise.race([
+          Promise.all([document.fonts.ready, ...imageLoads]),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 1200)),
+        ]);
+        if (!cancelled) window.print();
+      })();
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", clearTicket);
+    };
+  }, [orderPrintData]);
 
   const range = useMemo(
     () => periodTimestamps(period),
@@ -901,6 +1007,11 @@ export function SalesHistory() {
       }
     }
   }, [range]);
+
+  const pullToRefreshRef = usePullToRefresh<HTMLDivElement>(
+    loadHistory,
+    !loading && !loadingMore,
+  );
 
   const loadMoreHistory = useCallback(async () => {
     if (
@@ -1062,11 +1173,69 @@ export function SalesHistory() {
     () => getPendingTableAccounts(pendingPaymentOrders),
     [pendingPaymentOrders]
   );
-  const canDeleteHistory = (businessId: string | null | undefined) =>
-    canDeleteBusinessOrderHistory(
-      readableBusinesses.find((business) => business.business_id === businessId),
-      legacyBusinessContext ? viewerRole : null
+  const canDeleteOrderHistory = (order: SalesHistoryOrder) => {
+    const businessContext = readableBusinesses.find(
+      (business) => business.business_id === order.business_id,
     );
+    return (
+      canDeleteBusinessOrderHistoryForType(
+        businessContext,
+        order.type,
+        legacyBusinessContext ? viewerRole : null,
+      )
+    );
+  };
+  const requiresOwnerPinForDeletion = (businessId: string | null | undefined) =>
+    requiresBusinessOwnerPinForOrderDeletion(
+      readableBusinesses.find((business) => business.business_id === businessId)
+    );
+  const selectedDeletionAuthorizer = deletionAuthorizers.find(
+    (authorizer) => authorizer.id === deletionAuthorizerId
+  );
+
+  async function openDeleteDialog(order: SalesHistoryOrder) {
+    setDeleteTarget(order);
+    setDeletionAuthorizers([]);
+    setDeletionAuthorizerId("");
+    setDeletionPin("");
+    setDeletionAuthorizationError(null);
+
+    if (!requiresOwnerPinForDeletion(order.business_id)) return;
+
+    setLoadingDeletionAuthorizers(true);
+    const result = await listBusinessOrderDeletionAuthorizers(order.business_id ?? "");
+    setLoadingDeletionAuthorizers(false);
+    if (!result.success) {
+      setDeletionAuthorizationError(result.error ?? "No se pudo cargar la autorización");
+      return;
+    }
+
+    setDeletionAuthorizers(result.authorizers);
+    setDeletionAuthorizerId(
+      result.authorizers.find((authorizer) => authorizer.pin_configured)?.id ??
+        result.authorizers[0]?.id ??
+        ""
+    );
+    if (result.authorizers.length === 0) {
+      setDeletionAuthorizationError(
+        "No hay un dueño activo de este negocio. Revisa su acceso en Personal."
+      );
+    } else if (!result.authorizers.some((authorizer) => authorizer.pin_configured)) {
+      setDeletionAuthorizationError(
+        "El dueño de este negocio debe configurar su PIN en Personal antes de autorizar borrados."
+      );
+    }
+  }
+
+  function closeDeleteDialog() {
+    if (isDeleting) return;
+    setDeleteTarget(null);
+    setDeletionAuthorizers([]);
+    setDeletionAuthorizerId("");
+    setDeletionPin("");
+    setDeletionAuthorizationError(null);
+    setLoadingDeletionAuthorizers(false);
+  }
   const canCorrectPayment = ["owner", "admin", "waiter"].includes(
     viewerRole ?? ""
   );
@@ -1078,6 +1247,17 @@ export function SalesHistory() {
       return;
     }
     setPaymentOrders([order]);
+  }
+
+  async function printOrder(order: SalesHistoryOrder) {
+    orderPrintPending.current = true;
+    const result = await getBusinessOrderPrintDataAction(order.id);
+    if (!result.success || !result.data) {
+      orderPrintPending.current = false;
+      toast.error(result.error ?? "No se pudo preparar el ticket");
+      return;
+    }
+    setOrderPrintData(result.data);
   }
 
   async function openAccountPayment(account: PendingTableAccount) {
@@ -1173,7 +1353,11 @@ export function SalesHistory() {
   async function handleDeleteOrder() {
     if (!deleteTarget || isDeleting) return;
     setIsDeleting(true);
-    const result = await deleteSalesHistoryOrder(deleteTarget.id);
+    const authorization = requiresOwnerPinForDeletion(deleteTarget.business_id)
+      ? { authorizerId: deletionAuthorizerId, pin: deletionPin }
+      : null;
+    const result = await deleteSalesHistoryOrder(deleteTarget.id, authorization);
+    setDeletionPin("");
     if (!result.success || result.error) {
       toast.error(result.error ?? "No se pudo eliminar el pedido");
     } else {
@@ -1181,35 +1365,27 @@ export function SalesHistory() {
       setSelectedOrder((current) => (current?.id === deleteTarget.id ? null : current));
       toast.success(`Pedido #${deleteTarget.number} eliminado del historial`);
       setDeleteTarget(null);
+      setDeletionAuthorizers([]);
+      setDeletionAuthorizerId("");
+      setDeletionAuthorizationError(null);
     }
     setIsDeleting(false);
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
-      <div className="pos-scroll min-h-0 flex-1 touch-pan-y overscroll-y-contain overflow-y-auto p-3 sm:p-5 lg:p-6">
+      <div ref={pullToRefreshRef} className="pos-scroll min-h-0 flex-1 touch-pan-y overscroll-y-contain overflow-y-auto p-3 sm:p-5 lg:p-6">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 pb-8">
-          <header className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 shadow-card sm:flex-row sm:items-center sm:justify-between sm:p-5">
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-white shadow-md shadow-brand/20">
+          <header className="flex items-center gap-3 px-1 pb-1">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white">
                 <CalendarDays size={21} />
-              </span>
-              <div>
-                <h1 className="font-heading text-xl font-bold sm:text-2xl">Historial de ventas</h1>
-                <p className="font-body text-sm text-muted-foreground">
-                  Consulta pedidos, cobros y seguimiento de entregas
-                </p>
-              </div>
+            </span>
+            <div>
+              <h1 className="font-heading text-xl font-bold sm:text-2xl">Historial de ventas</h1>
+              <p className="font-body text-sm text-muted-foreground">
+                Consulta pedidos, cobros y seguimiento de entregas
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={() => void loadHistory()}
-              disabled={loading}
-              className="inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-border bg-surface-raised px-4 font-heading text-xs font-bold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
-            >
-              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-              Actualizar
-            </button>
           </header>
 
           {pendingPaymentOrders.length > 0 ? (
@@ -1407,8 +1583,9 @@ export function SalesHistory() {
                 <OrderDetail
                   order={selectedOrder}
                   businessName={selectedOrder.business_id ? businessNames.get(selectedOrder.business_id) ?? null : null}
-                  onDelete={canDeleteHistory(selectedOrder.business_id) ? () => setDeleteTarget(selectedOrder) : undefined}
+                  onDelete={canDeleteOrderHistory(selectedOrder) ? () => void openDeleteDialog(selectedOrder) : undefined}
                   onPay={() => void openPaymentModal(selectedOrder)}
+                  onPrintOrder={() => void printOrder(selectedOrder)}
                   onReceipt={() => void openTickets(selectedOrder)}
                   onCorrectPayment={
                     canCorrectPayment
@@ -1517,8 +1694,9 @@ export function SalesHistory() {
               order={selectedOrder}
               businessName={selectedOrder.business_id ? businessNames.get(selectedOrder.business_id) ?? null : null}
               onClose={() => setSelectedOrder(null)}
-              onDelete={canDeleteHistory(selectedOrder.business_id) ? () => setDeleteTarget(selectedOrder) : undefined}
+              onDelete={canDeleteOrderHistory(selectedOrder) ? () => void openDeleteDialog(selectedOrder) : undefined}
               onPay={() => void openPaymentModal(selectedOrder)}
+              onPrintOrder={() => void printOrder(selectedOrder)}
               onReceipt={() => void openTickets(selectedOrder)}
               onCorrectPayment={
                 canCorrectPayment
@@ -1593,6 +1771,8 @@ export function SalesHistory() {
 
       {receipt ? <ReceiptDialog receipt={receipt} onClose={() => setReceipt(null)} /> : null}
 
+      {orderPrintData ? <OrderReceiptTicket data={orderPrintData} /> : null}
+
       {correctionTicket && viewerRole ? (
         <PaymentMethodCorrectionDialog
           transactionId={correctionTicket.id}
@@ -1614,7 +1794,7 @@ export function SalesHistory() {
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/50 p-4 backdrop-blur-[2px]"
           onClick={(event) => {
-            if (event.target === event.currentTarget && !isDeleting) setDeleteTarget(null);
+            if (event.target === event.currentTarget && !isDeleting) closeDeleteDialog();
           }}
         >
           <div
@@ -1635,18 +1815,69 @@ export function SalesHistory() {
             >
               Se eliminarán el pedido y sus artículos del historial de forma permanente. Esta acción no se puede deshacer.
             </p>
+            {requiresOwnerPinForDeletion(deleteTarget.business_id) ? (
+              <section className="mt-4 rounded-2xl border border-warning/30 bg-warning/8 p-3">
+                <div className="mb-2 flex items-center gap-2 font-heading text-sm font-bold">
+                  <LockKeyhole size={16} className="text-warning" />
+                  Autorización del dueño
+                </div>
+                <p className="mb-3 font-body text-xs leading-5 text-muted-foreground">
+                  El PIN debe pertenecer al dueño de {businessNames.get(deleteTarget.business_id ?? "") ?? "este negocio"}.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <select
+                    aria-label="Dueño que autoriza el borrado"
+                    value={deletionAuthorizerId}
+                    onChange={(event) => setDeletionAuthorizerId(event.target.value)}
+                    disabled={loadingDeletionAuthorizers || deletionAuthorizers.length === 0}
+                    className="h-11 min-w-0 rounded-xl border border-border bg-background px-3 font-body text-sm outline-none focus:border-brand disabled:opacity-60"
+                  >
+                    <option value="">
+                      {loadingDeletionAuthorizers ? "Cargando dueños..." : "Selecciona al dueño"}
+                    </option>
+                    {deletionAuthorizers.map((authorizer) => (
+                      <option key={authorizer.id} value={authorizer.id} disabled={!authorizer.pin_configured}>
+                        {authorizer.full_name || "Dueño del negocio"}{authorizer.pin_configured ? "" : " · sin PIN"}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={4}
+                    value={deletionPin}
+                    onChange={(event) => setDeletionPin(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="PIN de 4 dígitos"
+                    aria-label="PIN de autorización del dueño"
+                    disabled={loadingDeletionAuthorizers || !selectedDeletionAuthorizer?.pin_configured}
+                    className="h-11 min-w-0 rounded-xl border border-border bg-background px-3 font-data tracking-[0.3em] outline-none focus:border-brand disabled:opacity-60"
+                  />
+                </div>
+                {deletionAuthorizationError ? (
+                  <p role="status" className="mt-2 font-body text-xs leading-5 text-warning">
+                    {deletionAuthorizationError}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
             <div className="mt-6 flex gap-2">
               <button
                 type="button"
                 disabled={isDeleting}
-                onClick={() => setDeleteTarget(null)}
+                onClick={closeDeleteDialog}
                 className="h-12 flex-1 rounded-xl border border-border font-heading text-sm font-bold text-muted-foreground disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                disabled={isDeleting}
+                disabled={
+                  isDeleting ||
+                  loadingDeletionAuthorizers ||
+                  (requiresOwnerPinForDeletion(deleteTarget.business_id) &&
+                    (!selectedDeletionAuthorizer?.pin_configured || deletionPin.length !== 4))
+                }
                 onClick={() => void handleDeleteOrder()}
                 className="action-danger h-12 flex-1 rounded-xl font-heading text-sm font-bold disabled:cursor-wait disabled:opacity-60"
               >
@@ -1704,17 +1935,12 @@ function HistoryOrderRow({
   const deliveryStatus = order.type === "domicilio"
     ? DELIVERY_STATUS_META[order.delivery_status ?? "pending"]
     : null;
-  const typeAccent = order.type === "domicilio"
-    ? "border-l-success"
-    : order.type === "para_llevar"
-      ? "border-l-brand"
-      : "border-l-gold";
   const itemsCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full touch-manipulation items-center gap-3 rounded-xl border border-l-4 p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset active:scale-[0.995] sm:p-4 ${typeAccent} ${
+      className={`group flex w-full touch-manipulation items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset active:scale-[0.995] sm:p-4 ${
         selected
           ? "border-brand/60 bg-brand-light/40"
           : "border-border bg-background/40 hover:border-border-strong hover:bg-background/80"
@@ -1735,9 +1961,15 @@ function HistoryOrderRow({
               {businessName}
             </span>
           ) : null}
+          {order.marketplace_platform ? (
+            <span className="rounded-full bg-warning/12 px-2 py-0.5 font-heading text-[10px] font-bold text-warning">
+              {order.marketplace_platform === "uber_eats" ? "Uber Eats" : "Didi Food"}
+            </span>
+          ) : null}
         </span>
         <span className="mt-1 block truncate font-body text-xs text-muted-foreground">
           {formatTime(order.created_at)} · {TYPE_LABELS[order.type]}
+          {order.marketplace_payment_mode === "cash" ? " · Efectivo al repartidor" : order.marketplace_platform ? " · Pagado en app" : ""}
           {order.type === "comedor" ? ` · ${formatOrderLocation(order)}` : ""}
           {order.customer_name
             ? ` · ${order.customer_name}`

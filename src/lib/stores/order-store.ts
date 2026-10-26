@@ -3,17 +3,22 @@ import { createClient } from "@/lib/supabase/client";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import type { Order, OrderItem, CartItem, MenuItem } from "@/types/database";
 import {
+  ACTIVE_ORDER_ITEMS_SELECT,
+  mapActiveOrderRows,
+  type ActiveOrderRow,
+} from "@/lib/active-order-query";
+import {
   ACTIVE_ORDERS_TIMEOUT_MS,
   createRequestDeadline,
   getRealtimeReconnectDelay,
 } from "@/lib/realtime-resilience";
-import { notifyWhatsappOrderStatusAction } from "@/lib/actions/whatsapp-order-status";
 import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
 import {
   getOrderableBusinessContexts,
   getOrderReadableBusinessContexts,
 } from "@/lib/multibusiness/business-context-selection";
 import { useBusinessContextStore } from "./business-context-store";
+import type { MarketplaceOrderSelection } from "@/lib/marketplace-orders";
 
 export interface OrderItemWithName extends OrderItem {
   menu_item_name?: string;
@@ -39,6 +44,8 @@ export interface PosDeliveryDetails {
   kitchenReleaseAt?: string | null;
 }
 
+export type PosMarketplaceDetails = MarketplaceOrderSelection;
+
 interface OrderState {
   activeOrders: OrderWithItems[];
   todayOrders: OrderWithItems[];
@@ -58,8 +65,11 @@ interface OrderState {
     customerId?: string | null,
     customerPhone?: string | null,
     channelConversationId?: string | null,
-    schedule?: { scheduledFor: string; kitchenReleaseAt: string },
-    creationKey?: string
+    schedule?: { scheduledFor: string; kitchenReleaseAt: string } | null,
+    creationKey?: string,
+    businessCustomerId?: string | null,
+    businessCustomerIds?: Record<string, string>,
+    marketplace?: PosMarketplaceDetails | null,
   ) => Promise<{
     order: Order | null;
     orders?: Order[];
@@ -81,7 +91,8 @@ interface OrderState {
     customerId?: string | null,
     customerPhone?: string | null,
     channelConversationId?: string | null,
-    schedule?: { scheduledFor: string; kitchenReleaseAt: string }
+    schedule?: { scheduledFor: string; kitchenReleaseAt: string } | null,
+    businessCustomerId?: string | null
   ) => Promise<{ error: string | null }>;
   deleteOrder: (orderId: string) => Promise<{ error: string | null }>;
   markAsServed: (orderId: string) => Promise<{ error: string | null }>;
@@ -145,6 +156,9 @@ function orderLoadError(error: unknown, fallback: string) {
 
 function orderCreateError(error: { message?: string } | null, fallback: string) {
   const message = error?.message ?? "";
+  if (message.includes("MARKETPLACE_PRODUCT_NOT_AVAILABLE")) {
+    return "Uno de los productos ya no está disponible en esta plataforma. Revisa la selección antes de enviar.";
+  }
   if (
     message.includes("BUSINESS_LICENSE_INACTIVE") ||
     message.includes("PLATFORM_EMERGENCY_SUSPENDED")
@@ -162,6 +176,7 @@ const OPTIONAL_ORDER_SELECT_COLUMNS = [
   "source_channel",
   "channel_conversation_id",
   "customer_id",
+  "business_customer_id",
   "customer_phone",
   "whatsapp_status_opt_in",
   "delivery_address",
@@ -178,6 +193,13 @@ const OPTIONAL_ORDER_SELECT_COLUMNS = [
   "kitchen_release_at",
   "kitchen_released_at",
   "schedule_status",
+  "marketplace_platform",
+  "marketplace_payment_mode",
+  "marketplace_handed_off_at",
+  "marketplace_handed_off_by",
+  "marketplace_handoff_key",
+  "marketplace_cash_received",
+  "marketplace_cash_shift_id",
 ] as const;
 
 function shouldRetryLegacyOrderSelect(
@@ -216,7 +238,7 @@ function parseCreatedOrders(data: unknown): Order[] {
 async function publishOrderNotification(
   supabase: ReturnType<typeof createClient>,
   orderId: string,
-  event: "new_order" | "ready"
+  event: "new_order" | "in_preparation" | "ready"
 ) {
   try {
     const result = await supabase.functions.invoke("send-order-notification", {
@@ -257,18 +279,6 @@ async function getOrderScope() {
     legacyFallback: scope.legacyFallback,
     error: scope.error,
   };
-}
-
-function relatedMenuItemName(item: OrderItem) {
-  const relatedMenuItem = (
-    item as OrderItem & {
-      menu_items?: { name?: string } | { name?: string }[] | null;
-    }
-  ).menu_items;
-  const relatedName = Array.isArray(relatedMenuItem)
-    ? relatedMenuItem[0]?.name
-    : relatedMenuItem?.name;
-  return relatedName?.trim() || null;
 }
 
 function knownOrderBusinessId(
@@ -344,8 +354,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
         const supabase = createClient();
         const legacyOrderSelect =
-          "id,business_id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,table_visit_id,business_account_id,order_batch_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at";
-        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_id,customer_phone,whatsapp_status_opt_in,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status`;
+          `id,business_id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,cash_shift_id,table_visit_id,business_account_id,order_batch_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at,${ACTIVE_ORDER_ITEMS_SELECT}`;
+        const orderSelect = `${legacyOrderSelect},source_channel,channel_conversation_id,customer_id,business_customer_id,customer_phone,whatsapp_status_opt_in,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status,marketplace_platform,marketplace_payment_mode,marketplace_handed_off_at,marketplace_handed_off_by,marketplace_handoff_key,marketplace_cash_received,marketplace_cash_shift_id`;
         const ordersDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
         let activeResult;
         try {
@@ -396,55 +406,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           return;
         }
 
-        const orders = (activeResult.data ?? []) as Order[];
+        const orders = (activeResult.data ?? []) as unknown as ActiveOrderRow[];
 
         if (orders.length === 0) {
           set({ activeOrders: [], todayOrders: [], lastError: null });
           return;
         }
 
-        const itemsDeadline = createRequestDeadline(ACTIVE_ORDERS_TIMEOUT_MS);
-        let orderItemsResult;
-        try {
-          orderItemsResult = await supabase
-            .from("order_items")
-            .select("id,order_id,menu_item_id,quantity,unit_price,notes,selected_modifiers,created_at,menu_items(name)")
-            .in(
-              "order_id",
-              orders.map((order) => order.id)
-            )
-            .abortSignal(itemsDeadline.signal);
-        } finally {
-          itemsDeadline.clear();
-        }
-        const { data: orderItemsData, error: itemsError } = orderItemsResult;
-
-        if (itemsError || !orderItemsData) {
-          set({
-            lastError: "No se pudieron cargar los artículos de los pedidos",
-          });
-          return;
-        }
-
-        const orderItemsByOrder = new Map<string, OrderItem[]>();
-        for (const item of orderItemsData as OrderItem[]) {
-          const currentItems = orderItemsByOrder.get(item.order_id) ?? [];
-          currentItems.push(item);
-          orderItemsByOrder.set(item.order_id, currentItems);
-        }
-
-        const map = get().menuItemsMap;
-        const ordersWithItems = orders.map((order) => ({
-          ...order,
-          items: (orderItemsByOrder.get(order.id) ?? []).map((item) => ({
-            ...item,
-            selected_modifiers: normalizeWhatsappPosModifiers(item.selected_modifiers),
-            menu_item_name:
-              relatedMenuItemName(item) ??
-              map.get(item.menu_item_id) ??
-              "Producto eliminado",
-          })),
-        }));
+        const ordersWithItems = mapActiveOrderRows(orders, get().menuItemsMap);
         set({
           activeOrders: ordersWithItems,
           todayOrders: ordersWithItems,
@@ -477,8 +446,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     customerId,
     customerPhone,
     channelConversationId,
-    schedule,
-    requestedCreationKey
+      schedule,
+      requestedCreationKey,
+      businessCustomerId,
+      businessCustomerIds,
+      marketplace
   ) => {
     if (items.length === 0) {
       return {
@@ -511,10 +483,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       notes,
       tableNumber,
       customerName,
+      customerPhone,
+      businessCustomerId,
+      businessCustomerIds,
       tableId,
       delivery,
       channelConversationId,
       schedule,
+      marketplace,
     });
     const creationKey =
       requestedCreationKey ??
@@ -564,6 +540,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         attemptOutcome: "rejected",
       };
     }
+    if (marketplace && (itemBusinessIds.size !== 1 || orderType !== "para_llevar")) {
+      pendingOrderCreationKeys.delete(creationFingerprint);
+      return {
+        order: null,
+        error: "Los pedidos de plataforma deben pertenecer a un solo negocio y no usan domicilio local",
+        attemptOutcome: "rejected",
+      };
+    }
     const useMixedTableOrder =
       !scope.legacyFallback &&
       orderType === "comedor" &&
@@ -577,14 +561,21 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     let creationError: { message?: string; code?: string } | null = null;
 
     if (useMixedTableOrder) {
-      const result = await supabase.rpc("create_multibusiness_table_orders", {
+      const batchOrderParams = {
         p_creation_key: creationKey,
         p_table_id: tableId,
         p_table_number: tableNumber || null,
         p_items: orderItems,
         p_notes: notes,
         p_customer_name: customerName || null,
-      });
+      };
+      const result = Object.keys(businessCustomerIds ?? {}).length > 0
+        ? await supabase.rpc("create_multibusiness_table_orders_with_customers", {
+            ...batchOrderParams,
+            p_customer_phone: customerPhone?.replace(/\D/g, "").slice(-15) || null,
+            p_business_customer_ids: businessCustomerIds,
+          })
+        : await supabase.rpc("create_multibusiness_table_orders", batchOrderParams);
       creationError = result.error;
       createdOrders = parseCreatedOrders(result.data);
       if (creationError || createdOrders.length === 0) {
@@ -613,6 +604,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         p_customer_name: customerName || null,
         p_details: {
           ...(customerId ? { customer_id: customerId } : {}),
+          ...(businessCustomerId ? { business_customer_id: businessCustomerId } : {}),
           ...(customerPhone ? { customer_phone: customerPhone } : {}),
           ...(channelConversationId
             ? { channel_conversation_id: channelConversationId }
@@ -639,6 +631,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
                 schedule: {
                   scheduled_for: schedule.scheduledFor,
                   kitchen_release_at: schedule.kitchenReleaseAt,
+                },
+              }
+            : {}),
+          ...(marketplace
+            ? {
+                marketplace: {
+                  platform: marketplace.platform,
+                  payment_mode: marketplace.paymentMode,
                 },
               }
             : {}),
@@ -689,11 +689,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       createdOrders = [order];
     }
 
-    if (!useMixedTableOrder && !singleBusinessId && (customerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery) || schedule)) {
+    if (!useMixedTableOrder && !singleBusinessId && (customerId || businessCustomerId || customerPhone || channelConversationId || (orderType === "domicilio" && delivery) || schedule)) {
       const updatedQuery = supabase
         .from("orders")
         .update({
           ...(customerId ? { customer_id: customerId } : {}),
+          ...(businessCustomerId ? { business_customer_id: businessCustomerId } : {}),
           ...(customerPhone ? { customer_phone: customerPhone } : {}),
           ...(channelConversationId
             ? { source_channel: "whatsapp", channel_conversation_id: channelConversationId }
@@ -780,9 +781,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       ],
     }));
     for (const createdOrder of createdOrders) {
-      if (createdOrder.schedule_status !== "scheduled") {
-      // El pedido ya está persistido y Realtime se encarga de Cocina. El Push
-      // es una señal secundaria y no debe retrasar la confirmación del POS.
+      const scheduleReleased =
+        createdOrder.schedule_status !== "scheduled" ||
+        (createdOrder.kitchen_release_at !== null &&
+          createdOrder.kitchen_release_at !== undefined &&
+          new Date(createdOrder.kitchen_release_at).getTime() <= Date.now());
+      if (scheduleReleased) {
+        // El pedido ya está persistido y Realtime se encarga de Cocina. El Push
+        // es una señal secundaria y no debe retrasar la confirmación del POS.
         void publishOrderNotification(supabase, createdOrder.id, "new_order");
       }
     }
@@ -859,17 +865,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       };
     }
 
-    if (status === "ready") {
-      // No bloqueamos el cambio operativo esperando al proveedor de Push.
-      void publishOrderNotification(supabase, orderId, "ready");
-    }
-
     if (status === "in_kitchen" || status === "ready") {
-      void notifyWhatsappOrderStatusAction(orderId, status).then((result) => {
-        if (!result.success) {
-          console.warn("El pedido cambió de estado, pero no se pudo avisar por WhatsApp.");
-        }
-      });
+      // No bloqueamos el cambio operativo esperando al proveedor de Push.
+      void publishOrderNotification(
+        supabase,
+        orderId,
+        status === "in_kitchen" ? "in_preparation" : "ready",
+      );
     }
 
     set((state) => {
@@ -897,7 +899,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     customerId,
     customerPhone,
     channelConversationId,
-    schedule
+    schedule,
+    businessCustomerId
   ) => {
     if (items.length === 0) {
       return { error: "El pedido debe tener al menos un artículo" };
@@ -942,7 +945,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       return { error: error.message || "No se pudo editar el pedido" };
     }
 
-    if (delivery || notes !== undefined || customerId !== undefined || customerPhone !== undefined || channelConversationId || schedule) {
+    if (delivery || notes !== undefined || customerId !== undefined || businessCustomerId !== undefined || customerPhone !== undefined || channelConversationId || schedule !== undefined) {
       let deliveryQuery = supabase
         .from("orders")
         .update({
@@ -976,17 +979,25 @@ export const useOrderStore = create<OrderState>((set, get) => ({
               }
             : {}),
           ...(customerId !== undefined ? { customer_id: customerId } : {}),
+          ...(businessCustomerId !== undefined ? { business_customer_id: businessCustomerId } : {}),
           ...(customerPhone !== undefined ? { customer_phone: customerPhone || null } : {}),
           ...(channelConversationId
             ? { source_channel: "whatsapp", channel_conversation_id: channelConversationId }
             : {}),
-          ...(schedule
-            ? {
-                scheduled_for: schedule.scheduledFor,
-                kitchen_release_at: schedule.kitchenReleaseAt,
-                kitchen_released_at: null,
-                schedule_status: "scheduled",
-              }
+          ...(schedule !== undefined
+            ? schedule
+              ? {
+                  scheduled_for: schedule.scheduledFor,
+                  kitchen_release_at: schedule.kitchenReleaseAt,
+                  kitchen_released_at: null,
+                  schedule_status: "scheduled",
+                }
+              : {
+                  scheduled_for: null,
+                  kitchen_release_at: null,
+                  kitchen_released_at: null,
+                  schedule_status: "none",
+                }
             : {}),
           ...(notes !== undefined ? { notes } : {}),
           updated_at: new Date().toISOString(),
@@ -1013,6 +1024,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           table_id: tableId || null,
           customer_name: customerName || null,
           customer_id: customerId ?? currentOrder.customer_id,
+          business_customer_id: businessCustomerId ?? currentOrder.business_customer_id,
           customer_phone: customerPhone ?? delivery?.phone ?? currentOrder.customer_phone,
           whatsapp_status_opt_in: delivery?.whatsappStatusOptIn ?? currentOrder.whatsapp_status_opt_in,
           delivery_address: delivery?.address || currentOrder.delivery_address,
@@ -1024,11 +1036,25 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           delivery_longitude: delivery?.longitude ?? currentOrder.delivery_longitude,
           payment_method_requested: delivery?.paymentMethod ?? currentOrder.payment_method_requested,
           requested_cash_tendered: delivery?.cashTendered ?? currentOrder.requested_cash_tendered,
-          scheduled_for: schedule?.scheduledFor ?? delivery?.scheduledFor ?? currentOrder.scheduled_for,
-          kitchen_release_at: schedule?.kitchenReleaseAt ?? delivery?.kitchenReleaseAt ?? currentOrder.kitchen_release_at,
-          schedule_status: schedule?.scheduledFor || delivery?.scheduledFor
-            ? "scheduled"
-            : currentOrder.schedule_status,
+          scheduled_for: schedule !== undefined
+            ? schedule?.scheduledFor ?? null
+            : delivery
+              ? delivery.scheduledFor ?? null
+              : currentOrder.scheduled_for,
+          kitchen_release_at: schedule !== undefined
+            ? schedule?.kitchenReleaseAt ?? null
+            : delivery
+              ? delivery.kitchenReleaseAt ?? null
+              : currentOrder.kitchen_release_at,
+          schedule_status: schedule !== undefined
+            ? schedule
+              ? "scheduled"
+              : "none"
+            : delivery
+              ? delivery.scheduledFor
+                ? "scheduled"
+                : "none"
+              : currentOrder.schedule_status,
           notes: notes ?? currentOrder.notes,
           updated_at: new Date().toISOString(),
         },

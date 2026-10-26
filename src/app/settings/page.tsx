@@ -12,7 +12,6 @@ import {
   Mail,
   Pencil,
   Plus,
-  RefreshCw,
   Search,
   ShieldCheck,
   Trash2,
@@ -27,6 +26,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { RinconBrand } from "@/components/auth/rincon-brand";
 import { BusinessStaffRolesManager } from "@/components/admin/business-staff-roles-manager";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import {
   createUserAction,
   deactivateUserAction,
@@ -230,6 +230,21 @@ export default function SettingsPage() {
     setStaffRolesLoading(false);
     return result;
   }
+
+  async function refreshStaffData() {
+    const refreshes: Promise<unknown>[] = [loadProfiles()];
+    if (managementContext.mode === "organization") {
+      refreshes.push(loadGlobalWaiterBusinessAccess());
+    } else if (managementContext.mode === "business") {
+      refreshes.push(loadBusinessStaffRoles());
+    }
+    await Promise.all(refreshes);
+  }
+
+  const pullToRefreshRef = usePullToRefresh<HTMLElement>(
+    refreshStaffData,
+    !loading && !isPending,
+  );
 
   const filteredProfiles = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -555,7 +570,7 @@ export default function SettingsPage() {
         </nav>
       ) : null}
 
-      <main className="mideli-page-scroll flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <main ref={pullToRefreshRef} className="mideli-page-scroll flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
         <div className="mx-auto max-w-5xl space-y-6">
           <section className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
             <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-brand/10 blur-3xl" />
@@ -799,22 +814,6 @@ export default function SettingsPage() {
                       : "Edita permisos o controla el acceso sin perder la operación histórica."}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void loadProfiles();
-                    if (managementContext.mode === "organization") {
-                      void loadGlobalWaiterBusinessAccess();
-                    } else if (managementContext.mode === "business") {
-                      void loadBusinessStaffRoles();
-                    }
-                  }}
-                  disabled={loading || isPending}
-                  className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-xl border border-border px-3 font-heading text-xs font-bold text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 disabled:opacity-50 lg:self-auto"
-                >
-                  <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                  Actualizar
-                </button>
               </div>
 
               <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -1181,7 +1180,7 @@ export default function SettingsPage() {
             </div>
 
             <p className="mt-3 rounded-xl border border-border bg-background/50 p-3 font-body text-xs leading-5 text-muted-foreground">
-              Activa solo los negocios donde esta mesera podrá tomar pedidos y cobrar. La caja se asigna por separado desde los rangos locales del dueño.
+              Activa los negocios donde esta mesera puede usar el menú y cobrar. En Estado e Historial solo verá pedidos de comer aquí; domicilio, para llevar y plataformas quedan con el equipo local. La caja se asigna por separado desde los rangos del negocio.
             </p>
 
             {businessAccessLoading ? (

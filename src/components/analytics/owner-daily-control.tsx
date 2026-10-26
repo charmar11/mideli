@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Calculator,
@@ -10,6 +11,7 @@ import {
   Clock3,
   Mail,
   PackageSearch,
+  RefreshCw,
   Save,
   Send,
   Store,
@@ -32,6 +34,89 @@ import type {
 import { cn } from "@/lib/utils";
 
 const number = new Intl.NumberFormat("es-MX", { maximumFractionDigits: 1 });
+
+export function OwnerDailyControlLoading({
+  emailEnabled,
+}: {
+  emailEnabled: boolean;
+}) {
+  return (
+    <section
+      aria-busy="true"
+      aria-label="Cargando control del dueño"
+      className={cn(
+        "grid gap-4",
+        emailEnabled && "xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,.65fr)]"
+      )}
+    >
+      <div className="min-h-[26rem] animate-pulse rounded-2xl bg-card p-4 ring-1 ring-foreground/10 sm:p-5">
+        <div className="h-6 w-48 rounded bg-surface-raised" />
+        <div className="mt-2 h-4 w-72 max-w-full rounded bg-surface-raised/70" />
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div
+              key={index}
+              className="h-20 rounded-xl bg-surface-raised/70"
+            />
+          ))}
+        </div>
+        <div className="mt-4 h-24 rounded-xl bg-surface-raised/70" />
+        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="h-20 rounded-xl bg-surface-raised/70" />
+          ))}
+        </div>
+      </div>
+      {emailEnabled ? (
+        <div className="min-h-[26rem] animate-pulse rounded-2xl bg-card p-4 ring-1 ring-foreground/10 sm:p-5">
+          <div className="h-6 w-44 rounded bg-surface-raised" />
+          <div className="mt-2 h-4 w-full rounded bg-surface-raised/70" />
+          <div className="mt-6 h-12 rounded-xl bg-surface-raised/70" />
+          <div className="mt-3 h-12 rounded-xl bg-surface-raised/70" />
+          <div className="mt-4 h-10 rounded-xl bg-surface-raised/70" />
+          <div className="mt-6 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <div className="h-11 rounded-xl bg-surface-raised/70" />
+            <div className="h-11 rounded-xl bg-surface-raised/70" />
+          </div>
+        </div>
+      ) : null}
+      <span className="sr-only">Cargando control del dueño</span>
+    </section>
+  );
+}
+
+export function OwnerDailyControlUnavailable() {
+  const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
+
+  return (
+    <Card className="gap-0 rounded-2xl py-0">
+      <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning/12 text-warning">
+            <AlertTriangle size={18} />
+          </span>
+          <div>
+            <h2 className="font-heading text-base font-bold">Control del dueño</h2>
+            <p className="mt-1 font-body text-sm text-muted-foreground">
+              No se pudo cargar este resumen.
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isRefreshing}
+          onClick={() => startRefresh(() => router.refresh())}
+          className="h-11 rounded-xl font-heading font-bold"
+        >
+          <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
+          {isRefreshing ? "Actualizando" : "Reintentar"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 const actionTone: Record<OwnerAction["tone"], string> = {
   danger: "border-destructive/25 bg-destructive/8 text-destructive",
@@ -111,6 +196,12 @@ export function OwnerDailyControl({
       : `${number.format(operation.kitchen.averageMinutes)} min`;
   const lowestMargin = operation.menu.lowestMargins[0];
   const highestMargin = operation.menu.highestMargins[0];
+  const controlAmount =
+    analytics.service === "plataformas"
+      ? analytics.marketplace.handedOffValue.current
+      : analytics.summary.revenue.current;
+  const controlAmountLabel =
+    analytics.service === "plataformas" ? "Valor de tickets" : "Venta en caja";
 
   function saveSettings() {
     startSaving(async () => {
@@ -159,9 +250,13 @@ export function OwnerDailyControl({
                 Revisa lo importante del periodo y entra directo a resolverlo.
               </p>
             </div>
-            <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-gold-light px-3 py-2 font-data text-xs font-bold text-gold">
+            <span
+              aria-label={`${controlAmountLabel}: ${formatCurrency(controlAmount)}`}
+              className="inline-flex w-fit items-center gap-2 rounded-xl bg-gold-light px-3 py-2 font-data text-xs font-bold text-gold"
+            >
               <Store size={15} />
-              {formatCurrency(analytics.summary.revenue.current)}
+              <span className="font-body text-[10px]">{controlAmountLabel}</span>
+              {formatCurrency(controlAmount)}
             </span>
           </div>
 

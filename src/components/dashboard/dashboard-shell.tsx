@@ -12,18 +12,21 @@ import {
   Boxes,
   ChefHat,
   ChevronDown,
+  Clock3,
   ClipboardList,
   HelpCircle,
   Landmark,
   LayoutGrid,
   LogOut,
-  MessagesSquare,
+  MapPin,
   MoreHorizontal,
   Printer,
   Settings,
   SlidersHorizontal,
   Stethoscope,
+  Store,
   UtensilsCrossed,
+  UsersRound,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -37,6 +40,11 @@ import { createClient } from "@/lib/supabase/client";
 import { DashboardUserProvider } from "@/components/dashboard/dashboard-user-context";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { useCartStore } from "@/lib/stores/cart-store";
+import {
+  buildDashboardNavigationGroups,
+  getActiveDashboardNavigationGroupId,
+  type DashboardNavigationGroupId,
+} from "@/lib/dashboard-navigation";
 import type { Profile } from "@/types/database";
 import type { BusinessContextRow } from "@/types/multibusiness";
 
@@ -46,6 +54,19 @@ type NavItem = {
   description?: string;
   icon: LucideIcon;
   match: (path: string) => boolean;
+};
+
+type NavigationGroup = {
+  id: DashboardNavigationGroupId;
+  label: string;
+  icon: LucideIcon;
+  items: NavItem[];
+};
+
+const NAVIGATION_GROUP_ICONS: Record<DashboardNavigationGroupId, LucideIcon> = {
+  turno: Clock3,
+  negocio: Building2,
+  configuracion: SlidersHorizontal,
 };
 
 const POS_ITEM: NavItem = {
@@ -67,13 +88,6 @@ const ANALYTICS_ITEM: NavItem = {
   label: "Analíticas",
   icon: BarChart3,
   match: (path) => path === "/dashboard/analiticas",
-};
-
-const WHATSAPP_ITEM: NavItem = {
-  href: "/dashboard/whatsapp",
-  label: "WhatsApp",
-  icon: MessagesSquare,
-  match: (path) => path === "/dashboard/whatsapp",
 };
 
 const ADMIN_ITEMS: NavItem[] = [
@@ -109,6 +123,13 @@ const ADMIN_ITEMS: NavItem[] = [
 
 const CONTROL_ITEMS: NavItem[] = [
   {
+    href: "/settings/clientes",
+    label: "Clientes",
+    description: "Directorio de este negocio",
+    icon: UsersRound,
+    match: (path) => path.startsWith("/settings/clientes"),
+  },
+  {
     href: "/settings/inventario",
     label: "Inventario",
     description: "Insumos, recetas y conteos",
@@ -130,6 +151,20 @@ const CONTROL_ITEMS: NavItem[] = [
     match: (path) => path.startsWith("/settings/impresion"),
   },
   {
+    href: "/settings/entregas",
+    label: "Entregas",
+    description: "Origen y tarifas de este negocio",
+    icon: MapPin,
+    match: (path) => path.startsWith("/settings/entregas"),
+  },
+  {
+    href: "/settings/plataformas",
+    label: "Plataformas",
+    description: "Uber Eats y Didi Food de este negocio",
+    icon: Store,
+    match: (path) => path.startsWith("/settings/plataformas"),
+  },
+  {
     href: "/settings/diagnostico",
     label: "Diagnóstico",
     description: "Conexiones y salud del sistema",
@@ -141,7 +176,6 @@ const CONTROL_ITEMS: NavItem[] = [
 function getSurfaceLabel(pathname: string) {
   if (pathname === "/dashboard/mesero") return "Mesero";
   if (pathname === "/dashboard/cocina") return "Cocina";
-  if (pathname === "/dashboard/whatsapp") return "WhatsApp";
   if (pathname === "/dashboard/analiticas") return "Analíticas";
   if (pathname.startsWith("/menu")) return "Menú";
   if (pathname.startsWith("/settings/negocios")) return "Negocios";
@@ -149,6 +183,8 @@ function getSurfaceLabel(pathname: string) {
   if (pathname.startsWith("/settings/inventario")) return "Inventario";
   if (pathname.startsWith("/settings/caja")) return "Caja";
   if (pathname.startsWith("/settings/impresion")) return "Impresión";
+  if (pathname.startsWith("/settings/entregas")) return "Entregas";
+  if (pathname.startsWith("/settings/plataformas")) return "Plataformas";
   if (pathname.startsWith("/settings/diagnostico")) return "Diagnóstico";
   if (pathname === "/settings") return "Personal";
   return "Operación";
@@ -156,6 +192,13 @@ function getSurfaceLabel(pathname: string) {
 
 function isGroupActive(items: NavItem[], pathname: string) {
   return items.some((item) => item.match(pathname));
+}
+
+function getNavigationGroups(items: NavItem[]): NavigationGroup[] {
+  return buildDashboardNavigationGroups(items).map((group) => ({
+    ...group,
+    icon: NAVIGATION_GROUP_ICONS[group.id],
+  }));
 }
 
 function SidebarLink({ item, pathname }: { item: NavItem; pathname: string }) {
@@ -180,33 +223,32 @@ function SidebarLink({ item, pathname }: { item: NavItem; pathname: string }) {
 }
 
 function SidebarGroup({
-  label,
-  icon: GroupIcon,
-  items,
+  group,
   pathname,
+  open,
+  onOpenChange,
 }: {
-  label: string;
-  icon: LucideIcon;
-  items: NavItem[];
+  group: NavigationGroup;
   pathname: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const active = isGroupActive(items, pathname);
+  const active = isGroupActive(group.items, pathname);
+  const GroupIcon = group.icon;
 
   return (
-    <Collapsible.Root
-      key={active ? "active" : "inactive"}
-      defaultOpen={active}
-      className="mt-1"
-    >
+    <Collapsible.Root open={open} onOpenChange={onOpenChange} className="mt-1">
       <Collapsible.Trigger
         className={`group flex h-11 w-full items-center gap-3 rounded-xl px-3 font-heading text-sm font-semibold transition-colors ${
           active
             ? "bg-brand-light text-brand"
-            : "text-sidebar-foreground/70 hover:bg-white/5 hover:text-white"
+            : open
+              ? "bg-white/5 text-sidebar-foreground"
+              : "text-sidebar-foreground/70 hover:bg-white/5 hover:text-white"
         }`}
       >
         <GroupIcon aria-hidden size={19} className="shrink-0" />
-        <span>{label}</span>
+        <span>{group.label}</span>
         <ChevronDown
           aria-hidden
           size={16}
@@ -215,7 +257,7 @@ function SidebarGroup({
       </Collapsible.Trigger>
       <Collapsible.Panel className="h-[var(--collapsible-panel-height)] overflow-hidden transition-[height,opacity] duration-150 data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0">
         <div className="mt-1 space-y-1 pl-3">
-          {items.map((item) => (
+          {group.items.map((item) => (
             <SidebarLink key={item.href} item={item} pathname={pathname} />
           ))}
         </div>
@@ -245,17 +287,14 @@ function HeaderLink({ item, pathname }: { item: NavItem; pathname: string }) {
 }
 
 function HeaderGroup({
-  label,
-  icon: GroupIcon,
-  items,
+  group,
   pathname,
 }: {
-  label: string;
-  icon: LucideIcon;
-  items: NavItem[];
+  group: NavigationGroup;
   pathname: string;
 }) {
-  const active = isGroupActive(items, pathname);
+  const active = isGroupActive(group.items, pathname);
+  const GroupIcon = group.icon;
 
   return (
     <Menu.Root>
@@ -267,13 +306,13 @@ function HeaderGroup({
         }`}
       >
         <GroupIcon aria-hidden size={17} />
-        <span>{label}</span>
+        <span>{group.label}</span>
         <ChevronDown aria-hidden size={14} />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner className="z-[110] outline-none" sideOffset={8} align="start">
           <Menu.Popup className="w-64 origin-[var(--transform-origin)] rounded-2xl border border-border bg-surface p-1.5 text-foreground shadow-float outline-none transition-[transform,opacity] duration-150 ease-out data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
-            {items.map((item) => {
+            {group.items.map((item) => {
               const activeItem = item.match(pathname);
               const Icon = item.icon;
               return (
@@ -433,15 +472,32 @@ function MobileLink({
 
 function MobileMoreDrawer({
   pathname,
-  adminItems,
-  controlItems,
+  groups,
+  systemItem,
 }: {
   pathname: string;
-  adminItems: NavItem[];
-  controlItems: NavItem[];
+  groups: NavigationGroup[];
+  systemItem: NavItem | null;
 }) {
-  const active = isGroupActive([...adminItems, ...controlItems], pathname);
+  const activeGroupId = getActiveDashboardNavigationGroupId(groups, pathname);
+  const fallbackGroupId = groups[0]?.id ?? null;
+  const preferredGroupId = activeGroupId ?? fallbackGroupId;
+  const [manualExpandedGroup, setManualExpandedGroup] = useState<{
+    pathname: string;
+    groupId: DashboardNavigationGroupId | null;
+  } | null>(null);
   const [open, setOpen] = useState(false);
+  const active = activeGroupId !== null || Boolean(systemItem?.match(pathname));
+  const SystemIcon = systemItem?.icon;
+  const manualGroupId = groups.some(
+    (group) => group.id === manualExpandedGroup?.groupId
+  )
+    ? manualExpandedGroup?.groupId
+    : null;
+  const expandedGroupId =
+    manualExpandedGroup?.pathname === pathname
+      ? manualGroupId
+      : preferredGroupId;
 
   return (
     <Drawer.Root open={open} onOpenChange={setOpen} swipeDirection="down">
@@ -467,10 +523,10 @@ function MobileMoreDrawer({
               <div className="mb-4 flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <Drawer.Title className="font-heading text-lg font-bold">
-                    Herramientas del local
+                    Más opciones
                   </Drawer.Title>
-                  <Drawer.Description className="mt-1 font-body text-sm text-muted-foreground">
-                    Administración y control en un solo lugar.
+                  <Drawer.Description className="sr-only">
+                    Secciones agrupadas para el turno, el negocio y su configuración.
                   </Drawer.Description>
                 </div>
                 <Drawer.Close
@@ -481,47 +537,96 @@ function MobileMoreDrawer({
                 </Drawer.Close>
               </div>
 
-              {[
-                { label: "Administrar", items: adminItems },
-                { label: "Control", items: controlItems },
-              ]
-                .filter((group) => group.items.length > 0)
-                .map((group) => (
-                  <section key={group.label} className="mb-5 last:mb-0">
-                    <h2 className="mb-2 font-heading text-sm font-bold text-muted-foreground">
-                      {group.label}
-                    </h2>
-                    <div className="grid grid-cols-2 gap-2">
-                      {group.items.map((item) => {
-                        const itemActive = item.match(pathname);
-                        const Icon = item.icon;
-                        return (
-                          <Link
-                            key={item.href}
-                            href={item.href}
-                            onClick={() => setOpen(false)}
-                            aria-current={itemActive ? "page" : undefined}
-                            className={`flex min-h-20 items-center gap-3 rounded-xl px-3 transition-colors ${
-                              itemActive
-                                ? "bg-brand text-white"
-                                : "bg-background text-foreground hover:bg-surface-raised"
-                            }`}
-                          >
-                            <Icon aria-hidden size={20} className="shrink-0" />
-                            <span className="min-w-0">
-                              <span className="block font-heading text-sm font-bold">
-                                {item.label}
-                              </span>
-                              <span className={`mt-0.5 block font-body text-[11px] leading-tight ${itemActive ? "text-white/75" : "text-muted-foreground"}`}>
-                                {item.description}
-                              </span>
-                            </span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
+              <div className="space-y-2">
+                {groups.map((group) => {
+                  const groupActive = isGroupActive(group.items, pathname);
+                  const expanded = expandedGroupId === group.id;
+                  const GroupIcon = group.icon;
+
+                  return (
+                    <Collapsible.Root
+                      key={group.id}
+                      open={expanded}
+                      onOpenChange={(nextOpen) =>
+                        setManualExpandedGroup({
+                          pathname,
+                          groupId: nextOpen ? group.id : null,
+                        })
+                      }
+                      className="overflow-hidden rounded-xl border border-border bg-background/70"
+                    >
+                      <Collapsible.Trigger
+                        className={`group flex min-h-12 w-full touch-manipulation items-center gap-3 px-3 text-left font-heading text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
+                          groupActive
+                            ? "text-brand"
+                            : expanded
+                              ? "text-foreground"
+                              : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <GroupIcon aria-hidden size={18} className="shrink-0" />
+                        <span className="flex-1">{group.label}</span>
+                        <ChevronDown
+                          aria-hidden
+                          size={16}
+                          className="transition-transform group-data-panel-open:rotate-180"
+                        />
+                      </Collapsible.Trigger>
+                      <Collapsible.Panel className="h-[var(--collapsible-panel-height)] overflow-hidden transition-[height,opacity] duration-150 data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0">
+                        <div className="grid grid-cols-2 gap-2 px-2 pb-2">
+                          {group.items.map((item) => {
+                            const itemActive = item.match(pathname);
+                            const Icon = item.icon;
+                            return (
+                              <Link
+                                key={item.href}
+                                href={item.href}
+                                onClick={() => setOpen(false)}
+                                aria-current={itemActive ? "page" : undefined}
+                                className={`flex min-h-20 items-center gap-3 rounded-xl px-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
+                                  itemActive
+                                    ? "bg-brand text-white"
+                                    : "bg-surface text-foreground hover:bg-surface-raised"
+                                }`}
+                              >
+                                <Icon aria-hidden size={20} className="shrink-0" />
+                                <span className="min-w-0">
+                                  <span className="block font-heading text-sm font-bold">
+                                    {item.label}
+                                  </span>
+                                  {item.description ? (
+                                    <span className={`mt-0.5 block font-body text-[11px] leading-tight ${itemActive ? "text-white/75" : "text-muted-foreground"}`}>
+                                      {item.description}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </Collapsible.Panel>
+                    </Collapsible.Root>
+                  );
+                })}
+              </div>
+
+              {systemItem && SystemIcon ? (
+                <div className="mt-3 border-t border-border pt-3">
+                  <Link
+                    href={systemItem.href}
+                    onClick={() => setOpen(false)}
+                    aria-current={systemItem.match(pathname) ? "page" : undefined}
+                    className={`flex min-h-12 items-center gap-3 rounded-xl px-3 font-heading text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${
+                      systemItem.match(pathname)
+                        ? "bg-brand text-white"
+                        : "text-muted-foreground hover:bg-background hover:text-foreground"
+                    }`}
+                  >
+                    <SystemIcon aria-hidden size={18} />
+                    <span>{systemItem.label}</span>
+                  </Link>
+                </div>
+              ) : null}
             </Drawer.Content>
           </Drawer.Popup>
         </Drawer.Viewport>
@@ -537,7 +642,6 @@ interface DashboardShellProps {
   userRole: Profile["role"];
   capabilities?: string[];
   multibusinessContextAvailable?: boolean;
-  whatsappAccess?: boolean;
 }
 
 export function DashboardShell({
@@ -547,7 +651,6 @@ export function DashboardShell({
   userRole,
   capabilities = [],
   multibusinessContextAvailable = false,
-  whatsappAccess = false,
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -558,6 +661,7 @@ export function DashboardShell({
   const surfaceLabel = getSurfaceLabel(pathname);
   const isAdmin = userRole === "owner" || userRole === "admin";
   const hasCapability = (capability: string) => capabilities.includes(capability);
+
 
   useEffect(() => {
     void refreshBusinessContext(true);
@@ -578,17 +682,13 @@ export function DashboardShell({
     (!multibusinessContextAvailable &&
       (userRole === "waiter" || userRole === "supervisor")) ||
     hasCapability("business.operate_orders") ||
+    hasCapability("business.update_preparation") ||
     hasCapability("organization.operate_orders");
   const canUseKitchen =
     (!multibusinessContextAvailable && isAdmin) ||
     (!multibusinessContextAvailable &&
       (userRole === "kitchen" || userRole === "supervisor")) ||
-    hasCapability("business.update_preparation");
-  const canUseWhatsapp =
-    (!multibusinessContextAvailable && isAdmin) ||
-    (multibusinessContextAvailable
-      ? whatsappAccess
-      : userRole === "waiter" || userRole === "supervisor");
+    hasCapability("business.access_kitchen");
   const canUseAnalytics =
     (!multibusinessContextAvailable && isAdmin) ||
     (multibusinessContextAvailable &&
@@ -620,6 +720,12 @@ export function DashboardShell({
     );
   });
   const controlItems = CONTROL_ITEMS.filter((item) => {
+    if (item.href === "/settings/clientes") {
+      return (
+        (!multibusinessContextAvailable && isAdmin) ||
+        hasCapability("business.manage_staff")
+      );
+    }
     if (item.href === "/settings/inventario") {
       return (
         (!multibusinessContextAvailable && isAdmin) ||
@@ -638,6 +744,20 @@ export function DashboardShell({
         hasCapability("business.manage_catalog")
       );
     }
+    if (item.href === "/settings/entregas") {
+      return (
+        (!multibusinessContextAvailable && isAdmin) ||
+        hasCapability("business.manage_catalog") ||
+        hasCapability("platform.manage_businesses")
+      );
+    }
+    if (item.href === "/settings/plataformas") {
+      return (
+        (!multibusinessContextAvailable && isAdmin) ||
+        hasCapability("business.manage_catalog") ||
+        hasCapability("platform.manage_businesses")
+      );
+    }
     if (item.href === "/settings/diagnostico") {
       return (
         (!multibusinessContextAvailable && isAdmin) ||
@@ -652,9 +772,25 @@ export function DashboardShell({
   const operationItems: NavItem[] = [
     ...(canUsePos ? [POS_ITEM] : []),
     ...(canUseKitchen ? [KITCHEN_ITEM] : []),
-    ...(canUseWhatsapp ? [WHATSAPP_ITEM] : []),
     ...(canUseAnalytics ? [ANALYTICS_ITEM] : []),
   ];
+  const navigationGroups = getNavigationGroups([...adminItems, ...controlItems]);
+  const systemItem = controlItems.find(
+    (item) => item.href === "/settings/diagnostico"
+  ) ?? null;
+  const activeNavigationGroupId = getActiveDashboardNavigationGroupId(
+    navigationGroups,
+    pathname
+  );
+  const [manualExpandedNavigationGroup, setManualExpandedNavigationGroup] =
+    useState<{
+      pathname: string;
+      groupId: DashboardNavigationGroupId | null;
+    } | null>(null);
+  const expandedNavigationGroupId =
+    manualExpandedNavigationGroup?.pathname === pathname
+      ? manualExpandedNavigationGroup.groupId
+      : activeNavigationGroupId;
   const operationHrefs = operationItems.map((item) => item.href).join("|");
 
   useEffect(() => {
@@ -699,29 +835,28 @@ export function DashboardShell({
           {operationItems.map((item) => (
             <SidebarLink key={item.href} item={item} pathname={pathname} />
           ))}
-          {adminItems.length > 0 || controlItems.length > 0 ? (
-            <>
-              {adminItems.length > 0 ? (
-                <SidebarGroup
-                  label="Administrar"
-                  icon={SlidersHorizontal}
-                  items={adminItems}
-                  pathname={pathname}
-                />
-              ) : null}
-              {controlItems.length > 0 ? (
-                <SidebarGroup
-                  label="Control"
-                  icon={Landmark}
-                  items={controlItems}
-                  pathname={pathname}
-                />
-              ) : null}
-            </>
-          ) : null}
+          {navigationGroups.map((group) => (
+            <SidebarGroup
+              key={group.id}
+              group={group}
+              pathname={pathname}
+              open={expandedNavigationGroupId === group.id}
+              onOpenChange={(nextOpen) =>
+                setManualExpandedNavigationGroup({
+                  pathname,
+                  groupId: nextOpen ? group.id : null,
+                })
+              }
+            />
+          ))}
         </nav>
 
         <div className="border-t border-sidebar-border p-2">
+          {systemItem ? (
+            <div className="mb-2 border-b border-sidebar-border pb-2">
+              <SidebarLink item={systemItem} pathname={pathname} />
+            </div>
+          ) : null}
           <div className="mb-2 truncate px-3 font-body text-xs text-sidebar-foreground/50">
             {userName}
           </div>
@@ -757,25 +892,11 @@ export function DashboardShell({
           {operationItems.map((item) => (
             <HeaderLink key={item.href} item={item} pathname={pathname} />
           ))}
-          {adminItems.length > 0 || controlItems.length > 0 ? (
-            <>
-              {adminItems.length > 0 ? (
-                <HeaderGroup
-                  label="Administrar"
-                  icon={SlidersHorizontal}
-                  items={adminItems}
-                  pathname={pathname}
-                />
-              ) : null}
-              {controlItems.length > 0 ? (
-                <HeaderGroup
-                  label="Control"
-                  icon={Landmark}
-                  items={controlItems}
-                  pathname={pathname}
-                />
-              ) : null}
-            </>
+          {navigationGroups.map((group) => (
+            <HeaderGroup key={group.id} group={group} pathname={pathname} />
+          ))}
+          {systemItem ? (
+            <HeaderLink item={systemItem} pathname={pathname} />
           ) : null}
         </nav>
         <button
@@ -882,11 +1003,11 @@ export function DashboardShell({
           {operationItems.map((item) => (
             <MobileLink key={item.href} item={item} pathname={pathname} />
           ))}
-          {adminItems.length > 0 || controlItems.length > 0 ? (
+          {navigationGroups.length > 0 || systemItem ? (
             <MobileMoreDrawer
               pathname={pathname}
-              adminItems={adminItems}
-              controlItems={controlItems}
+              groups={navigationGroups}
+              systemItem={systemItem}
             />
           ) : null}
         </nav>

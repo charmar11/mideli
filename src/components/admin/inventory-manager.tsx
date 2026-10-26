@@ -12,12 +12,12 @@ import {
   Package,
   Plus,
   CircleHelp,
-  RefreshCw,
   ShoppingCart,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useCatalogStore, useInventoryStore } from "@/lib/stores";
 import type { Profile } from "@/types/database";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import { InventoryCountPanel } from "./inventory/inventory-count-panel";
 import { InventoryDashboard } from "./inventory/inventory-dashboard";
 import { InventoryItemsPanel } from "./inventory/inventory-items-panel";
@@ -66,6 +66,7 @@ export function InventoryManager() {
   const [role, setRole] = useState<Profile["role"] | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [tourRestartSignal, setTourRestartSignal] = useState(0);
+  const pullToRefreshRef = usePullToRefresh<HTMLElement>(fetchInventory, !loading);
 
   useEffect(() => {
     void Promise.all([fetchInventory(), fetchCatalog()]);
@@ -138,9 +139,6 @@ export function InventoryManager() {
         <button type="button" onClick={() => setTourRestartSignal((current) => current + 1)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand" aria-label="Abrir guía de inventario" title="Ayuda de inventario">
           <CircleHelp size={17} />
         </button>
-        <button type="button" disabled={loading} onClick={() => void fetchInventory()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand disabled:opacity-40" aria-label="Actualizar inventario">
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-        </button>
         {isAdmin ? (
           <button data-tour="inventory-new-item-header" type="button" onClick={handleNewItem} className="inline-flex h-10 w-10 items-center justify-center gap-2 rounded-xl bg-brand font-heading text-xs font-bold text-white shadow-lg shadow-brand/20 hover:bg-brand-hover sm:w-auto sm:px-4" aria-label="Nuevo insumo">
             <Plus size={16} /> <span className="hidden sm:inline">Nuevo insumo</span>
@@ -164,7 +162,7 @@ export function InventoryManager() {
         </div>
       </nav>
 
-      <main className="mideli-page-scroll pos-scroll min-h-0 flex-1 overflow-y-auto">
+      <main ref={pullToRefreshRef} className="mideli-page-scroll pos-scroll min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-6xl p-3 pb-24 sm:p-5 sm:pb-8">
           {lastError ? (
             <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-destructive/25 bg-destructive/8 px-4 py-3">

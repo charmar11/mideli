@@ -67,7 +67,6 @@ export default async function DashboardLayout({
       multibusinessContextAvailable={hasScopedMultibusinessContext(
         requestHeaders.get("x-mideli-multibusiness-context")
       )}
-      whatsappAccess={requestHeaders.get("x-mideli-whatsapp-access") === "true"}
     >
       {children}
     </DashboardShell>

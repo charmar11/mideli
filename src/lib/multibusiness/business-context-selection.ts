@@ -15,11 +15,20 @@ const ORDER_READ_CAPABILITIES = new Set([
   "business.operate_orders",
   "business.charge_orders",
   "business.update_preparation",
+  "business.access_kitchen",
   "organization.operate_orders",
   "organization.charge_orders",
 ]);
 
 export function hasOrderReadCapability(context: BusinessContextSelectionOption) {
+  if (
+    context.membership_scope_type === "organization" &&
+    context.membership_role_code === "global_waiter"
+  ) {
+    // RLS limits every global waiter to dine-in rows, regardless of grants.
+    return true;
+  }
+
   return (context.capability_codes ?? []).some((capability) =>
     ORDER_READ_CAPABILITIES.has(capability)
   );
@@ -31,6 +40,15 @@ export function canManageOrderPreparation(
   return (
     context?.business_lifecycle_status === "active" &&
     (context.capability_codes ?? []).includes("business.update_preparation")
+  );
+}
+
+export function canAccessKitchenScreen(
+  context: BusinessOrderSelectionOption | null | undefined,
+) {
+  return (
+    context?.business_lifecycle_status === "active" &&
+    (context.capability_codes ?? []).includes("business.access_kitchen")
   );
 }
 
@@ -83,13 +101,36 @@ export function getCashAccessibleBusinessContexts<
   });
 }
 
+export function getBusinessesMissingOpenCashShift(
+  businessIds: readonly string[],
+  shifts: readonly (
+    | { business_id?: string | null; status?: string | null }
+    | null
+    | undefined
+  )[],
+) {
+  const openBusinessIds = new Set(
+    shifts.flatMap((shift) =>
+      shift?.business_id && shift.status === "open" ? [shift.business_id] : [],
+    ),
+  );
+
+  return [...new Set(businessIds)].filter(
+    (businessId) => !openBusinessIds.has(businessId),
+  );
+}
+
 /**
- * Organization-scoped global waiters handle dine-in orders for other locals;
- * delivery and takeout remain with each business's own team. Business-scoped
- * memberships are local staff and retain the full service workflow.
+ * Organization-scoped global waiters only see dine-in orders in every
+ * business. Business-specific operational grants do not expose takeout,
+ * delivery, or third-party platform orders to a global waiter.
  */
 export function filterOperationalOrdersByMembershipScope<
-  T extends { business_id?: string | null; type: string },
+  T extends {
+    business_id?: string | null;
+    type: string;
+    marketplace_platform?: string | null;
+  },
   C extends BusinessContextSelectionOption,
 >(orders: readonly T[], contexts: readonly C[]): T[] {
   const globalWaiterBusinessIds = new Set(
@@ -106,7 +147,7 @@ export function filterOperationalOrdersByMembershipScope<
     (order) =>
       !order.business_id ||
       !globalWaiterBusinessIds.has(order.business_id) ||
-      order.type === "comedor"
+      (order.type === "comedor" && !order.marketplace_platform)
   );
 }
 
@@ -175,7 +216,7 @@ export function getOrderableBusinessContexts<
   );
 }
 
-/** Active, licensed businesses whose order records the user may read. */
+/** Active, licensed businesses whose order rows RLS can expose to this session. */
 export function getOrderReadableBusinessContexts<
   T extends BusinessOrderSelectionOption,
 >(contexts: T[]) {
@@ -187,13 +228,46 @@ export function getOrderReadableBusinessContexts<
   );
 }
 
-/** History deletion is reserved for the business owner in modern contexts. */
+/**
+ * Owners may delete directly. Staff with the business-scoped order-operation
+ * capability may request deletion, but the server must require the owner PIN.
+ */
 export function canDeleteBusinessOrderHistory(
   context: BusinessContextSelectionOption | null | undefined,
   legacyProfileRole?: string | null,
 ) {
-  if (context) return context.membership_role_code === "business_owner";
+  if (context) {
+    return (
+      context.membership_role_code === "business_owner" ||
+      (context.capability_codes ?? []).includes("business.operate_orders")
+    );
+  }
   return legacyProfileRole === "owner" || legacyProfileRole === "admin";
+}
+
+export function canDeleteBusinessOrderHistoryForType(
+  context: BusinessContextSelectionOption | null | undefined,
+  orderType: string,
+  legacyProfileRole?: string | null,
+) {
+  if (!canDeleteBusinessOrderHistory(context, legacyProfileRole)) return false;
+
+  const isOrganizationScopedGlobalWaiter =
+    context?.membership_scope_type === "organization" &&
+    context.membership_role_code === "global_waiter";
+
+  return !isOrganizationScopedGlobalWaiter || orderType === "comedor";
+}
+
+/** Non-owners must authorize a history deletion with this business's owner PIN. */
+export function requiresBusinessOwnerPinForOrderDeletion(
+  context: BusinessContextSelectionOption | null | undefined,
+) {
+  return Boolean(
+    context &&
+      context.membership_role_code !== "business_owner" &&
+      (context.capability_codes ?? []).includes("business.operate_orders")
+  );
 }
 
 /** Menus the waiter is authorized to see, including neutral disabled entries. */

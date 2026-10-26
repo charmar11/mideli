@@ -289,6 +289,7 @@ export function CashShiftControl({
         ? buildCashCloseBreakdown({
             openingFloat: currentShift.opening_float,
             cashTotal: preview.cash_total ?? 0,
+            marketplaceCashTotal: preview.marketplace_cash_total ?? 0,
             fundInTotal: preview.fund_in_total ?? 0,
             withdrawalTotal: preview.withdrawal_total ?? 0,
             expenseTotal: preview.expense_total ?? 0,

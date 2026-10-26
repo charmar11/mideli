@@ -25,6 +25,9 @@ interface CashShiftState {
   lastError: string | null;
   fetchCurrentShift: (force?: boolean, businessId?: string | null) => Promise<CashShift | null>;
   fetchCurrentShiftForBusiness: (businessId?: string | null) => Promise<CashShift | null>;
+  checkCurrentShiftForBusiness: (
+    businessId?: string | null,
+  ) => Promise<CashShiftResult<CashShift>>;
   openShift: (input: {
     businessId?: string;
     openingFloat: number;
@@ -242,18 +245,39 @@ export const useCashShiftStore = create<CashShiftState>((set, get) => ({
   },
 
   fetchCurrentShiftForBusiness: async (businessId = null) => {
-    const scope = await getCashScope();
-    if (scope.legacyFallback || !businessId || scope.businessId === businessId) {
-      return get().fetchCurrentShift(false, scope.legacyFallback ? undefined : businessId);
-    }
+    const result = await get().checkCurrentShiftForBusiness(businessId);
+    return result.error || !result.data ? null : result.data;
+  },
 
-    const { data, error } = await invokeCashAction<CashShift>(
-      "current",
-      {},
-      "get_current_cash_shift",
-      { ...scope, businessId }
-    );
-    return error || !data ? null : data;
+  checkCurrentShiftForBusiness: async (businessId = null) => {
+    try {
+      const scope = await getCashScope(businessId);
+      if (!scope.legacyFallback && !scope.businessId) {
+        return {
+          data: null,
+          error: "No hay un negocio disponible para consultar la caja.",
+        };
+      }
+
+      const { data, error } = await invokeCashAction<CashShift>(
+        "current",
+        {},
+        "get_current_cash_shift",
+        scope,
+      );
+      return {
+        data,
+        error: error ? message(error, "No se pudo consultar la caja") : null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: message(
+          error instanceof Error ? error : null,
+          "No se pudo consultar la caja",
+        ),
+      };
+    }
   },
 
   openShift: async ({ businessId, openingFloat, denominations = {}, note = "" }) => {

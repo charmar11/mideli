@@ -639,7 +639,7 @@
 @media print {
   @page {
     size: auto;
-    margin: 3mm;
+    margin: 1mm;
   }
 
   body * {
@@ -648,19 +648,33 @@
 
   .payment-receipt-print-root,
   .payment-receipt-print-root *,
+  .order-ticket-print-root,
+  .order-ticket-print-root *,
   .kitchen-ticket-print-root,
   .kitchen-ticket-print-root * {
     visibility: visible !important;
   }
 
-  .payment-receipt-print-root {
+  .payment-receipt-print-root,
+  .order-ticket-print-root {
     position: absolute !important;
     inset: 0 auto auto 0 !important;
     width: var(--ticket-width) !important;
     max-width: none !important;
     min-height: 0 !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
     box-shadow: none !important;
     print-color-adjust: exact;
+  }
+
+  .payment-receipt-print-root,
+  .order-ticket-print-root {
+    overflow-wrap: anywhere;
+  }
+
+  .order-ticket-print-root > * {
+    break-inside: avoid;
   }
 
   .kitchen-ticket-print-root {

@@ -15,6 +15,7 @@ import {
   CreditCard,
   Loader2,
   LogOut,
+  MapPin,
   MessageCircle,
   Pencil,
   PauseCircle,
@@ -34,6 +35,7 @@ import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { BusinessIdentityFields } from "@/components/admin/business-identity-fields";
 import { OrganizationBusinessTeams } from "@/components/admin/organization-business-teams";
 import { RinconBrand } from "@/components/auth/rincon-brand";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import {
   createBusinessWithOwnerAction,
   listManagedBusinessesAction,
@@ -50,6 +52,7 @@ import {
 import {
   BUSINESS_OWNER_CAPABILITIES,
   BUSINESS_OWNER_CAPABILITY_CODES,
+  DEFAULT_BUSINESS_OWNER_CAPABILITY_CODES,
   type BusinessOwnerCapabilityCode,
 } from "@/lib/business-capabilities";
 import type { BusinessLifecycleStatus } from "@/types/multibusiness";
@@ -86,7 +89,8 @@ const BUSINESS_MODULES: BusinessModule[] = [
   { code: "business.manage_catalog", label: "Catálogo", icon: BookOpen },
   { code: "business.manage_inventory", label: "Inventario", icon: ClipboardList },
   { code: "business.operate_orders", label: "Pedidos", icon: ClipboardList },
-  { code: "business.update_preparation", label: "Cocina", icon: ChefHat },
+  { code: "business.update_preparation", label: "Preparación desde Estado", icon: ClipboardList },
+  { code: "business.access_kitchen", label: "Pantalla Cocina", icon: ChefHat },
   { code: "business.charge_orders", label: "Cobros", icon: CreditCard },
   { code: "business.manage_cash", label: "Caja", icon: WalletCards },
   { code: "business.manage_staff", label: "Personal", icon: Users },
@@ -113,7 +117,7 @@ const EMPTY_DRAFT: CreateDraft = {
   ownerName: "",
   ownerLogin: "",
   ownerPassword: "",
-  capabilityCodes: [...BUSINESS_OWNER_CAPABILITY_CODES],
+  capabilityCodes: [...DEFAULT_BUSINESS_OWNER_CAPABILITY_CODES],
 };
 
 type EditDraft = {
@@ -122,6 +126,7 @@ type EditDraft = {
   timezone: string;
   brandPrimaryColor: string;
   brandAccentColor: string;
+  marketplaceOrdersEnabled: boolean;
   capabilityCodes: BusinessOwnerCapabilityCode[];
 };
 
@@ -247,7 +252,7 @@ function CapabilitySelector({
         })}
       </div>
       <p className="mt-3 font-body text-[11px] leading-4 text-muted-foreground">
-        El Catálogo es obligatorio para que el dueño pueda configurar su menú. Cocina, pedidos, cobros y caja sólo operan cuando el negocio está activo.
+        El Catálogo es obligatorio. Avanzar pedidos desde Estado y abrir la pantalla Cocina son permisos independientes.
       </p>
     </fieldset>
   );
@@ -315,7 +320,8 @@ export function BusinessesManager({
     timezone: "America/Hermosillo",
     brandPrimaryColor: PLATFORM_BRAND_COLORS.primary,
     brandAccentColor: PLATFORM_BRAND_COLORS.accent,
-    capabilityCodes: [...BUSINESS_OWNER_CAPABILITY_CODES],
+    marketplaceOrdersEnabled: false,
+    capabilityCodes: [...DEFAULT_BUSINESS_OWNER_CAPABILITY_CODES],
   });
   const [isPending, startTransition] = useTransition();
 
@@ -341,6 +347,8 @@ export function BusinessesManager({
       organizationId: current.organizationId || result.organizations[0]?.id || "",
     }));
   }
+
+  const pullToRefreshRef = usePullToRefresh<HTMLElement>(load, !loading && !isPending);
 
   async function startOwnerTransfer(business: ManagedBusiness) {
     setOwnerTransferBusiness(business);
@@ -403,6 +411,7 @@ export function BusinessesManager({
       timezone: business.timezone,
       brandPrimaryColor: brand.primary,
       brandAccentColor: brand.accent,
+      marketplaceOrdersEnabled: business.marketplace_orders_enabled,
       capabilityCodes: business.capability_codes.filter(
         (code): code is BusinessOwnerCapabilityCode =>
           BUSINESS_OWNER_CAPABILITY_CODES.includes(code as BusinessOwnerCapabilityCode),
@@ -428,7 +437,7 @@ export function BusinessesManager({
     }));
   }
 
-  function updateEditDraft(field: keyof EditDraft, value: string) {
+  function updateEditDraft<K extends keyof EditDraft>(field: K, value: EditDraft[K]) {
     setEditDraft((current) => ({ ...current, [field]: value }));
   }
 
@@ -460,7 +469,7 @@ export function BusinessesManager({
     if (!editingBusiness) return;
 
     startTransition(async () => {
-      const { displayName, slug, timezone, capabilityCodes, brandPrimaryColor, brandAccentColor } = editDraft;
+      const { displayName, slug, timezone, capabilityCodes, brandPrimaryColor, brandAccentColor, marketplaceOrdersEnabled } = editDraft;
       const result = await updateBusinessDetailsAction({
         businessId: editingBusiness.id,
         displayName,
@@ -468,6 +477,7 @@ export function BusinessesManager({
         timezone,
         brandPrimaryColor,
         brandAccentColor,
+        marketplaceOrdersEnabled,
       });
       if (!result.success || result.error) {
         toast.error(result.error ?? "No se pudo editar el negocio");
@@ -502,6 +512,7 @@ export function BusinessesManager({
         timezone,
         brand_primary_color: brandPrimaryColor,
         brand_accent_color: brandAccentColor,
+        marketplace_orders_enabled: marketplaceOrdersEnabled,
         brand_logo_path: savedLogoPath,
       } : current);
       if (!capabilityResult.success || capabilityResult.error) {
@@ -551,7 +562,7 @@ export function BusinessesManager({
           description: "Actívalo después de revisar su catálogo y acceso.",
         });
       }
-      setDraft({ ...EMPTY_DRAFT, capabilityCodes: [...BUSINESS_OWNER_CAPABILITY_CODES] });
+      setDraft({ ...EMPTY_DRAFT, capabilityCodes: [...DEFAULT_BUSINESS_OWNER_CAPABILITY_CODES] });
       setCreateLogoFile(null);
       setShowCreate(false);
       await load();
@@ -650,7 +661,7 @@ export function BusinessesManager({
         </div>
       </nav>
 
-      <main className="mideli-page-scroll flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <main ref={pullToRefreshRef} className="mideli-page-scroll flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
         <div className="mx-auto max-w-6xl space-y-8">
           <section className="flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
             <div className="max-w-2xl">
@@ -662,15 +673,6 @@ export function BusinessesManager({
               </p>
             </div>
             <div className="flex flex-wrap gap-2 sm:shrink-0">
-              <button
-                type="button"
-                onClick={() => void load()}
-                disabled={loading || isPending}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface-raised px-4 font-heading text-sm font-bold text-muted-foreground hover:text-foreground disabled:opacity-50"
-              >
-                <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-                Actualizar
-              </button>
               <button
                 type="button"
                 onClick={() => setShowCreate((current) => {
@@ -834,6 +836,9 @@ export function BusinessesManager({
                     <div className="flex flex-wrap gap-2 lg:max-w-[24rem] lg:justify-end">
                       <button type="button" onClick={() => void startOwnerTransfer(business)} disabled={isPending} className="inline-flex h-11 items-center gap-2 rounded-xl border border-warning/30 px-3 font-heading text-xs font-bold text-warning hover:bg-warning/10 disabled:opacity-50"><ArrowRightLeft size={15} /> Cambiar dueño</button>
                       <button type="button" onClick={() => startEditing(business)} disabled={isPending} className="inline-flex h-11 items-center gap-2 rounded-xl border border-brand/30 px-3 font-heading text-xs font-bold text-brand hover:bg-brand/8 disabled:opacity-50"><Pencil size={15} /> Configurar</button>
+                      <Link href={`/settings/entregas?businessId=${encodeURIComponent(business.id)}`} className="inline-flex h-11 items-center gap-2 rounded-xl border border-success/30 px-3 font-heading text-xs font-bold text-success hover:bg-success/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60">
+                        <MapPin size={15} /> Entregas
+                      </Link>
                       {business.lifecycle_status === "draft" || business.lifecycle_status === "paused" ? (
                         <button type="button" onClick={() => changeLifecycle(business, "active")} disabled={isPending} className="inline-flex h-11 items-center gap-2 rounded-xl bg-success px-3 font-heading text-xs font-bold text-white disabled:opacity-50"><CheckCircle2 size={15} /> Activar</button>
                       ) : null}
@@ -966,6 +971,20 @@ export function BusinessesManager({
                   {!TIMEZONE_OPTIONS.some((option) => option.value === editDraft.timezone) ? <option value={editDraft.timezone}>{editDraft.timezone}</option> : null}
                   {TIMEZONE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-background p-3">
+                <input
+                  type="checkbox"
+                  checked={editDraft.marketplaceOrdersEnabled}
+                  onChange={(event) => updateEditDraft("marketplaceOrdersEnabled", event.target.checked)}
+                  className="mt-1 size-4 accent-brand"
+                />
+                <span>
+                  <span className="block font-heading text-sm font-bold text-foreground">Pedidos de plataformas</span>
+                  <span className="mt-1 block font-body text-xs leading-5 text-muted-foreground">
+                    Habilita Uber Eats y Didi Food para este negocio. El dueño configura qué plataformas usa y sus precios.
+                  </span>
+                </span>
               </label>
               <CapabilitySelector
                 selectedCodes={editDraft.capabilityCodes}

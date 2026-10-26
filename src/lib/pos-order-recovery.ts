@@ -2,6 +2,16 @@ const POS_CREATION_KEY_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type PosOrderRecoveryStatus = "found" | "not_found" | "unavailable";
+export type PendingPosRecoveryState = "checking" | "retry" | "unavailable" | null;
+export type PendingPosRecoveryAction = "continue" | "check" | null;
+
+export function getPendingPosRecoveryAction(
+  state: PendingPosRecoveryState,
+): PendingPosRecoveryAction {
+  if (state === "retry") return "continue";
+  if (state === "unavailable") return "check";
+  return null;
+}
 
 export function isPosCreationKey(value: unknown): value is string {
   return typeof value === "string" && POS_CREATION_KEY_PATTERN.test(value);

@@ -3,6 +3,7 @@ import { Pacifico, Sora, Karla, JetBrains_Mono } from "next/font/google";
 import { PWAProvider } from "@/components/pwa-provider";
 import { BusinessBrandingBoundary } from "@/components/auth/business-branding-boundary";
 import { LicenseHeartbeat } from "@/components/license-heartbeat";
+import { WheelScrollFallback } from "@/components/wheel-scroll-fallback";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -67,6 +68,7 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col">
         <PWAProvider>
+          <WheelScrollFallback />
           <LicenseHeartbeat />
           <BusinessBrandingBoundary>{children}</BusinessBrandingBoundary>
         </PWAProvider>

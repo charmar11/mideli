@@ -363,6 +363,7 @@ export interface Order {
   source_channel?: "pos" | "whatsapp";
   channel_conversation_id?: string | null;
   customer_id?: string | null;
+  business_customer_id?: string | null;
   customer_phone?: string | null;
   whatsapp_status_opt_in?: boolean;
   delivery_address?: string | null;
@@ -377,6 +378,13 @@ export interface Order {
   kitchen_release_at?: string | null;
   kitchen_released_at?: string | null;
   schedule_status?: "none" | "scheduled" | "released";
+  marketplace_platform?: "uber_eats" | "didi_food" | null;
+  marketplace_payment_mode?: "app" | "cash" | null;
+  marketplace_handed_off_at?: string | null;
+  marketplace_handed_off_by?: string | null;
+  marketplace_handoff_key?: string | null;
+  marketplace_cash_received?: number | null;
+  marketplace_cash_shift_id?: string | null;
   external_order_id?: string | null;
   payment_method_requested?: "efectivo" | "tarjeta" | "transferencia" | null;
   requested_cash_tendered?: number | null;

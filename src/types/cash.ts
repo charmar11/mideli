@@ -21,6 +21,7 @@ export interface CashShiftTotals {
   collected_total?: number;
   voided_total: number;
   cash_total?: number;
+  marketplace_cash_total?: number;
   card_total: number;
   transfer_total: number;
   fund_in_total: number;
@@ -57,6 +58,7 @@ export interface CashShift {
   tip_total: number;
   collected_total: number;
   cash_total: number;
+  marketplace_cash_total?: number;
   card_total: number;
   transfer_total: number;
   voided_total: number;

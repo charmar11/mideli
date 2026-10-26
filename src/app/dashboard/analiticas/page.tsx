@@ -1,4 +1,10 @@
+import { Suspense } from "react";
 import { AnalyticsDashboard } from "@/components/analytics/analytics-dashboard";
+import {
+  OwnerDailyControlLoading,
+  OwnerDailyControlUnavailable,
+} from "@/components/analytics/owner-daily-control";
+import { OwnerDailyControlLoader } from "@/components/analytics/owner-daily-control-loader";
 import {
   fetchAnalytics,
   type AnalyticsServiceFilter,
@@ -12,6 +18,7 @@ const SERVICES: AnalyticsServiceFilter[] = [
   "comedor",
   "domicilio",
   "para_llevar",
+  "plataformas",
 ];
 
 export default async function AnaliticasPage({
@@ -29,16 +36,32 @@ export default async function AnaliticasPage({
   const service = SERVICES.includes(params.servicio as AnalyticsServiceFilter)
     ? (params.servicio as AnalyticsServiceFilter)
     : "todos";
-  const [data, ownerControl] = await Promise.all([
-    fetchAnalytics({ period, service }),
-    fetchOwnerControl(period),
-  ]);
+  const ownerControlPromise = fetchOwnerControl(period).catch((error: unknown) => {
+    console.error("No se pudo cargar el control del dueño", error);
+    return null;
+  });
+  const data = await fetchAnalytics({ period, service });
+  const ownerReportEmailEnabled = isOwnerReportEmailEnabled();
 
   return (
     <AnalyticsDashboard
       data={data}
-      ownerControl={ownerControl}
-      ownerReportEmailEnabled={isOwnerReportEmailEnabled()}
+      ownerControlContent={
+        <Suspense
+          fallback={
+            <OwnerDailyControlLoading
+              emailEnabled={ownerReportEmailEnabled}
+            />
+          }
+        >
+          <OwnerDailyControlLoader
+            analytics={data}
+            emailEnabled={ownerReportEmailEnabled}
+            operationPromise={ownerControlPromise}
+            unavailable={<OwnerDailyControlUnavailable />}
+          />
+        </Suspense>
+      }
     />
   );
 }

@@ -1,4 +1,4 @@
-export type StaffRoleCapabilityGroup = "Pedidos y cobros" | "Caja" | "Cocina" | "Administración";
+export type StaffRoleCapabilityGroup = "Pedidos y cobros" | "Caja" | "Pantallas" | "Administración";
 
 export type StaffRoleCapabilityOption = {
   code: string;
@@ -46,9 +46,15 @@ export const STAFF_ROLE_CAPABILITY_OPTIONS: StaffRoleCapabilityOption[] = [
   },
   {
     code: "business.update_preparation",
-    label: "Actualizar preparación",
-    description: "Cambiar los pedidos entre pendiente, preparando y listo.",
-    group: "Cocina",
+    label: "Cambiar estados del pedido",
+    description: "Iniciar preparación y marcar listo desde Mesero · Estado.",
+    group: "Pedidos y cobros",
+  },
+  {
+    code: "business.access_kitchen",
+    label: "Abrir pantalla Cocina",
+    description: "Ver la estación Cocina. Cambiar estados requiere el permiso separado.",
+    group: "Pantallas",
   },
   {
     code: "business.manage_catalog",

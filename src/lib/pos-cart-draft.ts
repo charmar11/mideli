@@ -1,4 +1,9 @@
 import type { CartItem, SelectedModifier } from "@/types/database";
+import { isMarketplaceOrderSelection, type MarketplaceOrderSelection } from "@/lib/marketplace-orders";
+import {
+  isLocalDeliveryPaymentMethod,
+  type LocalDeliveryPaymentMethod,
+} from "@/lib/local-delivery-payment";
 
 const POS_CART_DRAFT_VERSION = 1;
 const STORAGE_KEY_PREFIX = "mideli.pos-cart-draft.v1.";
@@ -16,6 +21,8 @@ export interface PosCartDraft {
   scheduledFor: string | null;
   scheduledForLabel: string | null;
   kitchenReleaseAt: string | null;
+  marketplace?: MarketplaceOrderSelection | null;
+  deliveryPaymentMethod?: LocalDeliveryPaymentMethod | null;
 }
 
 interface StoredPosCartDraft extends PosCartDraft {
@@ -106,6 +113,8 @@ function isStoredDraft(value: unknown): value is StoredPosCartDraft {
     isNullableString(value.scheduledFor) &&
     isNullableString(value.scheduledForLabel) &&
     isNullableString(value.kitchenReleaseAt) &&
+    (value.marketplace === undefined || value.marketplace === null || isMarketplaceOrderSelection(value.marketplace)) &&
+    (value.deliveryPaymentMethod === undefined || value.deliveryPaymentMethod === null || isLocalDeliveryPaymentMethod(value.deliveryPaymentMethod)) &&
     (value.creationKey === undefined || isNullableString(value.creationKey))
   );
 }
@@ -139,6 +148,8 @@ export function readPosCartDraft(
       scheduledFor: value.scheduledFor,
       scheduledForLabel: value.scheduledForLabel,
       kitchenReleaseAt: value.kitchenReleaseAt,
+      marketplace: value.marketplace ?? null,
+      deliveryPaymentMethod: value.deliveryPaymentMethod ?? null,
     };
   } catch {
     try {

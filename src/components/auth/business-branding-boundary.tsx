@@ -42,6 +42,7 @@ export function BusinessBrandingBoundary({ children }: { children: React.ReactNo
       style={active ? getBrandThemeVariables(colors) : undefined}
     >
       {children}
+      <div id="mideli-overlay-root" className="contents" />
     </div>
   );
 }

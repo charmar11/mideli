@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import { toast } from "sonner";
 import {
   getBusinessBrandColors,
@@ -288,6 +289,8 @@ export function BusinessLicensesManager({
     router.refresh();
   }
 
+  const pullToRefreshRef = usePullToRefresh<HTMLElement>(refresh, !isPending);
+
   function submitLicenseChange(input: BusinessLicenseMutation) {
     startTransition(async () => {
       const result = await manageBusinessLicenseAction(input);
@@ -333,7 +336,7 @@ export function BusinessLicensesManager({
   }
 
   return (
-    <main className="min-h-dvh bg-background px-4 py-5 sm:px-6 sm:py-8">
+    <main ref={pullToRefreshRef} className="min-h-dvh bg-background px-4 py-5 sm:px-6 sm:py-8">
       <div className="mx-auto w-full max-w-6xl">
         <header className="mb-6 flex flex-col gap-4 border-b border-border pb-6 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -347,9 +350,6 @@ export function BusinessLicensesManager({
               Controla por separado la vigencia y disponibilidad de cada local. No se guardan importes ni saldos.
             </p>
           </div>
-          <button type="button" onClick={refresh} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 font-heading text-sm font-bold text-muted-foreground hover:text-foreground">
-            <RefreshCw size={16} aria-hidden /> Actualizar
-          </button>
         </header>
 
         {loadError ? (

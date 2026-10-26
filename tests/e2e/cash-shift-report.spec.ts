@@ -28,6 +28,7 @@ function shiftFixture(): CashShiftDetail {
     tip_total: 0,
     collected_total: 650,
     cash_total: 350,
+    marketplace_cash_total: 95,
     card_total: 0,
     transfer_total: 300,
     voided_total: 0,
@@ -104,6 +105,8 @@ test("el resumen compartible separa cobros y pendientes", () => {
 
   expect(summary).toContain("Corte #38");
   expect(summary).toContain("Venta neta: $650.00");
+  expect(summary).toContain("Efectivo: $350.00");
+  expect(summary).toContain("Efectivo recibido de Didi Food: $95.00");
   expect(summary).toContain("Efectivo contado: $850.00");
   expect(summary).toContain("Pendientes transferidos: 1");
   expect(summary).not.toContain("envío");

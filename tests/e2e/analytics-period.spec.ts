@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { ANALYTICS_ORDER_SELECT } from "@/lib/analytics/query-select";
 import { fetchAllRows } from "@/lib/analytics/fetch-all-rows";
+import { summarizeMarketplaceOrders } from "@/lib/analytics/marketplace";
 import {
   getTodayKey,
   normalizePeriod,
@@ -72,4 +73,65 @@ test("analíticas usa la relación de categoría delimitada por negocio", () => 
   expect(ANALYTICS_ORDER_SELECT).toContain(
     "categories!menu_items_business_category_fkey (name)"
   );
+});
+
+test("analíticas separa el valor de plataformas del efectivo Didi realmente recibido", () => {
+  const result = summarizeMarketplaceOrders([
+    {
+      marketplace_platform: "uber_eats",
+      marketplace_payment_mode: "app",
+      marketplace_handed_off_at: "2026-10-09T18:00:00Z",
+      marketplace_cash_received: null,
+      status: "served",
+      total: 260,
+    },
+    {
+      marketplace_platform: "didi_food",
+      marketplace_payment_mode: "app",
+      marketplace_handed_off_at: "2026-10-09T18:05:00Z",
+      marketplace_cash_received: null,
+      status: "served",
+      total: 190,
+    },
+    {
+      marketplace_platform: "didi_food",
+      marketplace_payment_mode: "cash",
+      marketplace_handed_off_at: "2026-10-09T18:10:00Z",
+      marketplace_cash_received: 120,
+      status: "served",
+      total: 140,
+    },
+    {
+      marketplace_platform: "didi_food",
+      marketplace_payment_mode: "cash",
+      marketplace_handed_off_at: null,
+      marketplace_cash_received: null,
+      status: "ready",
+      total: 300,
+    },
+    {
+      marketplace_platform: "uber_eats",
+      marketplace_payment_mode: "app",
+      marketplace_handed_off_at: null,
+      marketplace_cash_received: null,
+      status: "cancelled",
+      total: 280,
+    },
+  ]);
+
+  expect(result.totals).toEqual({
+    orders: 4,
+    handedOffOrders: 3,
+    pendingHandoffOrders: 1,
+    cancelledOrders: 1,
+    handedOffValue: 590,
+    appValue: 450,
+    cashReceived: 120,
+  });
+  expect(result.platforms.find((item) => item.platform === "didi_food")).toMatchObject({
+    orders: 3,
+    handedOffOrders: 2,
+    pendingHandoffOrders: 1,
+    cashReceived: 120,
+  });
 });

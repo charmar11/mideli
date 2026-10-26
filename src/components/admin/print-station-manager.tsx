@@ -10,7 +10,6 @@ import {
   Pause,
   Play,
   Printer,
-  RefreshCw,
   RotateCcw,
   Wifi,
   WifiOff,
@@ -19,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import type { SelectedModifier } from "@/types/database";
 
 type PrintSettings = {
@@ -93,7 +93,7 @@ function locationLabel(order: KitchenPrintPayload["order"]) {
   return [order.table_zone_name, order.table_number].filter(Boolean).join(" · ") || "Comedor";
 }
 
-export function PrintStationManager() {
+export function PrintStationManager({ embedded = false }: { embedded?: boolean }) {
   const [settings, setSettings] = useState<PrintSettings | null>(null);
   const [jobs, setJobs] = useState<PrintJobRow[]>([]);
   const [currentTicket, setCurrentTicket] = useState<KitchenPrintPayload | null>(null);
@@ -147,6 +147,7 @@ export function PrintStationManager() {
     });
     if (!jobsResult.error) setJobs((jobsResult.data ?? []) as PrintJobRow[]);
   }, []);
+  const pullToRefreshRef = usePullToRefresh<HTMLDivElement>(loadStation, !loading);
 
   const finishJob = useCallback(
     async (payload: KitchenPrintPayload, success: boolean, errorMessage?: string) => {
@@ -310,13 +311,15 @@ export function PrintStationManager() {
   const failedCount = jobs.filter((job) => job.status === "failed").length;
 
   return (
-    <div className="mideli-page-scroll pos-scroll h-full overflow-y-auto bg-background p-3 pb-10 sm:p-5 lg:p-6">
+    <div ref={pullToRefreshRef} className={embedded ? "space-y-5" : "mideli-page-scroll pos-scroll h-full overflow-y-auto bg-background p-3 pb-10 sm:p-5 lg:p-6"}>
       <div className="mx-auto max-w-6xl space-y-5">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <Link href="/dashboard/mesero" aria-label="Volver al panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-              <ArrowLeft aria-hidden size={18} />
-            </Link>
+            {!embedded ? (
+              <Link href="/dashboard/mesero" aria-label="Volver al panel" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-raised text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                <ArrowLeft aria-hidden size={18} />
+              </Link>
+            ) : null}
             <div className="min-w-0">
               <h1 className="font-heading text-2xl font-bold">Estación de cocina</h1>
               <p className="mt-1 font-body text-sm text-muted-foreground">
@@ -324,15 +327,6 @@ export function PrintStationManager() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => void loadStation()}
-            disabled={loading}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-surface-raised px-4 font-heading text-xs font-bold text-foreground disabled:opacity-50"
-          >
-            <RefreshCw aria-hidden size={16} className={loading ? "animate-spin" : ""} />
-            Actualizar
-          </button>
         </header>
 
         <section className="grid gap-3 lg:grid-cols-[1.35fr_0.65fr]">

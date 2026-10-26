@@ -4,9 +4,9 @@ import {
   ArrowLeft,
   Bike,
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
   CircleAlert,
+  Clock3,
   CreditCard,
   Loader2,
   MapPin,
@@ -16,12 +16,22 @@ import {
   UtensilsCrossed,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CartItem, RestaurantTable, TableMapLabel, TableZone } from "@/types/database";
+import type { MarketplaceOrderSelection, MarketplacePlatform, MarketplaceProductAvailability } from "@/lib/marketplace-orders";
+import { getPickupChannelOptionState, getUnavailableMarketplaceProductNames, marketplacePaymentLabel, marketplacePlatformLabel } from "@/lib/marketplace-orders";
 import type { ManualDeliveryPlaceSuggestion } from "@/lib/actions/delivery";
-import type { PosCustomerMatch, WhatsappCustomerAddress } from "@/lib/whatsapp/admin-types";
-import { formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import type { BusinessCustomerAddress, BusinessCustomerMatch } from "@/types/business-customers";
+import { formatPhoneForDisplay } from "@/lib/phone";
+import { toOrderTimeInputValue } from "@/lib/order-scheduling";
 import { ORDER_TYPE_VISUALS } from "@/lib/order-visuals";
+import { getDeliveryWarningReviewLabel } from "@/lib/pos-delivery-warning";
+import {
+  hasRequiredLocalDeliveryPayment,
+  type LocalDeliveryPaymentMethod,
+} from "@/lib/local-delivery-payment";
+import { UNREGISTERED_DELIVERY_COLONY } from "@/lib/whatsapp/delivery-pricing";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { TablePicker } from "./table-picker";
 
@@ -37,11 +47,11 @@ interface OrderDetailsModalProps {
   zones: TableZone[];
   labels: TableMapLabel[];
   customerId: string | null;
-  customerMatches: PosCustomerMatch[];
+  customerMatches: BusinessCustomerMatch[];
   customerSearchLoading: boolean;
+  customerSearchReady: boolean;
   customerName: string;
   customerPhone: string;
-  whatsappStatusOptIn: boolean;
   deliveryAddress: string;
   deliveryColony: string;
   deliveryReference: string;
@@ -51,29 +61,46 @@ interface OrderDetailsModalProps {
   deliveryLatitude: number | null;
   deliveryLongitude: number | null;
   paymentMethod: PaymentMethod;
-  cashTendered: number | null;
   orderNotes: string;
   scheduledForLabel?: string | null;
+  scheduledFor?: string | null;
+  businessTimeZone: string;
   isSubmitting: boolean;
   disableSubmit?: boolean;
   recoveryLocked?: boolean;
   isEditing: boolean;
+  marketplacePlatforms: MarketplacePlatform[];
+  marketplacePrices: Record<string, Partial<Record<MarketplacePlatform, number>>>;
+  marketplaceAvailability: MarketplaceProductAvailability;
+  marketplace: MarketplaceOrderSelection | null;
+  marketplaceConfigLoading?: boolean;
+  marketplaceScopeMismatch?: boolean;
   onClose: () => void;
   onTableIdChange: (id: string, label: string) => void;
   onCustomerNameChange: (value: string) => void;
   onCustomerPhoneChange: (value: string) => void;
-  onWhatsappStatusOptInChange: (value: boolean) => void;
-  onSelectCustomer: (customer: PosCustomerMatch) => void;
-  onSelectCustomerAddress: (address: WhatsappCustomerAddress) => void;
+  onSelectCustomer: (customer: BusinessCustomerMatch) => void;
+  onSelectCustomerAddress: (address: BusinessCustomerAddress) => void;
   onDeliveryAddressChange: (value: string) => void;
   onDeliveryReferenceChange: (value: string) => void;
+  onDeliveryPaymentMethodChange: (value: LocalDeliveryPaymentMethod) => void;
   onOrderNotesChange: (value: string) => void;
+  onPickupTimeChange: (value: string) => void;
   onQuoteDelivery: () => void;
+  deliveryColonyMissing: boolean;
+  onQuoteDeliveryWithoutColony: () => void;
   onSearchDeliveryPlaces: (input: string, sessionToken: string) => Promise<ManualDeliveryPlaceSuggestion[]>;
-  onSelectDeliveryPlace: (placeId: string, sessionToken: string) => Promise<void>;
+  onSelectDeliveryPlace: (
+    placeId: string,
+    sessionToken: string,
+    typedAddress: string,
+    fallbackColony: string
+  ) => Promise<void>;
   deliveryQuoteLoading: boolean;
   onSubmit: (allowUnconfirmedDelivery?: boolean) => void;
   onPayAndSubmit?: (allowUnconfirmedDelivery?: boolean) => void;
+  onMarketplaceChange: (selection: MarketplaceOrderSelection | null) => void;
+  onSelectLocalDelivery: () => void;
 }
 
 const TYPE_INFO: Record<OrderType, { label: string; icon: typeof UtensilsCrossed }> = {
@@ -116,9 +143,9 @@ export function OrderDetailsModal({
   customerId,
   customerMatches,
   customerSearchLoading,
+  customerSearchReady,
   customerName,
   customerPhone,
-  whatsappStatusOptIn,
   deliveryAddress,
   deliveryColony,
   deliveryReference,
@@ -128,35 +155,47 @@ export function OrderDetailsModal({
   deliveryLatitude,
   deliveryLongitude,
   paymentMethod,
-  cashTendered,
   orderNotes,
   scheduledForLabel,
+  scheduledFor,
+  businessTimeZone,
   isSubmitting,
   disableSubmit = false,
   recoveryLocked = false,
   isEditing,
+  marketplacePlatforms,
+  marketplacePrices,
+  marketplaceAvailability,
+  marketplace,
+  marketplaceConfigLoading = false,
+  marketplaceScopeMismatch = false,
   onClose,
   onTableIdChange,
   onCustomerNameChange,
   onCustomerPhoneChange,
-  onWhatsappStatusOptInChange,
   onSelectCustomer,
   onSelectCustomerAddress,
   onDeliveryAddressChange,
   onDeliveryReferenceChange,
+  onDeliveryPaymentMethodChange,
   onOrderNotesChange,
+  onPickupTimeChange,
   onQuoteDelivery,
+  deliveryColonyMissing,
+  onQuoteDeliveryWithoutColony,
   onSearchDeliveryPlaces,
   onSelectDeliveryPlace,
   deliveryQuoteLoading,
   onSubmit,
   onPayAndSubmit,
+  onMarketplaceChange,
+  onSelectLocalDelivery,
 }: OrderDetailsModalProps) {
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
-  const [savedAddressesOpen, setSavedAddressesOpen] = useState(false);
   const [deliveryWarningAction, setDeliveryWarningAction] = useState<"submit" | "pay" | null>(null);
   const [placeSuggestions, setPlaceSuggestions] = useState<ManualDeliveryPlaceSuggestion[]>([]);
   const [placeSearchLoading, setPlaceSearchLoading] = useState(false);
+  const [placeSearchComplete, setPlaceSearchComplete] = useState(false);
   const sessionTokenRef = useRef<string | null>(null);
   const typeInfo = TYPE_INFO[orderType];
   const TypeIcon = typeInfo.icon;
@@ -171,12 +210,14 @@ export function OrderDetailsModal({
   const phoneDigits = customerPhone.replace(/\D/g, "");
   const deliveryPhoneReady = phoneDigits.length >= 8 && phoneDigits.length <= 15;
   const phoneSearchable = phoneDigits.length >= 4;
+  const itemBasePrice = useCallback((item: CartItem) =>
+    marketplace
+      ? marketplacePrices[item.menu_item_id]?.[marketplace.platform] ?? item.price
+      : item.price, [marketplace, marketplacePrices]);
   const subtotal = items.reduce(
-    (sum, item) =>
-      sum +
-      (item.price + item.selected_modifiers.reduce((modifierTotal, modifier) => modifierTotal + modifier.price, 0)) *
-        item.quantity,
-    0
+    (sum, item) => sum +
+      (itemBasePrice(item) + item.selected_modifiers.reduce((modifierTotal, modifier) => modifierTotal + modifier.price, 0)) * item.quantity,
+    0,
   );
   const businesses = useBusinessContextStore((state) => state.businesses);
   const selectedBusinessId = useBusinessContextStore(
@@ -203,7 +244,7 @@ export function OrderDetailsModal({
       };
       current.items.push(item);
       current.subtotal +=
-        (item.price +
+        (itemBasePrice(item) +
           item.selected_modifiers.reduce(
             (modifierTotal, modifier) => modifierTotal + modifier.price,
             0
@@ -214,7 +255,7 @@ export function OrderDetailsModal({
       businessId,
       ...group,
     }));
-  }, [businessNames, items, selectedBusinessId]);
+  }, [businessNames, items, itemBasePrice, selectedBusinessId]);
   const isMixedBusinessCart = businessGroups.length > 1;
   const mixedNeedsComedor = isMixedBusinessCart && orderType !== "comedor";
   const total = subtotal + (orderType === "domicilio" ? deliveryFee : 0);
@@ -226,14 +267,30 @@ export function OrderDetailsModal({
   const deliveryNeedsLocationWarning = orderType === "domicilio" && !requirement.ready;
   const deliveryNeedsPhoneWarning = orderType === "domicilio" && !deliveryPhoneReady;
   const deliveryNeedsWarning = deliveryNeedsLocationWarning || deliveryNeedsPhoneWarning;
-  const canSubmit = !mixedNeedsComedor && (orderType === "domicilio" || requirement.ready);
-  const statusReady = !mixedNeedsComedor && requirement.ready && !deliveryNeedsPhoneWarning;
+  const pickupChannelOptionState = getPickupChannelOptionState(orderType, marketplace);
+  const deliveryPaymentReady = hasRequiredLocalDeliveryPayment(
+    orderType,
+    Boolean(marketplace),
+    paymentMethod
+  );
+  const deliveryPaymentMissing = !deliveryPaymentReady;
+  const canSubmit = !mixedNeedsComedor && !marketplaceConfigLoading &&
+    (orderType === "domicilio" || requirement.ready) &&
+    deliveryPaymentReady &&
+    (!marketplace || marketplacePlatforms.includes(marketplace.platform)) &&
+    (!marketplace || getUnavailableMarketplaceProductNames(marketplace.platform, items, marketplaceAvailability).length === 0);
+  const unavailableMarketplaceProductNames = marketplace
+    ? getUnavailableMarketplaceProductNames(marketplace.platform, items, marketplaceAvailability)
+    : [];
+  const statusReady = !mixedNeedsComedor && requirement.ready && !deliveryNeedsPhoneWarning && deliveryPaymentReady;
   const statusLabel = mixedNeedsComedor
     ? "Para varios negocios, selecciona Comedor"
     : deliveryNeedsLocationWarning
-    ? "Domicilio pendiente. Se pedirá confirmación al enviar"
+      ? "Domicilio pendiente. Se pedirá confirmación al enviar"
     : deliveryNeedsPhoneWarning
       ? "Teléfono no registrado. Se pedirá confirmación al enviar"
+      : deliveryPaymentMissing
+        ? "Selecciona Efectivo o Transferencia"
       : requirement.label;
   const googleMapEmbedUrl =
     deliveryLatitude !== null && deliveryLongitude !== null
@@ -242,7 +299,7 @@ export function OrderDetailsModal({
 
   const renderSummaryItem = (item: CartItem) => {
     const itemTotal =
-      (item.price +
+      (itemBasePrice(item) +
         item.selected_modifiers.reduce(
           (sum, modifier) => sum + modifier.price,
           0
@@ -314,7 +371,10 @@ export function OrderDetailsModal({
       } catch {
         if (!cancelled) setPlaceSuggestions([]);
       } finally {
-        if (!cancelled) setPlaceSearchLoading(false);
+        if (!cancelled) {
+          setPlaceSearchLoading(false);
+          setPlaceSearchComplete(true);
+        }
       }
     }, 350);
 
@@ -332,15 +392,20 @@ export function OrderDetailsModal({
 
   function handleDeliveryAddressChange(value: string) {
     setPlaceSuggestions([]);
+    setPlaceSearchComplete(false);
     onDeliveryAddressChange(value);
   }
 
   async function handlePlaceSelect(suggestion: ManualDeliveryPlaceSuggestion) {
     const sessionToken = sessionTokenRef.current ?? newPlacesSession();
+    const typedAddress = deliveryAddress;
+    const fallbackColony = deliveryColony;
     setPlaceSuggestions([]);
-    handleDeliveryAddressChange(suggestion.description);
+    setPlaceSearchComplete(false);
+    // Invalidate any old quote without replacing the text the operator typed.
+    onDeliveryAddressChange(typedAddress);
     sessionTokenRef.current = newPlacesSession();
-    await onSelectDeliveryPlace(suggestion.placeId, sessionToken);
+    await onSelectDeliveryPlace(suggestion.placeId, sessionToken, typedAddress, fallbackColony);
   }
 
   function requestSubmit(action: "submit" | "pay") {
@@ -493,30 +558,139 @@ export function OrderDetailsModal({
           <div className="min-h-0 min-w-0 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-surface p-3 sm:p-6">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-heading text-sm font-bold text-foreground">{detailsTitle(orderType)}</p>
-                <p className="mt-1 font-body text-xs text-muted-foreground">{detailsDescription(orderType)}</p>
+                <p className="font-heading text-sm font-bold text-foreground">
+                  {marketplace ? `Pedido de ${marketplacePlatformLabel(marketplace.platform)}` : detailsTitle(orderType)}
+                </p>
+                <p className="mt-1 font-body text-xs text-muted-foreground">
+                  {marketplace ? "Sin domicilio ni envío local. Se prepara y entrega al repartidor de la plataforma." : detailsDescription(orderType)}
+                </p>
               </div>
-              {paymentMethod ? (
+              {marketplace ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/10 px-2.5 py-1.5 font-heading text-[10px] font-bold text-gold">
+                  <CreditCard size={13} /> {marketplacePaymentLabel(marketplace.platform, marketplace.paymentMode)}
+                </span>
+              ) : paymentMethod ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/10 px-2.5 py-1.5 font-heading text-[10px] font-bold text-gold">
                   <CreditCard size={13} /> {paymentLabel(paymentMethod)}
                 </span>
               ) : null}
             </div>
 
+            {!isEditing && orderType !== "comedor" && (marketplacePlatforms.length > 0 || marketplaceConfigLoading || marketplaceScopeMismatch) ? (
+              <section aria-label="Canal de venta" className="mt-3 rounded-2xl border border-border bg-background p-3 sm:mt-4 sm:p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-heading text-xs font-bold text-foreground">Tipo de entrega</h2>
+                    <p className="mt-1 font-body text-[11px] text-muted-foreground">Elige domicilio local, para llevar o una plataforma.</p>
+                  </div>
+                  {marketplaceConfigLoading ? <Loader2 size={16} className="animate-spin text-muted-foreground" /> : null}
+                </div>
+                {marketplaceScopeMismatch ? (
+                  <p role="status" className="mt-3 rounded-xl border border-warning/25 bg-warning/5 px-3 py-2 font-body text-[11px] leading-4 text-muted-foreground">
+                    El menú activo y los productos del pedido son de negocios distintos. Vuelve al menú correspondiente para ver sus plataformas y precios.
+                  </p>
+                ) : null}
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <button
+                    type="button"
+                    aria-pressed={orderType === "domicilio" && !marketplace}
+                    onClick={onSelectLocalDelivery}
+                    className={`min-h-11 rounded-xl border px-3 font-heading text-xs font-bold transition-colors ${orderType === "domicilio" && !marketplace ? "border-brand bg-brand/12 text-brand" : "border-border bg-surface text-muted-foreground hover:text-foreground"}`}
+                  >Domicilio local</button>
+                  {pickupChannelOptionState !== "hidden" ? (
+                    <button
+                      type="button"
+                      aria-pressed={pickupChannelOptionState === "selected"}
+                      onClick={() => onMarketplaceChange(null)}
+                      className={`min-h-11 rounded-xl border px-3 font-heading text-xs font-bold transition-colors ${pickupChannelOptionState === "selected" ? "border-brand bg-brand/12 text-brand" : "border-border bg-surface text-muted-foreground hover:text-foreground"}`}
+                    >Para llevar</button>
+                  ) : null}
+                  {marketplacePlatforms.map((platform) => {
+                    const selected = marketplace?.platform === platform;
+                    const uberEats = platform === "uber_eats";
+                    const label = marketplacePlatformLabel(platform) ?? "Plataforma";
+
+                    return (
+                      <button
+                        key={platform}
+                        type="button"
+                        aria-label={label}
+                        aria-pressed={selected}
+                        onClick={() => onMarketplaceChange({ platform, paymentMode: "app" })}
+                        className={`flex min-h-12 items-center justify-center rounded-xl border px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background ${uberEats
+                          ? selected
+                            ? "border-[#06C167] bg-[#06C167]/10 shadow-[inset_0_0_0_1px_#06C167]"
+                            : "border-[#06C167]/35 bg-[#142328] hover:border-[#06C167]"
+                          : selected
+                            ? "border-[#FF7D41] bg-[#FF7D41]/10 shadow-[inset_0_0_0_1px_#FF7D41]"
+                            : "border-[#FF7D41]/35 bg-[#FF7D41]/5 hover:border-[#FF7D41]"}`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`flex h-8 items-center justify-center rounded-md px-2 ${uberEats ? "bg-[#F6F0EA]" : "bg-[#FF7D41]"}`}
+                        >
+                          <Image
+                            src={uberEats ? "/marketplaces/uber-eats.svg" : "/marketplaces/didi-food-white.svg"}
+                            alt=""
+                            width={96}
+                            height={17}
+                            className="h-[17px] w-24 object-contain"
+                          />
+                        </span>
+                        <span className="sr-only">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {marketplace?.platform === "didi_food" ? (
+                  <fieldset className="mt-3">
+                    <legend className="font-heading text-[11px] font-bold text-muted-foreground">¿Cómo pagará el repartidor?</legend>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {([
+                        { value: "app", label: "Pagado en la app" },
+                        { value: "cash", label: "Efectivo al entregar" },
+                      ] as const).map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={marketplace.paymentMode === option.value}
+                          onClick={() => onMarketplaceChange({ platform: "didi_food", paymentMode: option.value })}
+                          className={`min-h-11 rounded-xl border px-2.5 font-heading text-[11px] font-bold transition-colors ${marketplace.paymentMode === option.value ? "border-gold bg-gold/10 text-gold" : "border-border bg-surface text-muted-foreground hover:text-foreground"}`}
+                        >{option.label}</button>
+                      ))}
+                    </div>
+                    {marketplace.paymentMode === "cash" ? (
+                      <p className="mt-2 font-body text-[11px] leading-4 text-muted-foreground">El importe real se anotará cuando se entregue al repartidor. No se calcula ni se agrega al pedido por adelantado.</p>
+                    ) : null}
+                  </fieldset>
+                ) : null}
+                {marketplace && unavailableMarketplaceProductNames.length > 0 ? (
+                  <div role="alert" className="mt-3 rounded-xl border border-warning/30 bg-warning/8 p-3">
+                    <p className="font-heading text-xs font-bold text-warning">
+                      No disponible en {marketplacePlatformLabel(marketplace.platform)}
+                    </p>
+                    <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">
+                      {unavailableMarketplaceProductNames.join(", ")}. Quita esos productos o cambia el tipo de entrega para continuar.
+                    </p>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             <div className="mt-3 grid min-w-0 gap-2.5 sm:mt-4 sm:grid-cols-2 sm:gap-3">
               <div className="sm:col-span-2">
                   <span className="mb-1.5 flex items-center gap-1.5 font-heading text-xs font-bold text-muted-foreground">
-                  <Phone size={13} className="text-brand" /> Teléfono del cliente {orderType === "comedor" ? "(opcional)" : null}
+                  <Phone size={13} className="text-brand" /> Teléfono del cliente <span className="font-body font-normal">(opcional)</span>
                 </span>
                 <input
                   type="tel"
                   inputMode="tel"
                   value={customerPhone ? formatPhoneForDisplay(customerPhone) : ""}
                   onChange={(event) => onCustomerPhoneChange(event.target.value)}
-                  placeholder={orderType === "domicilio" ? "Opcional · celular para avisos" : orderType === "comedor" ? "Opcional para comedor" : "Teléfono o últimos 4 dígitos"}
+                  placeholder={orderType === "domicilio" ? "Celular del cliente (opcional)" : orderType === "comedor" ? "Opcional para comedor" : "Teléfono o últimos 4 dígitos"}
                   className="h-12 w-full rounded-xl border border-brand/35 bg-background px-3 font-data text-sm text-foreground outline-none transition-colors placeholder:font-body placeholder:text-xs placeholder:font-normal placeholder:text-muted-foreground sm:placeholder:text-sm focus:border-brand focus:ring-4 focus:ring-brand/15"
                 />
-                {phoneSearchable && (customerSearchLoading || customerMatches.length > 0) ? (
+                {phoneSearchable && (customerSearchLoading || customerSearchReady) ? (
                   <div className="mt-2 max-h-64 touch-pan-y overflow-y-auto overscroll-contain rounded-xl border border-border bg-background">
                     <div className="flex items-center justify-between border-b border-border px-3 py-2">
                       <span className="font-heading text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -530,7 +704,9 @@ export function OrderDetailsModal({
                       <button
                         key={customer.id}
                         type="button"
-                        onClick={() => onSelectCustomer(customer)}
+                        onClick={() => {
+                          onSelectCustomer(customer);
+                        }}
                         className={`flex min-h-12 w-full touch-manipulation items-center justify-between gap-3 border-b border-border px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset last:border-b-0 hover:bg-surface-raised ${
                           customer.id === customerId ? "bg-brand/10" : ""
                         }`}
@@ -553,62 +729,41 @@ export function OrderDetailsModal({
                     ) : null}
                   </div>
                 ) : null}
-                {selectedCustomer && selectedCustomer.addresses.length > 0 && orderType === "domicilio" ? (
-                  <div className="mt-2 rounded-xl border border-success/20 bg-success/5 p-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setSavedAddressesOpen((open) => !open)}
-                      aria-expanded={savedAddressesOpen}
-                      className="flex min-h-12 min-w-0 w-full touch-manipulation items-center justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success focus-visible:ring-inset"
+                {selectedCustomer && orderType === "domicilio" ? (
+                  <label className="mt-2 block rounded-xl border border-success/20 bg-success/5 p-2.5">
+                    <span className="mb-1.5 block font-heading text-[11px] font-bold uppercase tracking-wide text-success">
+                      {selectedCustomer.addresses.length > 0 ? "Domicilios guardados" : "Domicilio del cliente"}
+                    </span>
+                    <select
+                      value={selectedSavedAddress?.id ?? ""}
+                      onChange={(event) => {
+                        const address = selectedCustomer.addresses.find((candidate) => candidate.id === event.target.value);
+                        if (address) {
+                          onSelectCustomerAddress(address);
+                        } else {
+                          onDeliveryAddressChange("");
+                          onDeliveryReferenceChange("");
+                        }
+                      }}
+                      className="h-11 w-full rounded-lg border border-success/25 bg-background px-3 font-body text-xs text-foreground outline-none focus:border-success focus:ring-2 focus:ring-success/20"
                     >
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-heading text-[11px] font-bold uppercase tracking-wide text-success">
-                          {selectedSavedAddress ? "Dirección seleccionada" : "Elegir dirección guardada"}
-                        </span>
-                        <span className="mt-0.5 block break-words whitespace-normal font-body text-xs leading-5 text-foreground">
-                          {selectedSavedAddress?.formattedAddress || selectedSavedAddress?.addressText || `${selectedCustomer.addresses.length} direcciones disponibles`}
-                        </span>
-                        {selectedSavedAddress ? (
-                          <span className="mt-0.5 block font-heading text-[11px] font-bold text-gold">
-                            🏘️ Colonia: {selectedSavedAddress.colony || "No registrada"}
-                          </span>
-                        ) : null}
+                      <option value="">Escribir otro domicilio…</option>
+                      {selectedCustomer.addresses.map((address) => (
+                        <option key={address.id} value={address.id}>
+                          {address.label || (address.isDefault ? "Principal" : "Domicilio")} · {address.formattedAddress || address.addressText} · Col. {address.colony || "No registrada"}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedSavedAddress ? (
+                      <span className="mt-1.5 block font-heading text-[11px] font-bold text-gold">
+                        🏘️ Colonia: {selectedSavedAddress.colony || "No registrada"}
                       </span>
-                      <ChevronDown size={17} className={`shrink-0 text-success transition-transform ${savedAddressesOpen ? "rotate-180" : ""}`} />
-                    </button>
-                    {savedAddressesOpen ? (
-                      <div className="mt-2 grid max-h-48 touch-pan-y gap-2 overflow-y-auto overscroll-contain border-t border-success/15 pt-2">
-                        {selectedCustomer.addresses.map((address) => (
-                          <button
-                            key={address.id}
-                            type="button"
-                            onClick={() => {
-                              onSelectCustomerAddress(address);
-                              setSavedAddressesOpen(false);
-                            }}
-                           className={`flex min-h-12 min-w-0 w-full touch-manipulation items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success focus-visible:ring-inset hover:border-success/50 ${selectedSavedAddress?.id === address.id ? "border-success/50 bg-success/10" : "border-border bg-background"}`}
-                          >
-                            <span className="min-w-0 flex-1">
-                              <span className="block break-words whitespace-normal font-heading text-xs font-bold leading-5 text-foreground">
-                                {address.formattedAddress || address.addressText}
-                              </span>
-                              <span className="block truncate font-body text-[11px] text-muted-foreground">
-                                {address.label || (address.isDefault ? "Principal" : "Dirección del cliente")}
-                              </span>
-                              <span className="block truncate font-heading text-[11px] font-bold text-gold">
-                                🏘️ {address.colony || "Colonia no registrada"}
-                              </span>
-                            </span>
-                            {address.isDefault ? (
-                              <span className="shrink-0 rounded-full bg-success/12 px-2 py-1 font-heading text-[10px] font-bold text-success">
-                                Principal
-                              </span>
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
+                    ) : (
+                      <span className="mt-1.5 block font-body text-[11px] text-muted-foreground">
+                        El domicilio nuevo se guardará en el cliente al enviar el pedido.
+                      </span>
+                    )}
+                  </label>
                 ) : null}
               </div>
 
@@ -662,26 +817,41 @@ export function OrderDetailsModal({
 
               {orderType === "domicilio" ? (
                 <>
-                  <label className="sm:col-span-2 flex min-h-12 touch-manipulation items-center gap-2.5 rounded-xl border border-brand/20 bg-brand/5 px-3 py-2 transition-colors has-[:focus-visible]:border-brand/60 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand/40">
-                    <input
-                      type="checkbox"
-                      checked={whatsappStatusOptIn}
-                      onChange={(event) => onWhatsappStatusOptInChange(event.target.checked)}
-                      className="h-4 w-4 shrink-0 accent-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                    />
-                    <span className="min-w-0">
-                      <span className="block font-heading text-xs font-bold text-foreground">Avisar por WhatsApp cuando salga</span>
-                      <span className="mt-0.5 block font-body text-[10px] leading-4 text-muted-foreground">Solo con autorización del cliente.</span>
-                    </span>
-                  </label>
-                  <div className="flex items-end">
-                    {paymentMethod ? (
-                      <div className="flex min-h-12 w-full items-center rounded-xl border border-gold/20 bg-gold/8 px-3 font-body text-xs text-gold">
-                        Pago indicado: <strong className="ml-1 font-heading">{paymentLabel(paymentMethod)}</strong>
-                        {cashTendered ? <span className="ml-1">· paga con ${formatPrice(cashTendered)}</span> : null}
-                      </div>
-                    ) : null}
-                  </div>
+                  {!marketplace ? <fieldset className="sm:col-span-2">
+                    <legend className="mb-1.5 font-heading text-xs font-bold text-muted-foreground">
+                      ¿Cómo pagará el cliente? <span className="font-body font-normal">(obligatorio)</span>
+                    </legend>
+                    <div className="grid grid-cols-2 gap-2">
+                      {([
+                        ["efectivo", "Efectivo"],
+                        ["transferencia", "Transferencia"],
+                      ] as const).map(([method, label]) => {
+                        const selected = paymentMethod === method;
+                        return (
+                          <button
+                            key={method}
+                            type="button"
+                            aria-pressed={selected}
+                            disabled={recoveryLocked || isSubmitting}
+                            onClick={() => onDeliveryPaymentMethodChange(method)}
+                            className={`flex min-h-12 touch-manipulation items-center justify-between gap-2 rounded-xl border px-3 text-left font-heading text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-55 ${selected ? "border-brand bg-brand/10 text-foreground" : "border-border bg-background text-muted-foreground hover:border-brand/60 hover:text-foreground"}`}
+                          >
+                            <span>{label}</span>
+                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-brand bg-brand text-white" : "border-muted-foreground/50"}`}>
+                              {selected ? <CheckCircle2 size={15} aria-hidden="true" /> : null}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1.5 font-body text-[11px] text-muted-foreground" aria-live="polite">
+                      {paymentMethod === "efectivo"
+                        ? "El mensaje al repartidor indicará productos + envío."
+                        : paymentMethod === "transferencia"
+                          ? "El mensaje al repartidor indicará transferencia."
+                          : "Selecciona una opción para habilitar el envío."}
+                    </p>
+                  </fieldset> : null}
                   <label className="sm:col-span-2">
                     <span className="mb-1.5 block font-heading text-xs font-bold text-muted-foreground">Domicilio</span>
                     <textarea
@@ -692,7 +862,7 @@ export function OrderDetailsModal({
                       className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 font-body text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/15"
                     />
                     <span className="mt-1.5 block font-body text-[11px] leading-4 text-muted-foreground">
-                      Google Maps identificará automáticamente la colonia. También puedes escribir el nombre de una plaza, parque o punto conocido.
+                      Si la sabes, añade la colonia en este mismo campo como “Col. Nombre” o “Fracc. Nombre”. También puedes buscar plazas y parques o pegar un enlace de Maps. Si es una zona nueva sin colonia oficial, aparecerá una opción para cotizar por distancia.
                     </span>
                     {!deliveryConfirmed && deliveryAddress.trim().length >= 3 ? (
                       <div className="mt-2 overflow-hidden rounded-xl border border-border bg-background shadow-lg">
@@ -712,8 +882,9 @@ export function OrderDetailsModal({
                               <button
                                 key={suggestion.placeId}
                                 type="button"
+                                disabled={deliveryQuoteLoading}
                                 onClick={() => void handlePlaceSelect(suggestion)}
-                                className="flex min-h-14 w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-surface-raised focus-visible:bg-surface-raised focus-visible:outline-none"
+                                className="flex min-h-14 w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-surface-raised focus-visible:bg-surface-raised focus-visible:outline-none disabled:cursor-wait disabled:opacity-60"
                               >
                                 <MapPin size={16} className="mt-0.5 shrink-0 text-brand" />
                                 <span className="min-w-0">
@@ -727,9 +898,13 @@ export function OrderDetailsModal({
                               </button>
                             ))}
                           </div>
+                        ) : placeSearchComplete ? (
+                          <div className="px-3 py-2.5 font-body text-xs text-muted-foreground">
+                            No hay sugerencias para ese texto. Puedes corregirlo o intentar la búsqueda manual.
+                          </div>
                         ) : null}
                         <p className="border-t border-border px-3 py-2 font-body text-[10px] leading-4 text-muted-foreground">
-                          Selecciona el resultado más parecido a la ubicación del cliente. Si no aparece, puedes continuar con la búsqueda manual.
+                          Comprueba calle y número antes de elegir. Si no aparece, usa “Buscar y confirmar domicilio”.
                         </p>
                       </div>
                     ) : null}
@@ -745,6 +920,30 @@ export function OrderDetailsModal({
                       {deliveryQuoteLoading ? "Localizando domicilio..." : "Buscar y confirmar domicilio"}
                     </button>
                   </div>
+                  {deliveryColonyMissing && !deliveryConfirmed ? (
+                    <div className="sm:col-span-2 rounded-xl border border-warning/30 bg-warning/8 p-3">
+                      <div className="flex items-start gap-2">
+                        <CircleAlert size={16} className="mt-0.5 shrink-0 text-warning" />
+                        <div className="min-w-0">
+                          <p className="font-heading text-xs font-bold text-warning">
+                            Maps ubicó la calle, pero no reconoce una colonia
+                          </p>
+                          <p className="mt-1 font-body text-xs leading-5 text-muted-foreground">
+                            Si esta zona todavía no tiene colonia oficial, puedes calcular el envío por distancia. No se agregará recargo de colonia; confirma el precio con el repartidor.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={onQuoteDeliveryWithoutColony}
+                            disabled={deliveryQuoteLoading}
+                            className="mt-2.5 inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/12 px-3 font-heading text-xs font-bold text-warning transition-colors hover:bg-warning/20 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+                          >
+                            {deliveryQuoteLoading ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
+                            Cotizar por distancia, sin colonia
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="sm:col-span-2 overflow-hidden rounded-2xl border border-border bg-background">
                     {googleMapEmbedUrl ? (
                       <iframe
@@ -767,9 +966,14 @@ export function OrderDetailsModal({
                           {deliveryDistanceKm !== null ? <span>{deliveryDistanceKm.toFixed(1)} km</span> : null}
                           <span>Envío ${formatPrice(deliveryFee)}</span>
                         </div>
-                        <p className="mt-1 font-heading text-xs font-bold text-gold">
+                        <p className={`mt-1 font-heading text-xs font-bold ${deliveryColony === UNREGISTERED_DELIVERY_COLONY ? "text-warning" : "text-gold"}`}>
                           🏘️ Colonia: {deliveryColony || "No registrada"}
                         </p>
+                        {deliveryColony === UNREGISTERED_DELIVERY_COLONY ? (
+                          <p className="mt-1 font-body text-[11px] leading-4 text-warning">
+                            Envío calculado solo por distancia. Sin recargo de colonia.
+                          </p>
+                        ) : null}
                         {deliveryLatitude !== null && deliveryLongitude !== null ? (
                           <a
                             href={`https://www.google.com/maps/search/?api=1&query=${deliveryLatitude},${deliveryLongitude}`}
@@ -795,6 +999,23 @@ export function OrderDetailsModal({
                 </>
               ) : null}
 
+              {orderType === "para_llevar" && !marketplace ? (
+                <label className="sm:col-span-2 rounded-xl border border-border bg-background/70 p-3">
+                  <span className="mb-1.5 flex items-center gap-1.5 font-heading text-xs font-bold text-muted-foreground">
+                    <Clock3 size={14} className="text-brand" /> Hora para recoger <span className="font-body font-normal">(opcional, hoy)</span>
+                  </span>
+                  <input
+                    type="time"
+                    value={toOrderTimeInputValue(scheduledFor, businessTimeZone)}
+                    onChange={(event) => onPickupTimeChange(event.target.value)}
+                    className="h-12 w-full rounded-xl border border-border bg-background px-3 font-data text-sm text-foreground outline-none focus:border-brand focus:ring-4 focus:ring-brand/15 sm:max-w-xs"
+                  />
+                  <span className="mt-1.5 block font-body text-[11px] leading-4 text-muted-foreground">
+                    Déjalo vacío si el pedido se recogerá en cuanto esté listo.
+                  </span>
+                </label>
+              ) : null}
+
               <label className="sm:col-span-2">
                 <span className="mb-1.5 block font-heading text-xs font-bold text-muted-foreground">Nota general <span className="font-body font-normal">(opcional)</span></span>
                 <textarea
@@ -817,7 +1038,7 @@ export function OrderDetailsModal({
               <p className="font-data text-xl font-bold sm:text-2xl">${formatPrice(total)}</p>
             </div>
             <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:min-w-[22rem]">
-              {onPayAndSubmit && !isEditing ? (
+              {onPayAndSubmit && !isEditing && !marketplace ? (
                 <button
                   type="button"
                   onClick={() => requestSubmit("pay")}
@@ -834,7 +1055,7 @@ export function OrderDetailsModal({
                 className="action-success order-1 flex min-h-16 min-w-0 touch-manipulation items-center justify-center gap-2 rounded-2xl px-4 font-heading text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 sm:order-2 sm:h-12 sm:min-h-0 sm:gap-2 sm:rounded-xl sm:px-4"
               >
                 {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                {isEditing ? "Guardar cambios" : "Enviar a cocina"}
+                {isEditing ? "Guardar cambios" : "Enviar a preparación"}
               </button>
             </div>
           </div>
@@ -875,7 +1096,10 @@ export function OrderDetailsModal({
                 onClick={() => setDeliveryWarningAction(null)}
                 className="min-h-12 rounded-xl border border-border px-4 font-heading text-sm font-bold text-muted-foreground transition-colors hover:border-brand/50 hover:text-foreground"
               >
-                Revisar domicilio
+                {getDeliveryWarningReviewLabel(
+                  deliveryNeedsLocationWarning,
+                  deliveryNeedsPhoneWarning,
+                )}
               </button>
               <button
                 type="button"

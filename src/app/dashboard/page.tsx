@@ -30,8 +30,11 @@ export default async function DashboardPage() {
     ) {
       redirect("/dashboard/mesero");
     }
-    if (capabilities.has("business.update_preparation")) {
+    if (capabilities.has("business.access_kitchen")) {
       redirect("/dashboard/cocina");
+    }
+    if (capabilities.has("business.update_preparation")) {
+      redirect("/dashboard/mesero");
     }
     if (SETUP_CAPABILITIES.some((capability) => capabilities.has(capability))) {
       return <BusinessSetupHome capabilities={[...capabilities]} />;

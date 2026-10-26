@@ -2,7 +2,7 @@
 
 BEGIN;
 
-SELECT plan(21);
+SELECT plan(25);
 
 SELECT ok(
   to_regprocedure('public.create_business_staff_membership(uuid,uuid,text,boolean)') IS NOT NULL,
@@ -87,6 +87,38 @@ SELECT ok(
      WHERE oid = 'private.multibusiness_staff_capability_codes(text)'::regprocedure
   ),
   'local role capability mapping is explicit'
+);
+SELECT ok(
+  EXISTS (
+    SELECT 1
+      FROM public.capabilities
+     WHERE code = 'business.access_kitchen'
+       AND scope_type = 'business'
+       AND is_active
+  ),
+  'the separate Kitchen screen capability is active and business-scoped'
+);
+SELECT ok(
+  'business.access_kitchen' = ANY (private.business_staff_delegable_capability_codes()),
+  'business managers may delegate Kitchen screen access within their business'
+);
+SELECT ok(
+  (
+    SELECT prosrc LIKE '%business.update_preparation%'
+      AND prosrc NOT LIKE '%business.access_kitchen%'
+      FROM pg_proc
+     WHERE oid = 'private.seed_business_staff_roles(uuid)'::regprocedure
+  ),
+  'new businesses seed preparation-from-Estado without enabling KDS by default'
+);
+SELECT ok(
+  (
+    SELECT prosrc LIKE '%business.update_preparation%'
+      AND prosrc NOT LIKE '%business.access_kitchen%'
+      FROM pg_proc
+     WHERE oid = 'private.multibusiness_can_update_order_status(uuid,public.order_status)'::regprocedure
+  ),
+  'order status changes remain authorized by preparation access, not KDS screen access'
 );
 SELECT ok(
   (

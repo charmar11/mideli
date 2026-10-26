@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -28,7 +29,6 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { listPaymentAuthorizersAction } from "@/lib/actions/users";
 import { useBusinessContextStore, useOrderStore } from "@/lib/stores";
-import { getBusinessLogoUrl } from "@/lib/business-branding";
 import { formatOrderLocation } from "@/lib/order-location";
 import type { Order, OrderItem } from "@/types/database";
 import type {
@@ -237,6 +237,11 @@ async function getPaymentBusinessContext(targetBusinessId?: string | null) {
 }
 
 export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlowProps) {
+  const [portalHost] = useState<HTMLElement | null>(() =>
+    typeof document === "undefined"
+      ? null
+      : document.getElementById("mideli-overlay-root")
+  );
   const [stage, setStage] = useState<FlowStage>("account");
   const [splitMode, setSplitMode] = useState<SplitMode>("complete");
   const [equalParts, setEqualParts] = useState(2);
@@ -643,9 +648,11 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
         : 0;
   const change = Math.max(0, roundMoney((Number(cashReceived) || 0) - cashApplied));
 
-  return (
+  if (!portalHost) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-ink/70 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+      className="fixed inset-0 z-[120] flex items-end justify-center bg-ink/70 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !submitting) onClose();
       }}
@@ -931,7 +938,8 @@ export function PaymentFlow({ orders, onClose, onCompleted, title }: PaymentFlow
         ) : null}
       </div>
       {showPaymentGuide ? <PaymentGuide onClose={() => setShowPaymentGuide(false)} /> : null}
-    </div>
+    </div>,
+    portalHost
   );
 }
 
@@ -971,7 +979,7 @@ function PaymentGuide({ onClose }: { onClose: () => void }) {
   const step = PAYMENT_GUIDE_STEPS[index];
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-ink/80 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[130] flex items-end justify-center bg-ink/80 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <section role="dialog" aria-modal="true" aria-labelledby="payment-guide-title" className="w-full max-w-md overflow-hidden rounded-t-2xl border border-border bg-surface shadow-float sm:rounded-2xl">
         <div className="h-1 bg-surface-raised">
           <div className="h-full bg-brand transition-[width]" style={{ width: `${((index + 1) / PAYMENT_GUIDE_STEPS.length) * 100}%` }} />
@@ -1096,75 +1104,62 @@ function ReceiptPaper({ receipt, reprint = false }: { receipt: PaymentReceipt; r
   const business = businessContexts.find((context) => context.business_id === receiptBusinessId) ?? null;
   const businessName = business?.business_display_name ?? "Rincón 404";
   const organizationName = business?.organization_name ?? "";
-  const businessLogoUrl = getBusinessLogoUrl(business?.business_brand_logo_path);
-  const isMideli = business?.business_slug === "mideli";
   const date = new Intl.DateTimeFormat("es-MX", {
     timeZone: "America/Hermosillo",
-    dateStyle: "medium",
+    dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(transaction.created_at));
   const orderNumbers = receipt.orders.map((order) => `#${order.number}`).join(", ");
   return (
     <article
-      className="payment-receipt-print-root order-1 w-full shrink-0 bg-[#fffdf4] px-5 py-6 text-[#111] shadow-float lg:order-2"
+      className="payment-receipt-print-root order-1 w-full shrink-0 box-border bg-white p-[2.5mm] font-data text-[8px] leading-[1.15] text-black shadow-float lg:order-2"
       style={{ maxWidth: "181px", ["--ticket-width" as string]: "48mm" }}
     >
-      <div className="text-center">
-        {businessLogoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={businessLogoUrl} alt="" className="mx-auto mb-2 max-h-10 max-w-24 object-contain" />
-        ) : null}
-        <p className="font-heading text-base font-extrabold leading-tight text-[#111]">{businessName}</p>
+      <div className="text-center leading-[1.15]">
+        <p className="font-data text-[10px] font-bold leading-tight">{businessName}</p>
         {organizationName && organizationName !== businessName ? (
-          <p className="mt-1 font-body text-[9px] leading-3">{organizationName}</p>
+          <p className="font-data text-[8px]">{organizationName}</p>
         ) : null}
-        {isMideli ? (
-          <>
-            <p className="mt-1 font-heading text-[10px] font-bold uppercase tracking-[0.1em]">Burger &amp; Sushi</p>
-            <p className="mt-2 font-body text-[10px] leading-4">C. Yaqui 404 Oriente<br />Cd. Obregón, Sonora</p>
-          </>
-        ) : null}
-        {reprint ? <p className="mt-2 font-data text-[10px] font-bold tracking-[0.18em]">REIMPRESIÓN</p> : null}
+        {reprint ? <p className="font-data font-bold">REIMPRESIÓN</p> : null}
       </div>
-      <div className="my-4 border-t border-dashed border-[#777]" />
-      <div className="space-y-1 font-data text-[10px]">
-        <p className="flex justify-between gap-3"><span>Ticket</span><strong>{transaction.folio}</strong></p>
-        <p className="flex justify-between gap-3"><span>Pedido</span><strong>{orderNumbers}</strong></p>
-        <p className="flex justify-between gap-3"><span>Fecha</span><strong className="text-right">{date}</strong></p>
-        {transaction.table_number ? <p className="flex justify-between gap-3"><span>Mesa</span><strong>{transaction.table_number}</strong></p> : null}
-        {transaction.customer_name ? <p className="flex justify-between gap-3"><span>Cliente</span><strong className="text-right">{transaction.customer_name}</strong></p> : null}
-        <p className="flex justify-between gap-3"><span>Atendió</span><strong className="text-right">{transaction.charged_by_name ?? "Personal del negocio"}</strong></p>
+      <div className="my-1 border-t border-dashed border-black" />
+      <div className="space-y-0">
+        <p className="flex justify-between gap-1"><span>Ticket</span><strong>{transaction.folio}</strong></p>
+        <p className="flex justify-between gap-1"><span>Pedido</span><strong>{orderNumbers}</strong></p>
+        <p className="flex justify-between gap-1"><span>Fecha</span><strong className="text-right">{date}</strong></p>
+        {transaction.table_number ? <p>Mesa {transaction.table_number}</p> : null}
+        {transaction.customer_name ? <p>Cliente: {transaction.customer_name}</p> : null}
+        <p>Atendió: {transaction.charged_by_name ?? "Personal del negocio"}</p>
       </div>
-      <div className="my-4 border-t border-dashed border-[#777]" />
-      <div className="space-y-3">
+      <div className="my-1 border-t border-dashed border-black" />
+      <div className="space-y-1">
         {receipt.items.map((item) => (
           <div key={`${item.order_item_id}-${item.quantity}`}>
-            <div className="grid grid-cols-[auto_1fr_auto] gap-1 font-body text-[10px] font-bold">
+            <div className="grid grid-cols-[auto_1fr_auto] gap-0.5 font-data font-bold">
               <span>{formatQuantity(item.quantity)}x</span><span>{item.item_name}</span><span>{formatPaymentMoney(item.line_total)}</span>
             </div>
             {item.selected_modifiers.length > 0 ? (
-              <div className="ml-4 mt-1 space-y-0.5 font-body text-[10px] text-[#444]">
+              <div className="ml-2 space-y-0 font-data text-[8px] text-black">
                 {item.selected_modifiers.map((modifier, index) => <p key={`${modifier.option}-${index}`}>+ {modifier.option}{modifier.price > 0 ? ` ${formatPaymentMoney(modifier.price)}` : ""}{modifier.description ? `: ${modifier.description}` : ""}</p>)}
               </div>
             ) : null}
           </div>
         ))}
       </div>
-      <div className="my-4 border-t border-dashed border-[#777]" />
-      <div className="space-y-1 font-data text-[10px]">
+      <div className="my-1 border-t border-dashed border-black" />
+      <div className="space-y-0">
         <p className="flex justify-between"><span>Subtotal</span><span>{formatPaymentMoney(transaction.subtotal_amount)}</span></p>
         {transaction.discount_amount > 0 ? <p className="flex justify-between"><span>Descuento</span><span>-{formatPaymentMoney(transaction.discount_amount)}</span></p> : null}
         {transaction.tip_amount > 0 ? <p className="flex justify-between"><span>Propina</span><span>{formatPaymentMoney(transaction.tip_amount)}</span></p> : null}
-        <p className="mt-2 flex justify-between font-heading text-sm font-bold"><span>Total</span><span>{formatPaymentMoney(transaction.total_amount)}</span></p>
+        <p className="flex justify-between font-data text-[9px] font-bold"><span>TOTAL</span><span>{formatPaymentMoney(transaction.total_amount)}</span></p>
       </div>
-      <div className="my-4 border-t border-dashed border-[#777]" />
-      <div className="space-y-1 font-data text-[10px]">
+      <div className="my-1 border-t border-dashed border-black" />
+      <div className="space-y-0">
         {receipt.tenders.map((tender, index) => <p key={`${tender.method}-${index}`} className="flex justify-between"><span>{METHOD_LABELS[tender.method]}</span><span>{formatPaymentMoney(tender.amount)}</span></p>)}
         {transaction.cash_received > 0 ? <p className="flex justify-between"><span>Recibido</span><span>{formatPaymentMoney(transaction.cash_received)}</span></p> : null}
         {transaction.change_given > 0 ? <p className="flex justify-between"><span>Cambio</span><span>{formatPaymentMoney(transaction.change_given)}</span></p> : null}
       </div>
-      {transaction.status === "voided" ? <p className="mt-4 border border-[#111] py-1 text-center font-data text-[10px] font-bold">PAGO ANULADO</p> : null}
-      <p className="mt-6 text-center font-heading text-[11px] font-bold">Gracias por tu compra</p>
+      {transaction.status === "voided" ? <p className="mt-1 border border-black py-0.5 text-center font-data font-bold">PAGO ANULADO</p> : null}
     </article>
   );
 }

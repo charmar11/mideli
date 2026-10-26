@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 interface AnalyticsTrendChartProps {
   data: TrendPoint[];
+  mode?: "sales" | "platforms";
 }
 
 type Metric = "revenue" | "orders";
@@ -32,7 +33,7 @@ function compactNumber(value: number): string {
   }).format(value);
 }
 
-export function AnalyticsTrendChart({ data }: AnalyticsTrendChartProps) {
+export function AnalyticsTrendChart({ data, mode = "sales" }: AnalyticsTrendChartProps) {
   const [metric, setMetric] = useState<Metric>("revenue");
   const hasData = data.some((point) => point.revenue > 0 || point.orders > 0);
   const currentKey = metric;
@@ -42,15 +43,19 @@ export function AnalyticsTrendChart({ data }: AnalyticsTrendChartProps) {
     <div className="flex min-h-80 flex-col">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="font-heading text-lg font-bold">Ritmo del periodo</h2>
+          <h2 className="font-heading text-lg font-bold">
+            {mode === "platforms" ? "Actividad en plataformas" : "Tendencia de cobros"}
+          </h2>
           <p className="font-body text-sm text-muted-foreground">
-            La línea tenue corresponde al periodo anterior.
+            {mode === "platforms"
+              ? "Importe de tickets entregados y pedidos recibidos."
+              : "La línea tenue corresponde al periodo anterior."}
           </p>
         </div>
         <div className="grid grid-cols-2 rounded-xl bg-surface-raised p-1">
           {(
             [
-              ["revenue", "Ventas"],
+              ["revenue", mode === "platforms" ? "Valor tickets" : "Ventas"],
               ["orders", "Pedidos"],
             ] as const
           ).map(([id, label]) => (
@@ -149,9 +154,15 @@ export function AnalyticsTrendChart({ data }: AnalyticsTrendChartProps) {
         </div>
       ) : (
         <div className="flex min-h-64 flex-1 flex-col items-center justify-center rounded-xl bg-surface-raised/55 px-6 text-center ring-1 ring-foreground/5">
-          <p className="font-heading text-sm font-bold">Todavía no hay ventas cobradas</p>
+          <p className="font-heading text-sm font-bold">
+            {mode === "platforms"
+              ? "No hay pedidos de plataforma"
+              : "Todavía no hay ventas cobradas"}
+          </p>
           <p className="mt-1 max-w-sm font-body text-sm text-muted-foreground">
-            La tendencia aparecerá cuando se registren cobros dentro de este periodo.
+            {mode === "platforms"
+              ? "La tendencia aparecerá cuando se registren pedidos Uber Eats o DiDi Food."
+              : "La tendencia aparecerá cuando se registren cobros dentro de este periodo."}
           </p>
         </div>
       )}

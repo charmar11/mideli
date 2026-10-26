@@ -61,6 +61,8 @@ export type ConversationDeliveryQuote = {
   baseFee: number;
   surcharge: number;
   totalFee: number;
+  /** True only when staff explicitly accepts a Maps result without a colony. */
+  colonyUnassigned?: boolean;
 };
 
 export type ConversationSavedAddress = {

@@ -192,7 +192,8 @@ export function CashShiftReport({ shift }: { shift: CashShiftDetail }) {
         <Block title="Métodos de pago" icon={<WalletCards size={17} />}>
           <Rows
             rows={[
-              ["Efectivo", isClosed ? money(shift.cash_total) : "Protegido", <Banknote key="cash" size={15} />],
+              ["Efectivo de ventas locales", isClosed ? money(shift.cash_total) : "Protegido", <Banknote key="cash" size={15} />],
+              ["Efectivo recibido de Didi Food", isClosed ? money(shift.marketplace_cash_total ?? 0) : "Protegido"],
               ["Tarjeta", money(totals.card_total), <CreditCard key="card" size={15} />],
               ["Transferencia", money(totals.transfer_total), <ArrowLeftRight key="transfer" size={15} />],
               ["Propinas", money(totals.tip_total)],
@@ -207,6 +208,7 @@ export function CashShiftReport({ shift }: { shift: CashShiftDetail }) {
               rows={[
                 ["Fondo inicial", money(shift.opening_float)],
                 ["Ventas en efectivo", money(shift.cash_total)],
+                ["Efectivo recibido de Didi Food", money(shift.marketplace_cash_total ?? 0)],
                 ["Entradas de fondo", money(shift.fund_in_total)],
                 ["Retiros", money(shift.withdrawal_total)],
                 ["Gastos", money(shift.expense_total)],

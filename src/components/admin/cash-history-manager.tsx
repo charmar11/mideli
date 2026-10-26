@@ -15,7 +15,6 @@ import {
   Pencil,
   Printer,
   ReceiptText,
-  RefreshCw,
   RotateCcw,
   Search,
   Share2,
@@ -29,6 +28,7 @@ import { DatePeriodPicker } from "@/components/shared/date-period-picker";
 import { useCashShiftStore } from "@/lib/stores";
 import { validateOpeningFloatCorrection } from "@/lib/cash-close";
 import { buildCashShiftShareText } from "@/lib/cash-shift-report";
+import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
 import {
   addDays,
   getTodayKey,
@@ -140,6 +140,10 @@ export function CashHistoryManager() {
     if (result.error) return toast.error(result.error);
     setShifts(result.data ?? []);
   }, [listHistory]);
+  const pullToRefreshRef = usePullToRefresh<HTMLDivElement>(
+    load,
+    activeTab === "shifts" && !loading,
+  );
 
   useEffect(() => {
     if (activeTab !== "shifts") return;
@@ -446,12 +450,11 @@ export function CashHistoryManager() {
   );
 
   return (
-    <div className="mideli-cash-screen min-h-dvh min-w-0 max-w-full overflow-x-hidden bg-background text-foreground">
+    <div ref={pullToRefreshRef} className="mideli-cash-screen min-h-dvh min-w-0 max-w-full overflow-x-hidden bg-background text-foreground">
       <header className="flex min-h-16 items-center gap-3 border-b border-border bg-surface px-3 py-2 sm:px-6 print:hidden">
         <Link href="/dashboard/mesero" aria-label="Volver al punto de venta" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl bg-surface-raised text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"><ArrowLeft size={19} /></Link>
         <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-light text-brand"><Landmark size={20} /></span>
         <div className="min-w-0 flex-1"><h1 className="font-heading text-lg font-black">Caja y cortes</h1><p className="truncate font-body text-xs text-muted-foreground">Turnos, diferencias y auditoría de cobros</p></div>
-        <button type="button" onClick={() => void load()} aria-label="Actualizar" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-border text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:text-foreground"><RefreshCw size={17} /></button>
       </header>
 
       <nav className="pos-scroll mx-auto flex max-w-[1500px] touch-pan-x gap-2 overflow-x-auto overscroll-contain px-3 pt-3 sm:px-5 lg:px-6 print:hidden" aria-label="Secciones de caja">

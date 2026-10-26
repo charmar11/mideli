@@ -77,6 +77,18 @@ export interface DeleteSalesHistoryResult {
   error: string | null;
 }
 
+export interface OrderDeletionAuthorizer {
+  id: string;
+  full_name: string | null;
+  pin_configured: boolean;
+}
+
+export interface OrderDeletionAuthorizersResult {
+  success: boolean;
+  authorizers: OrderDeletionAuthorizer[];
+  error: string | null;
+}
+
 function isValidDate(value: string) {
   return value.length > 0 && !Number.isNaN(new Date(value).getTime());
 }
@@ -188,7 +200,7 @@ export async function fetchSalesHistory({
     let ordersQuery = supabase
       .from("orders")
       .select(
-        "id,business_id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,customer_phone,source_channel,whatsapp_status_opt_in,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
+        "id,business_id,business_customer_id,number,status,type,total,notes,table_number,table_id,table_zone_id,table_zone_name,customer_name,customer_phone,source_channel,whatsapp_status_opt_in,delivery_address,delivery_colony,delivery_reference,delivery_fee,delivery_distance_meters,delivery_latitude,delivery_longitude,delivery_status,payment_method_requested,requested_cash_tendered,scheduled_for,kitchen_release_at,kitchen_released_at,schedule_status,marketplace_platform,marketplace_payment_mode,marketplace_handed_off_at,marketplace_cash_received,marketplace_cash_shift_id,cash_shift_id,cash_received,change_given,created_by,payment_method,payment_status,paid_amount,paid_at,cancelled_at,created_at,updated_at"
       )
       .gte("created_at", from.toISOString())
       .lte("created_at", to.toISOString())
@@ -380,8 +392,75 @@ export async function fetchSalesHistory({
   }
 }
 
+export async function listBusinessOrderDeletionAuthorizers(
+  businessId: string
+): Promise<OrderDeletionAuthorizersResult> {
+  try {
+    if (!businessId) {
+      return { success: false, authorizers: [], error: "Selecciona un negocio" };
+    }
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return {
+        success: false,
+        authorizers: [],
+        error: "Tu sesión expiró. Inicia sesión nuevamente",
+      };
+    }
+
+    const context = await getSelectedBusinessContext(supabase);
+    if (!context.deletableBusinessIds.includes(businessId)) {
+      return {
+        success: false,
+        authorizers: [],
+        error: "No tienes permiso para solicitar el borrado en este negocio",
+      };
+    }
+
+    const { data, error } = await supabase.rpc(
+      "list_business_order_deletion_authorizers",
+      { p_business_id: businessId }
+    );
+    if (error) {
+      console.error("No se pudieron consultar los dueños autorizadores", {
+        code: error.code ?? "unknown",
+      });
+      return {
+        success: false,
+        authorizers: [],
+        error: "No se pudo cargar la autorización del dueño de este negocio",
+      };
+    }
+
+    const authorizers = Array.isArray(data)
+      ? data.filter(
+          (value): value is OrderDeletionAuthorizer =>
+            typeof value === "object" &&
+            value !== null &&
+            typeof (value as OrderDeletionAuthorizer).id === "string" &&
+            (typeof (value as OrderDeletionAuthorizer).full_name === "string" ||
+              (value as OrderDeletionAuthorizer).full_name === null) &&
+            typeof (value as OrderDeletionAuthorizer).pin_configured === "boolean"
+        )
+      : [];
+
+    return { success: true, authorizers, error: null };
+  } catch {
+    return {
+      success: false,
+      authorizers: [],
+      error: "No se pudo cargar la autorización del dueño de este negocio",
+    };
+  }
+}
+
 export async function deleteSalesHistoryOrder(
-  orderId: string
+  orderId: string,
+  authorization?: { authorizerId: string; pin: string } | null
 ): Promise<DeleteSalesHistoryResult> {
   try {
     if (!orderId) {
@@ -422,7 +501,7 @@ export async function deleteSalesHistoryOrder(
     if (businessContext.multibusinessAvailable && allowedBusinessIds.length === 0) {
       return {
         success: false,
-        error: "Sólo el dueño del negocio puede eliminar pedidos del historial",
+        error: "Tu cuenta no tiene permiso para solicitar el borrado de pedidos",
       };
     }
     if (!businessContext.multibusinessAvailable) {
@@ -461,13 +540,17 @@ export async function deleteSalesHistoryOrder(
       return { success: false, error: "El pedido ya no existe" };
     }
 
-    const { data: deleted, error: deleteError } = await admin.rpc(
-      "delete_sales_order_atomic",
-      {
-        p_order_id: orderId,
-        p_business_id: order.business_id,
-      }
-    );
+    const { data: deleted, error: deleteError } = businessContext.multibusinessAvailable
+      ? await supabase.rpc("delete_business_order_with_owner_pin", {
+          p_order_id: orderId,
+          p_business_id: order.business_id,
+          p_authorizer_id: authorization?.authorizerId ?? null,
+          p_pin: authorization?.pin ?? null,
+        })
+      : await admin.rpc("delete_sales_order_atomic", {
+          p_order_id: orderId,
+          p_business_id: order.business_id,
+        });
 
     if (deleteError) {
       console.error("No se pudo eliminar un pedido del historial", {
@@ -498,7 +581,19 @@ export async function deleteSalesHistoryOrder(
       };
     }
 
-    if (deleted !== true) {
+    if (businessContext.multibusinessAvailable) {
+      const deletionResult = deleted as {
+        success?: boolean;
+        code?: string;
+        message?: string;
+      } | null;
+      if (!deletionResult?.success) {
+        return {
+          success: false,
+          error: deletionResult?.message ?? "No se pudo eliminar el pedido",
+        };
+      }
+    } else if (deleted !== true) {
       return { success: false, error: "El pedido ya no existe o no pertenece a este negocio" };
     }
 

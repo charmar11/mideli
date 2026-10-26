@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SELECTED_BUSINESS_COOKIE } from "@/lib/multibusiness/constants";
 import {
+  canDeleteBusinessOrderHistory,
   hasOrderReadCapability,
   resolveBusinessContextSelection,
 } from "@/lib/multibusiness/business-context-selection";
@@ -13,9 +14,9 @@ export type SelectedBusinessContext = {
   businessId: string | null;
   /** Business ids the current session may query for the current operational view. */
   businessIds: string[];
-  /** Active businesses where this session has a scoped order-read permission. */
+  /** Business IDs to query; RLS further limits global waiters by service type. */
   readableBusinessIds: string[];
-  /** Active businesses owned by this session; destructive history actions use this only. */
+  /** Businesses where this session may request history deletion; staff still need the local owner PIN. */
   deletableBusinessIds: string[];
   multibusinessAvailable: boolean;
 };
@@ -96,8 +97,8 @@ export async function getSelectedBusinessContext(
   const deletableBusinessIds = sameOrganizationBusinesses
     .filter(
       (business) =>
-        business.membership_role_code === "business_owner" &&
-        hasOrderReadCapability(business)
+        hasOrderReadCapability(business) &&
+        canDeleteBusinessOrderHistory(business)
     )
     .map((business) => business.business_id);
 

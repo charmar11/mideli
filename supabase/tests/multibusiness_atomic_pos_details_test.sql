@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(6);
+SELECT plan(7);
 
 SELECT ok(
   to_regprocedure('public.create_business_order_with_details(uuid,uuid,jsonb,text,text,text,uuid,text,jsonb)') IS NOT NULL,
@@ -54,6 +54,15 @@ SELECT ok(
      WHERE oid = 'public.create_business_order_with_details(uuid,uuid,jsonb,text,text,text,uuid,text,jsonb)'::regprocedure
   ),
   'replays preserve later edits and delivery/schedule fields are included'
+);
+
+SELECT ok(
+  (
+    SELECT prosrc LIKE '%NULLIF(p_details #>> ''{delivery,payment_method}'', '''')::public.payment_method%'
+      FROM pg_proc
+     WHERE oid = 'public.create_business_order_with_details(uuid,uuid,jsonb,text,text,text,uuid,text,jsonb)'::regprocedure
+  ),
+  'delivery payment method is cast to its enum before assignment'
 );
 
 SELECT * FROM finish();
