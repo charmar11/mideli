@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -18,6 +18,7 @@ import {
   MessageCircle,
   MapPin,
   Phone,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PaymentFlow, formatPaymentMoney } from "@/components/payments/payment-flow";
@@ -26,19 +27,37 @@ import { useCashShiftStore } from "@/lib/stores";
 import { useBusinessContextStore } from "@/lib/stores/business-context-store";
 import { formatOrderLocation } from "@/lib/order-location";
 import type { PaymentReceipt } from "@/types/payments";
+import { formatPhoneForDisplay } from "@/lib/phone";
 import {
-  finalizeWhatsappDeliveryAction,
-  getWhatsappDeliveryOperationsAction,
-  markWhatsappDriverOnWayAction,
-  notifyWhatsappOrderStatusAction,
-  retryWhatsappNotificationAction,
-  type WhatsappDeliveryOperationDetails,
-} from "@/lib/actions/whatsapp-order-status";
+  finalizeDeliveryAction,
+  markDeliveryDriverOnWayAction,
+  startDeliverySearchAction,
+} from "@/lib/actions/delivery-status";
 import {
   deliveryLaneForOrder,
   shouldCompleteOrderAfterPayment,
 } from "@/lib/whatsapp/delivery-lifecycle";
-import { formatPhoneForCopy, formatPhoneForDisplay } from "@/lib/whatsapp/normalize";
+import {
+  getBusinessDeliveryOriginsForOrdersAction,
+} from "@/lib/actions/business-delivery-settings";
+import {
+  googleMapsSearchUrl,
+  type BusinessDeliveryOrigin,
+} from "@/lib/business-delivery";
+import {
+  buildDeliveryDriverMessage,
+  buildDeliveryDriverWhatsappHref,
+} from "@/lib/delivery-driver-message";
+import { handoffMarketplaceOrderAction } from "@/lib/actions/business-marketplace";
+import {
+  isLocalDeliveryOrder,
+  isMarketplaceOrder,
+  marketplaceCashDifference,
+  marketplacePaymentLabel,
+  marketplacePlatformLabel,
+  parseMarketplaceCashAmount,
+  shouldCollectMarketplaceCash,
+} from "@/lib/marketplace-orders";
 import {
   orderCustomerTotal,
   orderExternalDeliveryFee,
@@ -55,6 +74,12 @@ import {
   filterOperationalOrdersByMembershipScope,
   getOrderReadableBusinessContexts,
 } from "@/lib/multibusiness/business-context-selection";
+import {
+  areOrdersFromSameDiningTable,
+  getBusinessTableAccountKey,
+  getOpenOrdersForBusinessTableAccount,
+  groupDiningOrdersByTable,
+} from "@/lib/table-order-groups";
 
 function formatTimeElapsed(dateString: string): string {
   const minutes = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
@@ -92,19 +117,6 @@ function formatDistance(distanceMeters: number | null | undefined) {
     : `${(distanceMeters / 1000).toFixed(1)} km`;
 }
 
-function compactDriverAddress(value: string) {
-  const parts = value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .filter((part) => {
-      if (/\b\d{5}\b/.test(part)) return false;
-      return !/^(?:c(?:dad|iudad)?\.?\s*)?obreg[oó]n$|^(?:son\.?|sonora)$|^m[eé]xico$|^cajeme$/i.test(part);
-    });
-  const compact = parts.join(", ") || value.trim() || "Domicilio no disponible";
-  return compact;
-}
-
 export function StatusView({ onEditOrder }: StatusViewProps) {
   const activeOrders = useOrderStore((state) => state.activeOrders);
   const lastError = useOrderStore((state) => state.lastError);
@@ -115,9 +127,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   const [, setTick] = useState(0);
   const [paymentOrders, setPaymentOrders] = useState<OrderWithItems[] | null>(null);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
-  const [deliveryDetails, setDeliveryDetails] = useState<
-    Record<string, WhatsappDeliveryOperationDetails>
-  >({});
+  const [marketplaceCashOrder, setMarketplaceCashOrder] = useState<OrderWithItems | null>(null);
+  const [marketplaceCashInput, setMarketplaceCashInput] = useState("");
   const fetchCurrentShiftForBusiness = useCashShiftStore(
     (state) => state.fetchCurrentShiftForBusiness
   );
@@ -131,6 +142,37 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   const legacyBusinessContext = useBusinessContextStore(
     (state) => state.legacyFallback
   );
+  const [deliveryOriginsState, setDeliveryOriginsState] = useState<{
+    key: string;
+    origins: Record<string, BusinessDeliveryOrigin>;
+  }>({ key: "", origins: {} });
+  const deliveryBusinessIdsKey = useMemo(
+    () => [...new Set(activeOrders
+      .filter((order) => order.type === "domicilio" && order.business_id)
+      .map((order) => order.business_id as string))].sort().join(","),
+    [activeOrders]
+  );
+  useEffect(() => {
+    let cancelled = false;
+    if (!deliveryBusinessIdsKey) return () => { cancelled = true; };
+    void getBusinessDeliveryOriginsForOrdersAction(deliveryBusinessIdsKey.split(","))
+      .then((result) => {
+        if (cancelled) return;
+        setDeliveryOriginsState({
+          key: deliveryBusinessIdsKey,
+          origins: result.success
+            ? Object.fromEntries((result.data ?? []).map((origin) => [origin.businessId, origin]))
+            : {},
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setDeliveryOriginsState({ key: deliveryBusinessIdsKey, origins: {} });
+      });
+    return () => { cancelled = true; };
+  }, [deliveryBusinessIdsKey]);
+  const deliveryOrigins = deliveryOriginsState.key === deliveryBusinessIdsKey
+    ? deliveryOriginsState.origins
+    : {};
   const readableBusinesses = useMemo(
     () =>
       getOrderReadableBusinessContexts(
@@ -178,41 +220,6 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
     (order) => order.status === "pending" || order.status === "in_kitchen"
   );
 
-  const deliveryOrderKey = useMemo(
-    () =>
-      visibleOrders
-        .filter(
-          (order) =>
-            order.status === "ready" &&
-            order.type === "domicilio"
-        )
-        .map((order) => `${order.id}:${order.delivery_status ?? "pending"}`)
-        .sort()
-        .join(","),
-    [visibleOrders]
-  );
-
-  const loadDeliveryDetails = useCallback(async () => {
-    const orderIds = deliveryOrderKey
-      ? deliveryOrderKey.split(",").map((entry) => entry.split(":")[0])
-      : [];
-    if (orderIds.length === 0) return;
-    const result = await getWhatsappDeliveryOperationsAction(orderIds);
-    if (result.success) setDeliveryDetails(result.details);
-  }, [deliveryOrderKey]);
-
-  useEffect(() => {
-    if (!deliveryOrderKey) return;
-    let cancelled = false;
-    const orderIds = deliveryOrderKey.split(",").map((entry) => entry.split(":")[0]);
-    void getWhatsappDeliveryOperationsAction(orderIds).then((result) => {
-      if (!cancelled && result.success) setDeliveryDetails(result.details);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [deliveryOrderKey]);
-
   async function handleDeliver(orderId: string, number: number) {
     const { error } = await markAsServed(orderId);
     if (error) toast.error("No se pudo marcar como entregado");
@@ -227,23 +234,70 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
         toast.error("Abre la caja del negocio antes de cobrar");
         return;
       }
-      if (order.type !== "comedor" || (!order.table_id && !order.table_number)) {
+      if (order.type !== "comedor" || (!order.table_visit_id && !order.table_id && !order.table_number)) {
         setPaymentOrders([order]);
         return;
       }
-      const account = visibleOrders.filter((candidate) => {
-        const sameTable = order.table_id
-          ? candidate.table_id === order.table_id
-          : candidate.table_number === order.table_number;
-        const sameAccount = order.business_account_id
-          ? candidate.business_account_id === order.business_account_id
-          : candidate.business_id === order.business_id;
-        return sameAccount && sameTable && candidate.status !== "cancelled" && candidate.status !== "paid" && outstanding(candidate) > 0;
-      });
+      const account = getOpenOrdersForBusinessTableAccount(
+        order,
+        visibleOrders,
+        (candidate) => outstanding(candidate) > 0
+      );
       setPaymentOrders(account.length > 0 ? account : [order]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo preparar el cobro");
     }
+  }
+
+  async function handleMarketplaceHandoff(order: OrderWithItems, cashReceived: number | null) {
+    if (!order.business_id || !order.marketplace_platform) {
+      toast.error("No se pudo identificar el negocio y la plataforma del pedido.");
+      return;
+    }
+    setBusyOrderId(order.id);
+    try {
+      const result = await handoffMarketplaceOrderAction({
+        businessId: order.business_id,
+        orderId: order.id,
+        idempotencyKey: crypto.randomUUID(),
+        cashReceived,
+      });
+      if (!result.success) {
+        toast.error(result.error ?? "No se pudo registrar la entrega.");
+        return;
+      }
+      setMarketplaceCashOrder(null);
+      setMarketplaceCashInput("");
+      toast.success(
+        cashReceived === null
+          ? `Pedido #${order.number} entregado al repartidor de ${marketplacePlatformLabel(result.data?.platform) ?? "la plataforma"}`
+          : `Pedido #${order.number} entregado · ${formatPaymentMoney(cashReceived)} registrados en caja`,
+      );
+      await fetchActiveOrders();
+    } catch {
+      toast.error("No se pudo confirmar la entrega. Actualiza Estado antes de volver a intentarlo.");
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  function requestMarketplaceHandoff(order: OrderWithItems) {
+    if (shouldCollectMarketplaceCash(order)) {
+      setMarketplaceCashOrder(order);
+      setMarketplaceCashInput("");
+      return;
+    }
+    void handleMarketplaceHandoff(order, null);
+  }
+
+  function confirmMarketplaceCashHandoff() {
+    if (!marketplaceCashOrder) return;
+    const parsed = parseMarketplaceCashAmount(marketplaceCashInput);
+    if (parsed.error || parsed.amount === null) {
+      toast.error(parsed.error ?? "Escribe el efectivo recibido.");
+      return;
+    }
+    void handleMarketplaceHandoff(marketplaceCashOrder, parsed.amount);
   }
 
   async function handleCancelOrder(order: OrderWithItems) {
@@ -303,27 +357,15 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   async function handleDriverOnWay(order: OrderWithItems) {
     setBusyOrderId(order.id);
     try {
-      const result = await markWhatsappDriverOnWayAction(order.id);
+      const result = await markDeliveryDriverOnWayAction(order.id);
       if (!result.success) {
         toast.error(result.error);
         return;
       }
-      const notificationReason = "reason" in result ? result.reason : undefined;
-      if (result.sent) {
-        toast.success(`Pedido #${order.number} en camino y cliente notificado`);
-      } else if (notificationReason === "notifications_disabled") {
-        toast.warning("Pedido en camino. Los avisos de WhatsApp están desactivados");
-      } else if (notificationReason === "opt_in_required") {
-        toast.info("Pedido en camino. El cliente no autorizó avisos por WhatsApp");
-      } else if (notificationReason === "phone_missing") {
-        toast.info("Pedido en camino. Este domicilio no tiene teléfono para avisar");
-      } else if (notificationReason === "send_failed") {
-        toast.warning("Pedido en camino. No se pudo avisar al cliente; puedes reintentar");
-      } else {
-        toast.info(`El pedido #${order.number} ya estaba actualizado`);
-      }
+      toast.success(result.stateChanged
+        ? `Pedido #${order.number} en camino`
+        : `El pedido #${order.number} ya estaba en camino`);
       await fetchActiveOrders();
-      await loadDeliveryDetails();
     } finally {
       setBusyOrderId(null);
     }
@@ -332,17 +374,15 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
   async function handleStartDriverSearch(order: OrderWithItems) {
     setBusyOrderId(order.id);
     try {
-      const result = await notifyWhatsappOrderStatusAction(order.id, "ready");
+      const result = await startDeliverySearchAction(order.id);
       if (!result.success) {
         toast.error(result.error);
         return;
       }
-      if (result.sent) toast.success("Búsqueda iniciada y cliente notificado");
-      else if ("reason" in result && result.reason === "send_failed") {
-        toast.warning("Búsqueda iniciada. No se pudo avisar al cliente");
-      } else toast.info("Búsqueda de repartidor iniciada");
+      toast.success(result.stateChanged
+        ? "Búsqueda de repartidor iniciada"
+        : "El pedido ya está buscando repartidor");
       await fetchActiveOrders();
-      await loadDeliveryDetails();
     } finally {
       setBusyOrderId(null);
     }
@@ -352,28 +392,13 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
     if (!window.confirm(`¿Finalizar la entrega del pedido #${order.number}?`)) return;
     setBusyOrderId(order.id);
     try {
-      const result = await finalizeWhatsappDeliveryAction(order.id);
+      const result = await finalizeDeliveryAction(order.id);
       if (!result.success) {
         toast.error(result.error);
         return;
       }
       toast.success(`Entrega del pedido #${order.number} finalizada`);
       await fetchActiveOrders();
-    } finally {
-      setBusyOrderId(null);
-    }
-  }
-
-  async function handleRetryNotification(order: OrderWithItems, eventId: string) {
-    setBusyOrderId(order.id);
-    try {
-      const result = await retryWhatsappNotificationAction(eventId);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success(`Aviso del pedido #${order.number} reenviado`);
-      await loadDeliveryDetails();
     } finally {
       setBusyOrderId(null);
     }
@@ -417,6 +442,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyIcon={<CheckCircle2 size={28} />}
           emptyText="No hay pedidos listos para entregar"
           orders={ready}
+          ordersForPayment={visibleOrders}
+          deliveryOrigins={deliveryOrigins}
           onEditOrder={onEditOrder}
           onCancelOrder={handleCancelOrder}
           legacyBusinessContext={legacyBusinessContext}
@@ -425,8 +452,7 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           onDriverOnWay={handleDriverOnWay}
           onStartDriverSearch={handleStartDriverSearch}
           onFinalizeDelivery={handleFinalizeDelivery}
-          onRetryNotification={handleRetryNotification}
-          deliveryDetails={deliveryDetails}
+          onMarketplaceHandoff={requestMarketplaceHandoff}
           busyOrderId={busyOrderId}
           ready
         />
@@ -439,6 +465,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyIcon={<Bike size={28} />}
           emptyText="No hay domicilios buscando repartidor"
           orders={searchingDriver}
+          ordersForPayment={visibleOrders}
+          deliveryOrigins={deliveryOrigins}
           onEditOrder={onEditOrder}
           onCancelOrder={handleCancelOrder}
           legacyBusinessContext={legacyBusinessContext}
@@ -446,8 +474,6 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           onDriverOnWay={handleDriverOnWay}
           onStartDriverSearch={handleStartDriverSearch}
           onFinalizeDelivery={handleFinalizeDelivery}
-          onRetryNotification={handleRetryNotification}
-          deliveryDetails={deliveryDetails}
           busyOrderId={busyOrderId}
           ready
         />
@@ -460,6 +486,8 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyIcon={<Bike size={28} />}
           emptyText="No hay pedidos en camino"
           orders={driverOnWay}
+          ordersForPayment={visibleOrders}
+          deliveryOrigins={deliveryOrigins}
           onEditOrder={onEditOrder}
           onCancelOrder={handleCancelOrder}
           legacyBusinessContext={legacyBusinessContext}
@@ -467,8 +495,6 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           onDriverOnWay={handleDriverOnWay}
           onStartDriverSearch={handleStartDriverSearch}
           onFinalizeDelivery={handleFinalizeDelivery}
-          onRetryNotification={handleRetryNotification}
-          deliveryDetails={deliveryDetails}
           busyOrderId={busyOrderId}
           ready
         />
@@ -481,10 +507,11 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
           emptyIcon={<ChefHat size={28} />}
           emptyText="Sin pedidos en preparación"
           orders={preparing}
+          ordersForPayment={visibleOrders}
+          deliveryOrigins={deliveryOrigins}
           onEditOrder={onEditOrder}
           onCancelOrder={handleCancelOrder}
           legacyBusinessContext={legacyBusinessContext}
-          deliveryDetails={deliveryDetails}
           busyOrderId={busyOrderId}
           onStartPreparation={(orderId) =>
             void handlePreparationStatusChange(orderId, "in_kitchen")
@@ -498,13 +525,80 @@ export function StatusView({ onEditOrder }: StatusViewProps) {
       {paymentOrders ? (
         <PaymentFlow
           orders={paymentOrders}
-          title={paymentOrders.length > 1 ? `Cuenta · ${formatOrderLocation(paymentOrders[0])}` : undefined}
+          title={paymentOrders[0]?.type === "comedor" && (paymentOrders[0].table_visit_id || paymentOrders[0].table_id || paymentOrders[0].table_number)
+            ? `Cuenta · ${formatOrderLocation(paymentOrders[0])} · ${businesses.find((business) => business.business_id === paymentOrders[0].business_id)?.business_display_name ?? "Negocio"}`
+            : paymentOrders.length > 1
+              ? `Cuenta · ${formatOrderLocation(paymentOrders[0])}`
+              : undefined}
           onClose={() => setPaymentOrders(null)}
           onCompleted={(receipt) => void handlePaymentCompleted(receipt)}
         />
       ) : null}
+      {marketplaceCashOrder ? (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-ink/75 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="marketplace-cash-title" className="w-full max-w-md rounded-2xl border border-border bg-surface p-4 shadow-float sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-heading text-[10px] font-bold uppercase tracking-wider text-warning">Didi Food · efectivo</p>
+                <h2 id="marketplace-cash-title" className="mt-1 font-heading text-lg font-bold">¿Cuánto efectivo recibiste?</h2>
+                <p className="mt-1 font-body text-xs text-muted-foreground">Pedido #{marketplaceCashOrder.number}. Anota el importe real que te entregó el repartidor.</p>
+              </div>
+              <button type="button" onClick={() => setMarketplaceCashOrder(null)} aria-label="Cerrar" className="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-surface-raised"><X size={18} /></button>
+            </div>
+            <label className="mt-4 block font-heading text-xs font-bold text-muted-foreground">
+              Efectivo recibido en caja
+              <input autoFocus type="number" inputMode="numeric" min="0" max="1000000" step="1" value={marketplaceCashInput} onChange={(event) => setMarketplaceCashInput(event.target.value)} placeholder="Importe en pesos" className="mt-1.5 h-12 w-full rounded-xl border border-border bg-background px-3 font-data text-lg text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20" />
+            </label>
+            {marketplaceCashInput && Number.isSafeInteger(Number(marketplaceCashInput)) ? (
+              <p className="mt-2 font-body text-xs text-muted-foreground">Diferencia respecto al ticket: {formatPaymentMoney(marketplaceCashDifference(Number(marketplaceCashOrder.total), Number(marketplaceCashInput)))}</p>
+            ) : null}
+            <p className="mt-2 font-body text-[11px] leading-4 text-muted-foreground">Ese importe se suma una sola vez al efectivo esperado del corte de este negocio. No crea un cobro normal.</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setMarketplaceCashOrder(null)} disabled={busyOrderId === marketplaceCashOrder.id} className="min-h-11 rounded-xl border border-border font-heading text-xs font-bold">Cancelar</button>
+              <button type="button" onClick={confirmMarketplaceCashHandoff} disabled={busyOrderId === marketplaceCashOrder.id || !marketplaceCashInput.trim()} className="action-success inline-flex min-h-11 items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold disabled:opacity-55">{busyOrderId === marketplaceCashOrder.id ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}Confirmar entrega</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+interface TablePaymentAccountSummary {
+  key: string;
+  businessId: string | null;
+  order: OrderWithItems;
+  orderCount: number;
+  balance: number;
+}
+
+function getTablePaymentAccounts(
+  tableOrders: OrderWithItems[],
+  ordersForPayment: OrderWithItems[]
+): TablePaymentAccountSummary[] {
+  const accounts = new Map<string, TablePaymentAccountSummary>();
+
+  for (const tableOrder of tableOrders) {
+    const key = getBusinessTableAccountKey(tableOrder);
+    if (accounts.has(key)) continue;
+
+    const openOrders = getOpenOrdersForBusinessTableAccount(
+      tableOrder,
+      ordersForPayment,
+      (candidate) => outstanding(candidate) > 0
+    );
+    if (openOrders.length === 0) continue;
+
+    accounts.set(key, {
+      key,
+      businessId: tableOrder.business_id ?? null,
+      order: openOrders[0],
+      orderCount: openOrders.length,
+      balance: openOrders.reduce((total, order) => total + outstanding(order), 0),
+    });
+  }
+
+  return [...accounts.values()];
 }
 
 function StatusSection({
@@ -515,6 +609,8 @@ function StatusSection({
   emptyIcon,
   emptyText,
   orders,
+  ordersForPayment,
+  deliveryOrigins,
   onEditOrder,
   onCancelOrder,
   legacyBusinessContext,
@@ -523,10 +619,9 @@ function StatusSection({
   onDriverOnWay,
   onStartDriverSearch,
   onFinalizeDelivery,
-  onRetryNotification,
+  onMarketplaceHandoff,
   onStartPreparation,
   onMarkReady,
-  deliveryDetails,
   busyOrderId,
   ready = false,
 }: {
@@ -537,6 +632,8 @@ function StatusSection({
   emptyIcon: ReactNode;
   emptyText: string;
   orders: OrderWithItems[];
+  ordersForPayment: OrderWithItems[];
+  deliveryOrigins: Record<string, BusinessDeliveryOrigin>;
   onEditOrder?: (order: OrderWithItems) => void;
   onCancelOrder?: (order: OrderWithItems) => void;
   legacyBusinessContext: boolean;
@@ -545,10 +642,9 @@ function StatusSection({
   onDriverOnWay?: (order: OrderWithItems) => void;
   onStartDriverSearch?: (order: OrderWithItems) => void;
   onFinalizeDelivery?: (order: OrderWithItems) => void;
-  onRetryNotification?: (order: OrderWithItems, eventId: string) => void;
+  onMarketplaceHandoff?: (order: OrderWithItems) => void;
   onStartPreparation?: (orderId: string) => void;
   onMarkReady?: (orderId: string) => void;
-  deliveryDetails: Record<string, WhatsappDeliveryOperationDetails>;
   busyOrderId: string | null;
   ready?: boolean;
 }) {
@@ -578,67 +674,113 @@ function StatusSection({
         <EmptyBlock icon={emptyIcon} text={emptyText} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {orders.map((order) => {
+          {groupDiningOrdersByTable(orders).map((group) => {
+            const isTableGroup = group.kind === "table";
+            const groupOrders = isTableGroup ? group.orders : [group.order];
+            const paymentTableOrders = isTableGroup
+              ? ordersForPayment.filter((order) =>
+                  areOrdersFromSameDiningTable(groupOrders[0], order)
+                )
+              : [];
+            const tablePaymentAccounts = isTableGroup && ready
+              ? getTablePaymentAccounts(paymentTableOrders, ordersForPayment)
+              : [];
+            const groupedBusinessNames = isTableGroup
+              ? [...new Set(groupOrders
+                  .map((order) => businessNames.get(order.business_id ?? ""))
+                  .filter((name): name is string => Boolean(name)))]
+              : [];
+
+            return (
+              <div
+                key={group.key}
+                className={isTableGroup
+                  ? "col-span-full rounded-2xl border border-brand/25 bg-surface/65 p-3 shadow-card sm:p-4"
+                  : "contents"}
+              >
+                {isTableGroup ? (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/80 pb-3">
+                    <div>
+                      <h3 className="font-heading text-base font-bold text-cream">
+                        {formatOrderLocation(groupOrders[0])}
+                      </h3>
+                      <p className="font-body text-xs text-muted-foreground">
+                        {groupOrders.length} pedido{groupOrders.length === 1 ? "" : "s"} en esta etapa
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {groupedBusinessNames.map((businessName) => (
+                        <span key={businessName} className="rounded-full bg-surface-raised px-2.5 py-1 font-heading text-[10px] font-bold text-muted-foreground">
+                          {businessName}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className={isTableGroup ? "grid gap-3 sm:grid-cols-2" : "contents"}>
+          {groupOrders.map((order) => {
             const balance = outstanding(order);
-            const isPaid = balance <= 0;
-            const isDelivery = order.type === "domicilio";
+            const isMarketplace = isMarketplaceOrder(order);
+            const isPaid = isMarketplace
+              ? order.marketplace_payment_mode === "app"
+              : balance <= 0;
+            const isDelivery = isLocalDeliveryOrder(order);
             const isBusy = busyOrderId === order.id;
-            const typeAccent = order.type === "domicilio"
-              ? "border-l-success"
-              : order.type === "para_llevar"
-                ? "border-l-brand"
-                : "border-l-gold";
-            const details = deliveryDetails[order.id];
-            const distance = formatDistance(details?.distanceMeters);
+            const distance = formatDistance(Number(order.delivery_distance_meters ?? 0));
             const address = order.delivery_address?.trim() ?? "";
             const colony = order.delivery_colony?.trim() ?? "";
             const reference = order.delivery_reference?.trim() ?? "";
             const deliveryFee = orderExternalDeliveryFee(order);
-            const subtotal = orderProductsTotal(order);
             const customerTotal = orderCustomerTotal(order);
-            const destinationMapHref = details?.destinationLatitude !== null && details?.destinationLatitude !== undefined && details?.destinationLongitude !== null && details?.destinationLongitude !== undefined
-              ? `https://www.google.com/maps/search/?api=1&query=${details.destinationLatitude},${details.destinationLongitude}`
+            const destinationMapHref = order.delivery_latitude !== null && order.delivery_latitude !== undefined && order.delivery_longitude !== null && order.delivery_longitude !== undefined
+              ? `https://www.google.com/maps/search/?api=1&query=${order.delivery_latitude},${order.delivery_longitude}`
               : address
                 ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([address, colony].filter(Boolean).join(", "))}`
                 : null;
-            const originMapHref = details?.storeLatitude !== null && details?.storeLatitude !== undefined && details?.storeLongitude !== null && details?.storeLongitude !== undefined
-              ? `https://www.google.com/maps/search/?api=1&query=${details.storeLatitude},${details.storeLongitude}`
-              : details?.storeAddress
-                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(details.storeAddress)}`
-                : null;
-            const driverMessage = [
-              "*🛵 SALE PEDIDO DE MIDELI*",
-              "",
-              `📍 *De:* ${compactDriverAddress(details?.storeAddress || "el local")}`,
-              originMapHref ? `🗺️ ${originMapHref}` : null,
-              "",
-              `🏠 *Para:* ${compactDriverAddress(address)}`,
-              `🏘️ *Colonia:* ${colony || "⚠️ NO REGISTRADA"}`,
-              destinationMapHref ? `🗺️ ${destinationMapHref}` : null,
-              reference ? `📌 *Referencia:* ${reference}` : null,
-              "",
-              `💳 *Pago:* ${paymentMethodLabel(order.payment_method_requested)}`,
-              `💰 *Total:* ${formatPaymentMoney(subtotal)}`,
-              `🛵 *Envío:* ${formatPaymentMoney(deliveryFee)}`,
-              order.customer_phone ? `📞 *Celular del cliente:* ${formatPhoneForCopy(order.customer_phone)}` : null,
-            ].filter((line) => line !== null && line !== undefined).join("\n");
-            const whatsappShareHref = `https://wa.me/?text=${encodeURIComponent(driverMessage)}`;
             const requestedCash = Number(order.requested_cash_tendered ?? 0);
             const expectedChange = requestedCash > 0
               ? Math.max(0, requestedCash - customerTotal)
               : null;
-            const failedNotification = details?.notification?.status === "failed"
-              ? details.notification
-              : null;
             const business = businesses.find(
               (candidate) => candidate.business_id === order.business_id,
             );
+            const deliveryOrigin = order.business_id
+              ? deliveryOrigins[order.business_id]
+              : undefined;
+            const hasConfiguredOrigin = Boolean(
+              deliveryOrigin?.originAddress &&
+              deliveryOrigin.originLatitude !== null &&
+              deliveryOrigin.originLongitude !== null
+            );
+            const originMapHref = deliveryOrigin
+              ? googleMapsSearchUrl({
+                  latitude: deliveryOrigin.originLatitude,
+                  longitude: deliveryOrigin.originLongitude,
+                  address: deliveryOrigin.originAddress,
+                })
+              : null;
+            const driverMessage = buildDeliveryDriverMessage({
+              businessName: business?.business_display_name,
+              orderNumber: order.number,
+              customerName: order.customer_name,
+              customerPhone: order.customer_phone,
+              originAddress: deliveryOrigin?.originAddress ?? "",
+              originMapHref,
+              deliveryAddress: address,
+              colony,
+              destinationMapHref,
+              paymentMethod: paymentMethodLabel(order.payment_method_requested),
+              productAmount: formatPaymentMoney(orderProductsTotal(order)),
+            });
+            const whatsappShareHref = buildDeliveryDriverWhatsappHref(driverMessage);
             const canOperateOrderHere = legacyBusinessContext || Boolean(
               business?.capability_codes.includes("business.operate_orders") ||
               business?.capability_codes.includes("organization.operate_orders")
             );
             const canCancelOrder =
               canOperateOrderHere &&
+              (!isMarketplace || !order.marketplace_handed_off_at) &&
               Number(order.paid_amount ?? 0) <= 0 &&
               order.payment_status !== "partial" &&
               order.payment_status !== "paid";
@@ -650,7 +792,7 @@ function StatusSection({
                   ? "Preparando"
                   : "Listo";
             return (
-              <article key={order.id} className={`rounded-2xl border-l-4 bg-surface p-4 shadow-card ring-1 ${typeAccent} ${ready ? "ring-success/35" : order.status === "in_kitchen" ? "ring-warning/40" : "ring-border"}`}>
+              <article key={order.id} className={`rounded-2xl bg-surface p-4 shadow-card ring-1 ${ready ? "ring-success/35" : order.status === "in_kitchen" ? "ring-warning/40" : "ring-border"}`}>
                 <div className="mb-3 flex items-start justify-between gap-2">
                   <div>
                     <p className="font-data text-2xl font-bold">#{order.number}</p>
@@ -664,19 +806,39 @@ function StatusSection({
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {isPaid ? <span className="rounded-full bg-success-light px-2.5 py-1 font-heading text-[10px] font-bold text-success">Pagado</span> : null}
+                    {isMarketplace && order.marketplace_payment_mode === "app" ? (
+                      <span className="rounded-full bg-success-light px-2.5 py-1 font-heading text-[10px] font-bold text-success">
+                        Pagado en app
+                      </span>
+                    ) : !isMarketplace && isPaid ? (
+                      <span className="rounded-full bg-success-light px-2.5 py-1 font-heading text-[10px] font-bold text-success">Pagado</span>
+                    ) : null}
                     {order.business_id && businessNames.get(order.business_id) ? (
                       <span className="rounded-full bg-surface-raised px-2.5 py-1 font-heading text-[10px] font-bold text-muted-foreground">
                         {businessNames.get(order.business_id)}
                       </span>
                     ) : null}
                     <span className={`rounded-full px-2.5 py-1 font-heading text-[10px] font-bold ${TYPE_STYLES[order.type]?.className ?? TYPE_STYLES.comedor.className}`}>{TYPE_STYLES[order.type]?.label ?? "Comedor"}</span>
-                    {order.schedule_status === "scheduled" && order.scheduled_for ? (
-                      <span className="rounded-full bg-gold/12 px-2.5 py-1 font-heading text-[10px] font-bold text-gold">
-                        🕒 {new Intl.DateTimeFormat("es-MX", { hour: "numeric", minute: "2-digit" }).format(new Date(order.scheduled_for))}
+                    {isMarketplace ? (
+                      <span className="rounded-full bg-warning/12 px-2.5 py-1 font-heading text-[10px] font-bold text-warning">
+                        {marketplacePlatformLabel(order.marketplace_platform)}
                       </span>
                     ) : null}
-                    {canOperateOrderHere ? (
+                    {isMarketplace && order.marketplace_payment_mode === "cash" ? (
+                      <span className="rounded-full bg-gold/12 px-2.5 py-1 font-heading text-[10px] font-bold text-gold">
+                        {marketplacePaymentLabel(order.marketplace_platform, order.marketplace_payment_mode)}
+                      </span>
+                    ) : null}
+                    {order.schedule_status === "scheduled" && order.scheduled_for ? (
+                      <span className="rounded-full bg-gold/12 px-2.5 py-1 font-heading text-[10px] font-bold text-gold">
+                        🕒 {new Intl.DateTimeFormat("es-MX", {
+                          timeZone: business?.business_timezone ?? "America/Hermosillo",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        }).format(new Date(order.scheduled_for))}
+                      </span>
+                    ) : null}
+                    {canOperateOrderHere && !isMarketplace ? (
                       <button type="button" onClick={() => void onEditOrder?.(order)} aria-label={`Editar pedido ${order.number}`} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-brand-light hover:text-brand"><Pencil size={15} /></button>
                     ) : null}
                     {canCancelOrder ? (
@@ -774,33 +936,48 @@ function StatusSection({
                       Total informativo del cliente: <span className="font-data font-bold text-cream">{formatPaymentMoney(customerTotal)}</span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {destinationMapHref ? (
                         <a href={destinationMapHref} target="_blank" rel="noreferrer" className="inline-flex h-11 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-surface-raised font-heading text-xs font-bold text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset hover:bg-border">
                           <ExternalLink size={13} /> Abrir Maps
                         </a>
-                      ) : <span />}
+                      ) : null}
                       <a
                         href={whatsappShareHref}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex h-11 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-success font-heading text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset hover:bg-success/85"
+                        aria-disabled={!hasConfiguredOrigin || !originMapHref}
+                        aria-label={`Compartir pedido ${order.number} con el repartidor por WhatsApp`}
+                        title={hasConfiguredOrigin && originMapHref
+                          ? "Abre WhatsApp con el mensaje listo para compartir manualmente"
+                          : "Configura la dirección y ubicación del local en Control → Entregas"}
+                        onClick={(event) => {
+                          if (!hasConfiguredOrigin || !originMapHref) event.preventDefault();
+                        }}
+                        className={`inline-flex h-11 touch-manipulation items-center justify-center gap-1.5 rounded-lg font-heading text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset ${hasConfiguredOrigin && originMapHref ? "bg-success hover:bg-success/85" : "cursor-not-allowed bg-success/40"}`}
                       >
-                        <MessageCircle size={13} /> Enviar a repartidor
+                        <MessageCircle size={13} />
+                        {hasConfiguredOrigin && originMapHref
+                          ? "Enviar a repartidor"
+                          : "Configura origen del local"}
                       </a>
                     </div>
-
-                    {failedNotification ? (
-                      <p className="rounded-lg bg-destructive/10 p-2 font-body text-xs text-destructive">
-                        El pedido avanzó, pero el aviso por WhatsApp falló.
-                      </p>
-                    ) : null}
                   </div>
                 ) : null}
 
                 {ready ? (
                   <div className="mt-3 grid grid-cols-2 gap-2">
-                    {isDelivery ? (
+                    {isMarketplace ? (
+                      <button
+                        type="button"
+                        disabled={isBusy || !canOperateOrderHere}
+                        onClick={() => onMarketplaceHandoff?.(order)}
+                        className="action-success col-span-2 inline-flex h-12 touch-manipulation items-center justify-center gap-2 rounded-xl font-heading text-xs font-bold disabled:cursor-not-allowed disabled:opacity-55"
+                      >
+                        {isBusy ? <Loader2 size={15} className="animate-spin" /> : <Hand size={15} />}
+                        Entregado al repartidor de {marketplacePlatformLabel(order.marketplace_platform)}
+                      </button>
+                    ) : isDelivery && canOperateOrderHere ? (
                       <>
                         {order.delivery_status === "driver_on_way" ? (
                           <button
@@ -838,23 +1015,13 @@ function StatusSection({
                             <Banknote size={14} /> Cobrar productos {formatPaymentMoney(balance)}
                           </button>
                         ) : null}
-                        {failedNotification ? (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => onRetryNotification?.(order, failedNotification.id)}
-                            className="col-span-2 inline-flex h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-destructive/40 font-heading text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-inset hover:bg-destructive/10 disabled:opacity-60"
-                          >
-                            <RefreshCw size={13} /> Reintentar aviso al cliente
-                          </button>
-                        ) : null}
                       </>
                     ) : (
                       <>
                         <button type="button" onClick={() => onDeliver?.(order.id, order.number)} className={`inline-flex h-12 touch-manipulation items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset ${order.type === "para_llevar" && !isPaid ? "order-2 bg-surface-raised text-muted-foreground transition-colors hover:text-foreground" : "action-success"} ${isPaid ? "col-span-2" : ""}`}>
                           <Hand size={14} /> Entregar
                         </button>
-                        {!isPaid ? (
+                        {!isPaid && !isTableGroup ? (
                           <button type="button" onClick={() => onPay?.(order)} className={`inline-flex h-12 touch-manipulation items-center justify-center gap-1.5 rounded-xl font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream focus-visible:ring-inset ${order.type === "para_llevar" ? "action-success order-1" : "bg-ink text-white transition-colors hover:bg-ink/85"}`}>
                             <CreditCard size={14} />
                             {order.type === "para_llevar" ? "Cobrar y entregar" : `Cobrar ${formatPaymentMoney(balance)}`}
@@ -865,6 +1032,48 @@ function StatusSection({
                   </div>
                 ) : null}
               </article>
+            );
+          })}
+                </div>
+
+                {isTableGroup && ready && onPay && tablePaymentAccounts.length > 0 ? (
+                  <div className="mt-3 border-t border-border/80 pt-3">
+                    <p className="mb-2 font-heading text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Cobro por negocio
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {tablePaymentAccounts.map((account) => {
+                        const businessName = account.businessId
+                          ? businessNames.get(account.businessId)
+                          : null;
+                        const tableName = formatOrderLocation(groupOrders[0]);
+
+                        return (
+                          <button
+                            key={account.key}
+                            type="button"
+                            disabled={busyOrderId === account.order.id}
+                            onClick={() => onPay(account.order)}
+                            aria-label={`Cobrar ${tableName} de ${businessName ?? "este negocio"}, ${formatPaymentMoney(account.balance)}`}
+                            className="action-success inline-flex min-h-12 touch-manipulation items-center justify-between gap-3 rounded-xl px-3 py-2 text-left font-heading text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/60 disabled:cursor-wait disabled:opacity-55"
+                          >
+                            <span className="inline-flex min-w-0 items-center gap-2">
+                              <Banknote size={16} className="shrink-0" />
+                              <span className="min-w-0">
+                                <span className="block">Cobrar mesa · {businessName ?? "Negocio"}</span>
+                                <span className="block font-body text-[10px] font-medium opacity-80">
+                                  {account.orderCount} pedido{account.orderCount === 1 ? "" : "s"} con saldo
+                                </span>
+                              </span>
+                            </span>
+                            <span className="shrink-0 font-data text-sm">{formatPaymentMoney(account.balance)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </div>
