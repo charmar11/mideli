@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useOrderStore, useCatalogStore } from "@/lib/stores";
 import {
@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import type { OrderItem } from "@/types/database";
 import type { OrderWithItems } from "@/lib/stores/order-store";
 import { usePullToRefresh } from "@/lib/hooks/use-pull-to-refresh";
+import { useSecondTick } from "@/lib/hooks/use-second-tick";
 import { PushNotificationControl } from "./push-notification-control";
 import {
   isKitchenOrderAudioEnabled,
@@ -54,10 +55,60 @@ function formatElapsed(dateString: string, now = Date.now()): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function getUrgencyLevel(minutes: number): "normal" | "warning" | "critical" {
+type UrgencyLevel = "normal" | "warning" | "critical";
+
+function getUrgencyLevel(minutes: number): UrgencyLevel {
   if (minutes >= 15) return "critical";
   if (minutes >= 10) return "warning";
   return "normal";
+}
+
+// La urgencia y la liberación de pedidos programados se miden en minutos; basta
+// con recalcularlas cada pocos segundos. Los cronómetros visibles usan su propio
+// reloj compartido de un segundo y no redibujan la pantalla completa.
+const KITCHEN_SCHEDULE_TICK_MS = 10_000;
+const URGENCY_RANK: Record<UrgencyLevel, number> = { critical: 0, warning: 1, normal: 2 };
+const kitchenTimeFormatter = new Intl.DateTimeFormat("es-MX", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+});
+const kitchenDateFormatter = new Intl.DateTimeFormat("es-MX", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+
+function KitchenClock() {
+  const nowMs = useSecondTick();
+  if (nowMs === null) {
+    return (
+      <div className="text-right" aria-hidden="true">
+        <span className="block font-data text-lg font-bold leading-none text-foreground">--:--</span>
+      </div>
+    );
+  }
+  const now = new Date(nowMs);
+  return (
+    <div className="text-right">
+      <time className="block font-data text-lg font-bold leading-none text-foreground">
+        {kitchenTimeFormatter.format(now)}
+      </time>
+      <span className="mt-1 block font-body text-[10px] capitalize text-muted-foreground">
+        {kitchenDateFormatter.format(now)}
+      </span>
+    </div>
+  );
+}
+
+function ElapsedTimer({ createdAt }: { createdAt: string }) {
+  const nowMs = useSecondTick();
+  return (
+    <span className="font-data text-sm tracking-tight">
+      {nowMs === null ? "--:--" : formatElapsed(createdAt, nowMs)}
+    </span>
+  );
 }
 
 type KitchenFilter = "pending" | "new" | "in_kitchen" | "ready" | "urgent";
@@ -157,22 +208,29 @@ function getUpdateSummary(update: KitchenOrderUpdate): string {
 }
 
 export function CocinaView({ canManagePreparation = true }: { canManagePreparation?: boolean }) {
-  const {
-    activeOrders,
-    loading,
-    lastError,
-    fetchActiveOrders,
-    updateOrderStatus,
-    subscribeToOrders,
-    setMenuItemsMap,
-  } = useOrderStore();
-  const { menuItems, fetchMenuItems } = useCatalogStore();
+  const activeOrders = useOrderStore((state) => state.activeOrders);
+  const loading = useOrderStore((state) => state.loading);
+  const lastError = useOrderStore((state) => state.lastError);
+  const fetchActiveOrders = useOrderStore((state) => state.fetchActiveOrders);
+  const updateOrderStatus = useOrderStore((state) => state.updateOrderStatus);
+  const subscribeToOrders = useOrderStore((state) => state.subscribeToOrders);
+  const setMenuItemsMap = useOrderStore((state) => state.setMenuItemsMap);
+  const menuItems = useCatalogStore((state) => state.menuItems);
+  const fetchMenuItems = useCatalogStore((state) => state.fetchMenuItems);
+  const menuItemNames = useMemo(
+    () => new Map(menuItems.map((item) => [item.id, item.name])),
+    [menuItems],
+  );
+  const getItemName = useCallback(
+    (menuItemId: string) => menuItemNames.get(menuItemId) ?? "Producto",
+    [menuItemNames],
+  );
   const prevOrders = useRef<Map<string, OrderWithItems>>(new Map());
   const hasHydratedOrdersRef = useRef(false);
   const updateTimers = useRef<Map<string, number>>(new Map());
   const alertingOrderIdsRef = useRef<Set<string>>(new Set());
   const alertPlaybackWarningRef = useRef(false);
-  const [now, setNow] = useState(() => new Date());
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [filter, setFilter] = useState<KitchenFilter>("pending");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundReady, setSoundReady] = useState(false);
@@ -280,9 +338,10 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
       for (const [id, order] of currentOrders) {
         const previous = previousOrders.get(id);
         if (!previous) continue;
-        const update = getOrderUpdate(previous, order, (menuItemId) =>
-          menuItems.find((item) => item.id === menuItemId)?.name ?? "Producto"
-        );
+        // Con pedidos reutilizados por la store, un pedido sin cambios conserva
+        // la misma referencia y no hace falta compararlo.
+        if (previous === order) continue;
+        const update = getOrderUpdate(previous, order, getItemName);
         if (update) {
           detectedUpdates[id] = update;
           toast.info(`Pedido #${order.number} actualizado`, {
@@ -336,7 +395,7 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
     }
     prevOrders.current = currentOrders;
     hasHydratedOrdersRef.current = true;
-  }, [activeOrders, menuItems, playOrderAlert, soundEnabled]);
+  }, [activeOrders, getItemName, playOrderAlert, soundEnabled]);
 
   useEffect(
     () => () => {
@@ -346,7 +405,7 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
   );
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000);
+    const interval = setInterval(() => setNowMs(Date.now()), KITCHEN_SCHEDULE_TICK_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -358,21 +417,40 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  const kitchenOrders = activeOrders.filter(
-    (o) =>
-      (o.status === "pending" || o.status === "in_kitchen" || o.status === "ready") &&
-      (o.schedule_status !== "scheduled" ||
-        !o.kitchen_release_at ||
-        Boolean(o.kitchen_released_at) ||
-        new Date(o.kitchen_release_at).getTime() <= now.getTime())
-  );
-  const workOrders = kitchenOrders.filter(
-    (order) => order.status === "pending" || order.status === "in_kitchen"
-  );
-
-  const urgentCount = workOrders.filter((order) =>
-    ["warning", "critical"].includes(getUrgencyLevel(getMinutesElapsed(order.created_at, now.getTime())))
-  ).length;
+  const { kitchenOrders, workOrders, urgencyById, urgentCount, stats } = useMemo(() => {
+    const kitchen = activeOrders.filter(
+      (o) =>
+        (o.status === "pending" || o.status === "in_kitchen" || o.status === "ready") &&
+        (o.schedule_status !== "scheduled" ||
+          !o.kitchen_release_at ||
+          Boolean(o.kitchen_released_at) ||
+          new Date(o.kitchen_release_at).getTime() <= nowMs)
+    );
+    const urgency = new Map<string, UrgencyLevel>();
+    let nuevos = 0;
+    let preparando = 0;
+    let listos = 0;
+    let urgent = 0;
+    const work: OrderWithItems[] = [];
+    for (const order of kitchen) {
+      const level = getUrgencyLevel(getMinutesElapsed(order.created_at, nowMs));
+      urgency.set(order.id, level);
+      if (order.status === "pending") nuevos += 1;
+      if (order.status === "in_kitchen") preparando += 1;
+      if (order.status === "ready") listos += 1;
+      if (order.status === "pending" || order.status === "in_kitchen") {
+        work.push(order);
+        if (level !== "normal") urgent += 1;
+      }
+    }
+    return {
+      kitchenOrders: kitchen,
+      workOrders: work,
+      urgencyById: urgency,
+      urgentCount: urgent,
+      stats: { nuevos, preparando, listos, pendientes: work.length },
+    };
+  }, [activeOrders, nowMs]);
 
   const visibleOrders = useMemo(() => {
     const filtered = kitchenOrders.filter((order) => {
@@ -382,19 +460,18 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
       if (filter === "new") return order.status === "pending";
       if (filter === "urgent") {
         if (order.status === "ready") return false;
-        return ["warning", "critical"].includes(
-          getUrgencyLevel(getMinutesElapsed(order.created_at, now.getTime()))
-        );
+        return urgencyById.get(order.id) !== "normal";
       }
       return order.status === filter;
     });
 
-    return [...filtered].sort((a, b) => {
-      const aUrgency = getUrgencyLevel(getMinutesElapsed(a.created_at, now.getTime()));
-      const bUrgency = getUrgencyLevel(getMinutesElapsed(b.created_at, now.getTime()));
-      const urgencyRank = { critical: 0, warning: 1, normal: 2 };
-      if (urgencyRank[aUrgency] !== urgencyRank[bUrgency]) {
-        return urgencyRank[aUrgency] - urgencyRank[bUrgency];
+    // filter() ya devuelve un arreglo nuevo; sort() no muta la lista de la store.
+    // (toSorted() no existe en iPads con Safari anterior a 16.)
+    return filtered.sort((a, b) => {
+      const aUrgency = urgencyById.get(a.id) ?? "normal";
+      const bUrgency = urgencyById.get(b.id) ?? "normal";
+      if (URGENCY_RANK[aUrgency] !== URGENCY_RANK[bUrgency]) {
+        return URGENCY_RANK[aUrgency] - URGENCY_RANK[bUrgency];
       }
       if (a.status === "ready" && b.status !== "ready") return 1;
       if (b.status === "ready" && a.status !== "ready") return -1;
@@ -402,25 +479,42 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
       if (b.status === "in_kitchen" && a.status !== "in_kitchen") return 1;
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     });
-  }, [filter, kitchenOrders, now]);
+  }, [filter, kitchenOrders, urgencyById]);
 
-  async function handleStartPreparing(orderId: string) {
-    dismissOrderAlert(orderId);
-    const { error } = await updateOrderStatus(orderId, "in_kitchen");
-    if (error) toast.error(error);
-  }
+  const handleStartPreparing = useCallback(
+    async (orderId: string) => {
+      dismissOrderAlert(orderId);
+      const { error } = await updateOrderStatus(orderId, "in_kitchen");
+      if (error) toast.error(error);
+    },
+    [dismissOrderAlert, updateOrderStatus],
+  );
 
-  async function handleMarkReady(orderId: string) {
-    const order = activeOrders.find((item) => item.id === orderId);
-    const { error } = await updateOrderStatus(orderId, "ready");
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    toast.success(
-      order ? `Pedido #${order.number} marcado como listo` : "Pedido marcado como listo"
-    );
-  }
+  const handleMarkReady = useCallback(
+    async (orderId: string) => {
+      const order = useOrderStore
+        .getState()
+        .activeOrders.find((item) => item.id === orderId);
+      const { error } = await updateOrderStatus(orderId, "ready");
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      toast.success(
+        order ? `Pedido #${order.number} marcado como listo` : "Pedido marcado como listo"
+      );
+    },
+    [updateOrderStatus],
+  );
+
+  const handleDismissUpdate = useCallback((orderId: string) => {
+    setOrderUpdates((current) => {
+      if (!(orderId in current)) return current;
+      const next = { ...current };
+      delete next[orderId];
+      return next;
+    });
+  }, []);
 
   async function toggleFullscreen() {
     try {
@@ -433,28 +527,6 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
       toast.error("No se pudo activar la pantalla completa");
     }
   }
-
-  function getItemName(menuItemId: string): string {
-    return menuItems.find((m) => m.id === menuItemId)?.name ?? "Producto";
-  }
-
-  const stats = {
-    nuevos: kitchenOrders.filter((o) => o.status === "pending").length,
-    preparando: kitchenOrders.filter((o) => o.status === "in_kitchen").length,
-    listos: kitchenOrders.filter((o) => o.status === "ready").length,
-    pendientes: workOrders.length,
-  };
-  const timeLabel = new Intl.DateTimeFormat("es-MX", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  }).format(now);
-  const dateLabel = new Intl.DateTimeFormat("es-MX", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(now);
 
   return (
     <div className="mideli-kitchen-screen flex h-full min-h-0 min-w-0 flex-col bg-background">
@@ -498,14 +570,7 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
             tone="danger"
           />
           <div className="ml-1 flex items-center gap-2 border-l border-border pl-3">
-            <div className="text-right">
-              <time className="block font-data text-lg font-bold leading-none text-foreground">
-                {timeLabel}
-              </time>
-              <span className="mt-1 block font-body text-[10px] capitalize text-muted-foreground">
-                {dateLabel}
-              </span>
-            </div>
+            <KitchenClock />
             <button
               type="button"
               onClick={() => void toggleFullscreen()}
@@ -619,15 +684,10 @@ export function CocinaView({ canManagePreparation = true }: { canManagePreparati
                   key={order.id}
                   order={order}
                   isNew={newOrderIds.includes(order.id)}
+                  urgency={urgencyById.get(order.id) ?? "normal"}
                   getItemName={getItemName}
                   update={orderUpdates[order.id]}
-                  onDismissUpdate={() =>
-                    setOrderUpdates((current) => {
-                      const next = { ...current };
-                      delete next[order.id];
-                      return next;
-                    })
-                  }
+                  onDismissUpdate={handleDismissUpdate}
                   onStartPreparing={handleStartPreparing}
                   onMarkReady={handleMarkReady}
                   canManagePreparation={canManagePreparation}
@@ -720,17 +780,21 @@ function UpdateNotice({
 interface OrderCardProps {
   order: OrderWithItems;
   isNew: boolean;
+  urgency: UrgencyLevel;
   getItemName: (id: string) => string;
   update?: KitchenOrderUpdate;
-  onDismissUpdate: () => void;
+  onDismissUpdate: (orderId: string) => void;
   onStartPreparing: (id: string) => void;
   onMarkReady: (id: string) => void;
   canManagePreparation: boolean;
 }
 
-function OrderCard({
+// Memorizada: una tarjeta solo se redibuja si cambia su pedido, su urgencia o
+// su aviso. El cronómetro interno se actualiza por separado cada segundo.
+const OrderCard = memo(function OrderCard({
   order,
   isNew,
+  urgency,
   getItemName,
   update,
   onDismissUpdate,
@@ -738,8 +802,6 @@ function OrderCard({
   onMarkReady,
   canManagePreparation,
 }: OrderCardProps) {
-  const minutesElapsed = getMinutesElapsed(order.created_at);
-  const urgency = getUrgencyLevel(minutesElapsed);
   const typeLabel = TYPE_LABELS[order.type] ?? order.type;
 
   const header =
@@ -788,9 +850,7 @@ function OrderCard({
           </div>
           <p className="mt-1 flex items-center gap-2 font-heading text-xs font-semibold opacity-90">
             <span>{statusLabel}</span>
-            <span className="font-data text-sm tracking-tight">
-              {formatElapsed(order.created_at)}
-            </span>
+            <ElapsedTimer createdAt={order.created_at} />
             {order.customer_name ? ` · ${order.customer_name}` : ""}
           </p>
         </div>
@@ -814,7 +874,7 @@ function OrderCard({
 
       <div className="flex flex-1 flex-col p-4">
         {update ? (
-          <UpdateNotice update={update} onDismiss={onDismissUpdate} />
+          <UpdateNotice update={update} onDismiss={() => onDismissUpdate(order.id)} />
         ) : null}
         <ul className="mb-4 min-w-0 flex-1 space-y-3">
           {order.items.map((item, i) => (
@@ -881,4 +941,4 @@ function OrderCard({
       </div>
     </article>
   );
-}
+});

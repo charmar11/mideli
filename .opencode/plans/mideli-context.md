@@ -2104,3 +2104,33 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
 - Verificación: 18 pruebas dirigidas pasaron en escritorio, tablet y móvil;
   `npm run lint` y `npm run build` pasan. No se hicieron cobros reales.
 - Este cambio aún no se desplegó a producción.
+
+## 63. Fluidez: menos redibujados en Cocina, Mesero y Estado (2026-10-26)
+
+- Auditoría con la guía de rendimiento React/Next.js de Vercel. El problema
+  principal no era la red sino pantallas que se redibujaban completas sin
+  necesidad.
+- Cocina: el reloj de 1 s vivía en el componente raíz y redibujaba, filtraba y
+  ordenaba todas las comandas cada segundo. Ahora la hora y los cronómetros de
+  cada tarjeta usan un reloj compartido (`src/lib/hooks/use-second-tick.ts`)
+  que solo actualiza esos textos. La urgencia y la liberación de programados se
+  recalculan cada 10 s; `OrderCard` está memorizada y recibe la urgencia y
+  callbacks estables. Las suscripciones a la store usan selectores.
+- Store de pedidos: cada recarga reutiliza los pedidos sin cambios
+  (`src/lib/order-structural-sharing.ts`) y no notifica a la UI si nada
+  cambió. Las recargas de fondo (tiempo real, sondeo, volver a la pestaña) ya
+  no alternan `loading`; las manuales y la inicial sí.
+- Sondeo de respaldo adaptativo: 60 s mientras el canal en vivo está
+  `SUBSCRIBED` y 15 s si está caído o reconectando
+  (`getActiveOrdersPollInterval`). Antes eran 15 s siempre en cada tablet.
+- Mesero ya no se suscribe a la lista completa de pedidos: lee el número de
+  pedidos listos y el negocio del pedido en edición con selectores derivados.
+  `CartPanel` está memorizado y recibe callbacks estables.
+- Proxy: el perfil, el contexto multinegocio y la disponibilidad de licencias
+  se consultan en paralelo; se ahorra un viaje a Supabase en cada navegación.
+  El reintento del perfil y las salidas por perfil inexistente o inactivo no
+  cambian.
+- Sin cambios de esquema, permisos, cálculos ni flujos. Verificación:
+  `npm run lint`, `npm run build` y la suite Playwright completa (942 pruebas
+  en escritorio, tablet y móvil) pasan. Falta medir en las tablets del local.
+- No desplegado a producción al cerrar esta sección.

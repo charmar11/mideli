@@ -14,6 +14,7 @@ import {
 } from "../../supabase/functions/_shared/order-notification-policy";
 import {
   createRequestDeadline,
+  getActiveOrdersPollInterval,
   getRealtimeReconnectDelay,
 } from "@/lib/realtime-resilience";
 import {
@@ -139,6 +140,11 @@ test.describe("resiliencia de Realtime", () => {
     expect(getRealtimeReconnectDelay(1)).toBe(3000);
     expect(getRealtimeReconnectDelay(2)).toBe(6000);
     expect(getRealtimeReconnectDelay(8)).toBe(30000);
+  });
+
+  test("el sondeo de respaldo baja a un minuto con el canal en vivo sano", () => {
+    expect(getActiveOrdersPollInterval(true)).toBe(60000);
+    expect(getActiveOrdersPollInterval(false)).toBe(15000);
   });
 
   test("el deadline cancela una solicitud colgada y puede liberarse", async () => {

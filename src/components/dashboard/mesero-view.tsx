@@ -208,6 +208,11 @@ export function MeseroView() {
   const [deliveryPaymentMethod, setDeliveryPaymentMethod] = useState<"efectivo" | "tarjeta" | "transferencia" | null>(null);
   const [deliveryCashTendered, setDeliveryCashTendered] = useState<number | null>(null);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const editingActiveOrderBusinessId = useOrderStore((state) =>
+    editingOrderId
+      ? state.activeOrders.find((order) => order.id === editingOrderId)?.business_id ?? null
+      : null,
+  );
   const [editingOrderNumber, setEditingOrderNumber] = useState<number | null>(null);
   const [createdOrderForPayment, setCreatedOrderForPayment] = useState<OrderWithItems | null>(null);
   const [addedProduct, setAddedProduct] = useState<{ id: string; token: number } | null>(null);
@@ -257,7 +262,15 @@ export function MeseroView() {
   const subscribeToOrders = useOrderStore((state) => state.subscribeToOrders);
   const setMenuItemsMap = useOrderStore((state) => state.setMenuItemsMap);
   const menuItemsBusinessMap = useOrderStore((state) => state.menuItemsBusinessMap);
-  const activeOrders = useOrderStore((state) => state.activeOrders);
+  // Mesero no se suscribe a la lista completa de pedidos: cada cambio de otra
+  // tablet o de Cocina redibujaría todo el POS. Solo lee datos derivados.
+  const readyCount = useOrderStore((state) => {
+    let count = 0;
+    for (const order of state.activeOrders) {
+      if (order.status === "ready") count += 1;
+    }
+    return count;
+  });
   const currentCashShift = useCashShiftStore((state) => state.currentShift);
   const checkCurrentShiftForBusiness = useCashShiftStore(
     (state) => state.checkCurrentShiftForBusiness,
@@ -308,8 +321,7 @@ export function MeseroView() {
       ? customerMatches
       : [];
   const editingOrderBusinessId = editingOrderId
-    ? activeOrders.find((order) => order.id === editingOrderId)?.business_id ??
-      catalogBusinessId
+    ? editingActiveOrderBusinessId ?? catalogBusinessId
     : null;
   const editingBusinessName = businessContexts.find(
     (business) => business.business_id === editingOrderBusinessId
@@ -320,7 +332,6 @@ export function MeseroView() {
 
   const cartItemCount = getItemCount();
   const cartTotal = getTotal();
-  const readyCount = activeOrders.filter((o) => o.status === "ready").length;
 
   useEffect(() => {
     if (!detailsOpen || editingOrderId || !marketplaceBusinessId || marketplaceItemIds.length === 0) {
@@ -679,19 +690,30 @@ export function MeseroView() {
     setKitchenReleaseAt(result.schedule.kitchenReleaseAt);
   }
 
-  function handleOrderTypeChange(nextType: "comedor" | "domicilio" | "para_llevar") {
-    setOrderType(nextType);
-    if (nextType !== "domicilio") {
-      setDeliveryPaymentMethod(null);
-      setDeliveryCashTendered(null);
-    }
-    if (nextType !== "para_llevar" && !whatsappConversationId) {
-      setScheduledFor(null);
-      setScheduledForLabel(null);
-      setKitchenReleaseAt(null);
-    }
-    if (nextType !== "para_llevar") setMarketplaceSelection(null);
-  }
+  // Callbacks estables para que el carrito (memorizado) no se redibuje cuando
+  // Mesero cambia por otras razones, como escribir en los datos del cliente.
+  const handleOrderTypeChange = useCallback(
+    (nextType: "comedor" | "domicilio" | "para_llevar") => {
+      setOrderType(nextType);
+      if (nextType !== "domicilio") {
+        setDeliveryPaymentMethod(null);
+        setDeliveryCashTendered(null);
+      }
+      if (nextType !== "para_llevar" && !whatsappConversationId) {
+        setScheduledFor(null);
+        setScheduledForLabel(null);
+        setKitchenReleaseAt(null);
+      }
+      if (nextType !== "para_llevar") setMarketplaceSelection(null);
+    },
+    [whatsappConversationId],
+  );
+  const handleTableIdChange = useCallback((id: string, label: string) => {
+    setTableId(id);
+    setTableNumber(label);
+  }, []);
+  const handleRequestSubmit = useCallback(() => setDetailsOpen(true), []);
+  const handleCloseCart = useCallback(() => setCartOpen(false), []);
 
   function handleSelectCustomer(customer: BusinessCustomerMatch) {
     deliveryQuoteRequestIdRef.current += 1;
@@ -1881,15 +1903,12 @@ export function MeseroView() {
               orderType={orderType}
               onOrderTypeChange={handleOrderTypeChange}
               tableId={tableId}
-              onTableIdChange={(id, label) => {
-                setTableId(id);
-                setTableNumber(label);
-              }}
+              onTableIdChange={handleTableIdChange}
               tables={tables}
               zones={zones}
               labels={labels}
               deliveryFee={deliveryFee}
-              onRequestSubmit={() => setDetailsOpen(true)}
+              onRequestSubmit={handleRequestSubmit}
               recoveryLocked={pendingCreationKey !== null}
               disableSubmit={
                 recoveryState === "checking" || recoveryState === "unavailable"
@@ -1939,16 +1958,13 @@ export function MeseroView() {
                 orderType={orderType}
                 onOrderTypeChange={handleOrderTypeChange}
                 tableId={tableId}
-                onTableIdChange={(id, label) => {
-                  setTableId(id);
-                  setTableNumber(label);
-                }}
+                onTableIdChange={handleTableIdChange}
                 tables={tables}
                 zones={zones}
                 labels={labels}
                 deliveryFee={deliveryFee}
-                onRequestSubmit={() => setDetailsOpen(true)}
-                onClose={() => setCartOpen(false)}
+                onRequestSubmit={handleRequestSubmit}
+                onClose={handleCloseCart}
                 recoveryLocked={pendingCreationKey !== null}
                 disableSubmit={
                   recoveryState === "checking" || recoveryState === "unavailable"

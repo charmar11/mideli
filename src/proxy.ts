@@ -329,18 +329,24 @@ export async function proxy(request: NextRequest) {
   let hasGlobalWaiterContext = false;
 
   if ((isProtected || isSessionRecovery || isLicenseBlockedRoute || isAuth) && userId) {
-    let profileResult = await supabase
-      .from("profiles")
-      .select("role, is_active, full_name")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (profileResult.error) {
-      profileResult = await supabase
+    const loadProfile = () =>
+      supabase
         .from("profiles")
         .select("role, is_active, full_name")
         .eq("id", userId)
         .maybeSingle();
+
+    // El perfil, el contexto multinegocio y las licencias no dependen entre sí:
+    // se piden en paralelo para ahorrar un viaje a Supabase en cada navegación.
+    const [initialProfileResult, contextResult, licenseResult] = await Promise.all([
+      loadProfile(),
+      supabase.rpc("get_my_multibusiness_context"),
+      supabase.rpc("get_my_business_license_availability"),
+    ]);
+    let profileResult = initialProfileResult;
+
+    if (profileResult.error) {
+      profileResult = await loadProfile();
     }
 
     if (profileResult.error) {
@@ -368,10 +374,6 @@ export async function proxy(request: NextRequest) {
       encodeURIComponent(profile.full_name || String(claims.email || ""))
     );
 
-    const [contextResult, licenseResult] = await Promise.all([
-      supabase.rpc("get_my_multibusiness_context"),
-      supabase.rpc("get_my_business_license_availability"),
-    ]);
     const { data: contextRows, error: contextError } = contextResult;
     if (!contextError) {
       multibusinessContextAvailable = true;

@@ -10,6 +10,7 @@ import {
 import {
   ACTIVE_ORDERS_TIMEOUT_MS,
   createRequestDeadline,
+  getActiveOrdersPollInterval,
   getRealtimeReconnectDelay,
 } from "@/lib/realtime-resilience";
 import { normalizeWhatsappPosModifiers } from "@/lib/whatsapp/pos-draft";
@@ -18,6 +19,7 @@ import {
   getOrderReadableBusinessContexts,
 } from "@/lib/multibusiness/business-context-selection";
 import { useBusinessContextStore } from "./business-context-store";
+import { reconcileOrderList } from "@/lib/order-structural-sharing";
 import type { MarketplaceOrderSelection } from "@/lib/marketplace-orders";
 
 export interface OrderItemWithName extends OrderItem {
@@ -53,7 +55,12 @@ interface OrderState {
   menuItemsBusinessMap: Map<string, string>;
   loading: boolean;
   lastError: string | null;
-  fetchActiveOrders: () => Promise<void>;
+  /**
+   * Recarga los pedidos activos. Con `background: true` (tiempo real, sondeo,
+   * regreso a la pestaña) no alterna `loading`, para no redibujar pantallas
+   * mientras el personal trabaja.
+   */
+  fetchActiveOrders: (options?: { background?: boolean }) => Promise<void>;
   createOrder: (
     items: CartItem[],
     orderType: "comedor" | "domicilio" | "para_llevar",
@@ -332,11 +339,27 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     });
   },
 
-  fetchActiveOrders: async () => {
+  fetchActiveOrders: async (options) => {
     if (activeOrdersRequest) return activeOrdersRequest;
 
+    const background = options?.background === true;
+    // Publica solo lo que cambió: si la recarga trae los mismos pedidos se
+    // conservan las referencias y, si nada cambió, no se notifica a la UI.
+    const publishOrders = (orders: OrderWithItems[]) => {
+      const state = get();
+      const reconciled = reconcileOrderList(state.activeOrders, orders);
+      if (
+        reconciled === state.activeOrders &&
+        state.todayOrders === state.activeOrders &&
+        state.lastError === null
+      ) {
+        return;
+      }
+      set({ activeOrders: reconciled, todayOrders: reconciled, lastError: null });
+    };
+
     activeOrdersRequest = (async () => {
-      set({ loading: true });
+      if (!background) set({ loading: true });
       try {
         const scope = await getOrderScope();
         if (!scope.legacyFallback && scope.readableBusinessIds.length === 0) {
@@ -409,16 +432,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         const orders = (activeResult.data ?? []) as unknown as ActiveOrderRow[];
 
         if (orders.length === 0) {
-          set({ activeOrders: [], todayOrders: [], lastError: null });
+          publishOrders([]);
           return;
         }
 
-        const ordersWithItems = mapActiveOrderRows(orders, get().menuItemsMap);
-        set({
-          activeOrders: ordersWithItems,
-          todayOrders: ordersWithItems,
-          lastError: null,
-        });
+        publishOrders(mapActiveOrderRows(orders, get().menuItemsMap));
       } catch (error) {
         set({
           lastError: orderLoadError(
@@ -427,7 +445,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           ),
         });
       } finally {
-        set({ loading: false });
+        if (get().loading) set({ loading: false });
         activeOrdersRequest = null;
       }
     })();
@@ -1109,19 +1127,39 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   subscribeToOrders: () => {
     const supabase = createClient();
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    let pollingTimer: ReturnType<typeof setInterval> | null = null;
+    let pollingTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
     let channelGeneration = 0;
     let disposed = false;
+    let realtimeHealthy = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const scheduleRefresh = () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
-        void get().fetchActiveOrders();
+        void get().fetchActiveOrders({ background: true });
       }, 120);
+    };
+
+    // Realtime es la vía rápida. El sondeo solo cubre eventos perdidos: cada
+    // minuto con el canal sano y cada 15 s mientras está caído o reconectando.
+    const schedulePoll = () => {
+      if (pollingTimer) clearTimeout(pollingTimer);
+      if (disposed) return;
+      pollingTimer = setTimeout(() => {
+        pollingTimer = null;
+        if (disposed) return;
+        if (!document.hidden) void get().fetchActiveOrders({ background: true });
+        schedulePoll();
+      }, getActiveOrdersPollInterval(realtimeHealthy));
+    };
+
+    const setRealtimeHealthy = (healthy: boolean) => {
+      if (realtimeHealthy === healthy) return;
+      realtimeHealthy = healthy;
+      schedulePoll();
     };
 
     const applyOrderChange = (
@@ -1163,6 +1201,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
       if (status === "SUBSCRIBED") {
         reconnectAttempt = 0;
+        setRealtimeHealthy(true);
         scheduleRefresh();
         return;
       }
@@ -1170,6 +1209,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       if (status !== "CHANNEL_ERROR" && status !== "TIMED_OUT" && status !== "CLOSED") {
         return;
       }
+
+      setRealtimeHealthy(false);
 
       const errorMessage = error?.message.toLowerCase() ?? "";
       const isNormalSocketClose =
@@ -1225,7 +1266,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        void get().fetchActiveOrders();
+        void get().fetchActiveOrders({ background: true });
       }
     };
     const handleBusinessChange = () => {
@@ -1239,18 +1280,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       window.addEventListener("mideli:business-changed", handleBusinessChange);
     }
 
-    // Realtime is the fast path. A lighter fallback keeps long-running tablets
-    // correct if a websocket event is missed without querying all orders every
-    // few seconds on every device.
-    pollingTimer = setInterval(() => {
-      if (!document.hidden) void get().fetchActiveOrders();
-    }, 15000);
+    schedulePoll();
 
     return () => {
       disposed = true;
       channelGeneration += 1;
       if (refreshTimer) clearTimeout(refreshTimer);
-      if (pollingTimer) clearInterval(pollingTimer);
+      if (pollingTimer) clearTimeout(pollingTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (typeof window !== "undefined") {

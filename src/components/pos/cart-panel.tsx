@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   Bike,
   Minus,
@@ -59,7 +59,8 @@ const ORDER_TYPES = [
   { value: "para_llevar" as const, label: "Llevar", icon: Package },
 ];
 
-export function CartPanel({
+// Memorizado: Mesero le pasa callbacks estables para que no se redibuje sin cambios.
+export const CartPanel = memo(function CartPanel({
   orderType,
   onOrderTypeChange,
   tableId = "",
@@ -403,4 +404,4 @@ export function CartPanel({
       ) : null}
     </div>
   );
-}
+});
