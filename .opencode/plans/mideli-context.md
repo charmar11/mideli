@@ -2133,4 +2133,7 @@ Primero inspecciona el archivo afectado, sus consumidores y `git status`. Despu�
 - Sin cambios de esquema, permisos, cálculos ni flujos. Verificación:
   `npm run lint`, `npm run build` y la suite Playwright completa (942 pruebas
   en escritorio, tablet y móvil) pasan. Falta medir en las tablets del local.
-- No desplegado a producción al cerrar esta sección.
+- Publicado en Vercel producción como `dpl_BRMfkJuETQMpd9fUrZxbAJS2PL6o`,
+  `READY`, alias `https://mideli.vercel.app`; `/api/health` respondió `ok`
+  con versión `4371f45db782`. Versión anterior para rollback:
+  `dpl_55tqV5Q4WwNDMCLF1hDtcqV3wA9P`. Pendiente la prueba en tablets reales.
